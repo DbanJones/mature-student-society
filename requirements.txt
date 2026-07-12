@@ -1,0 +1,9 @@
+# Core — installed everywhere
+Django>=5.2,<5.3
+Markdown>=3.5
+Pillow>=10.0
+
+# Production on SRCF (uncomment / install there)
+# mozilla-django-oidc>=4.0     # Raven OIDC login — see DEPLOYMENT_SRCF.md
+# mysqlclient>=2.2             # if using the SRCF MySQL database
+# gunicorn>=21.0               # WSGI server behind the SRCF reverse proxy
