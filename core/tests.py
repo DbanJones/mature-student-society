@@ -11,9 +11,40 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from core.templatetags.md import markdown_filter
 from events.models import Category, Event
 
 User = get_user_model()
+
+
+class MarkdownSanitizerTests(TestCase):
+    """Member-written Markdown must never yield executable HTML."""
+
+    def _attrs_of_tags(self, html):
+        import re
+        return " ".join(re.findall(r"<[a-zA-Z][^>]*>", html)).lower()
+
+    def test_attr_list_cannot_inject_event_handlers(self):
+        out = str(markdown_filter("## Heading {: onmouseover=alert(1)}"))
+        self.assertNotIn("onmouseover=", self._attrs_of_tags(out))
+
+    def test_javascript_uri_links_are_stripped(self):
+        out = str(markdown_filter("[click](javascript:alert(document.cookie))"))
+        self.assertNotIn("javascript:", out.lower())
+
+    def test_raw_html_is_escaped(self):
+        out = str(markdown_filter("<script>alert(1)</script>"))
+        self.assertNotIn("<script", out.lower())
+
+    def test_img_onerror_is_neutralised(self):
+        out = str(markdown_filter("<img src=x onerror=alert(1)>"))
+        self.assertNotIn("<img", self._attrs_of_tags(out))
+        self.assertNotIn("onerror=", self._attrs_of_tags(out))
+
+    def test_legitimate_formatting_survives(self):
+        out = str(markdown_filter("**bold** and [link](https://example.com)"))
+        self.assertIn("<strong>bold</strong>", out)
+        self.assertIn('href="https://example.com"', out)
 
 
 def make_member(username, **extra):

@@ -31,9 +31,18 @@ class Restaurant(models.Model):
 
     # --- aggregates -------------------------------------------------------------
 
-    def rating_summary(self):
-        """Average per dimension plus overall, across all visits."""
-        ratings = Rating.objects.filter(event__restaurant=self)
+    def rating_summary(self, viewer=None):
+        """Average per dimension plus overall, across visits visible to ``viewer``.
+
+        Ratings from members-only (and cancelled) visits must not surface to
+        the public, so aggregation runs over ``Event.objects.visible_to(viewer)``
+        — the same visibility gate used for the visit and rating lists. Passing
+        ``viewer=None`` (or an anonymous user) yields the public-safe figures.
+        """
+        from events.models import Event  # avoid an import cycle at module load
+
+        visible_events = Event.objects.visible_to(viewer).filter(restaurant=self)
+        ratings = Rating.objects.filter(event__in=visible_events)
         if not ratings.exists():
             return None
         aggregates = ratings.aggregate(

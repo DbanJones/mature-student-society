@@ -164,6 +164,59 @@ class RatePermissionTests(SupperClubTestCase):
         self.login(self.attendee)
         self.assertEqual(self.client.get(self.rate_url(event)).status_code, 404)
 
+    def test_cancelled_event_cannot_be_rated(self):
+        # A called-off dinner must not accept ratings (they'd pollute the
+        # public average). Even an attendee gets a 404.
+        self.past_event.is_cancelled = True
+        self.past_event.save(update_fields=["is_cancelled"])
+        self.login(self.attendee)
+        self.assertEqual(self.client.get(self.rate_url(self.past_event)).status_code, 404)
+        self.assertEqual(
+            self.client.post(self.rate_url(self.past_event), VALID_SCORES).status_code, 404
+        )
+        self.assertEqual(Rating.objects.count(), 0)
+
+
+class RatingSummaryVisibilityTests(SupperClubTestCase):
+    """The public restaurant score must never include members-only or
+    cancelled visits — those would leak the existence/outcome of hidden
+    events."""
+
+    def _rate(self, event, user, score=5):
+        Rating.objects.create(
+            event=event, user=user, food=score, service=score,
+            atmosphere=score, value=score,
+        )
+
+    def test_members_only_visit_excluded_from_public_summary(self):
+        hidden = Event.objects.create(
+            title="Hush-hush tasting menu", category=self.supper_cat,
+            start=timezone.now() - datetime.timedelta(days=3),
+            created_by=self.organiser, restaurant=self.restaurant,
+            members_only=True,
+        )
+        RSVP.objects.create(event=hidden, user=self.attendee)
+        self._rate(hidden, self.attendee, score=5)
+
+        # Anonymous (viewer=None) must see nothing from the hidden visit.
+        self.assertIsNone(self.restaurant.rating_summary(None))
+        # A logged-in member sees the full aggregate.
+        member_summary = self.restaurant.rating_summary(self.attendee)
+        self.assertIsNotNone(member_summary)
+        self.assertEqual(member_summary["visits"], 1)
+
+    def test_cancelled_visit_excluded_from_summary(self):
+        cancelled = Event.objects.create(
+            title="Called-off supper", category=self.supper_cat,
+            start=timezone.now() - datetime.timedelta(days=3),
+            created_by=self.organiser, restaurant=self.restaurant,
+            is_cancelled=True,
+        )
+        RSVP.objects.create(event=cancelled, user=self.attendee)
+        self._rate(cancelled, self.attendee, score=1)
+        # Even for a member, a cancelled visit is not in the score.
+        self.assertIsNone(self.restaurant.rating_summary(self.attendee))
+
 
 class RateBehaviourTests(SupperClubTestCase):
     def test_attendee_can_rate_past_event(self):

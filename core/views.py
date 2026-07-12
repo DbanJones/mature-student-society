@@ -65,7 +65,7 @@ def home(request):
     # Top-rated Supper Club restaurants (only ones that have been rated).
     rated = []
     for restaurant in Restaurant.objects.all():
-        summary = restaurant.rating_summary()
+        summary = restaurant.rating_summary(request.user)
         if summary:
             rated.append({"restaurant": restaurant, "summary": summary})
     rated.sort(key=lambda item: item["summary"]["overall"], reverse=True)

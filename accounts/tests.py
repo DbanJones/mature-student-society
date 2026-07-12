@@ -89,12 +89,23 @@ class WaitlistTests(TestCase):
         self.assertEqual(response.status_code, 302)  # no IntegrityError trace
         self.assertEqual(WaitlistRequest.objects.count(), 1)
 
-    def test_existing_account_email_points_at_login(self):
+    def test_existing_account_email_gives_uniform_response(self):
+        # An email that already has an account must land on the SAME thanks
+        # page as any other submission — otherwise the form is a membership
+        # enumeration oracle for anonymous visitors. No new request is created.
         make_associate(email="pat@example.com")
         response = self.client.post(reverse("accounts:waitlist"), self.valid_data())
         self.assertRedirects(
-            response, reverse("accounts:login"), fetch_redirect_response=False
+            response, reverse("accounts:waitlist_done"), fetch_redirect_response=False
         )
+        self.assertFalse(WaitlistRequest.objects.exists())
+
+    def test_cam_email_rejected_on_waitlist(self):
+        # Cambridge addresses belong on Raven, not the associate waitlist.
+        data = self.valid_data()
+        data["email"] = "abc123@cam.ac.uk"
+        response = self.client.post(reverse("accounts:waitlist"), data)
+        self.assertEqual(response.status_code, 200)  # re-rendered with error
         self.assertFalse(WaitlistRequest.objects.exists())
 
 

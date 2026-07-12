@@ -34,9 +34,13 @@ class Category(models.Model):
 
 class EventQuerySet(models.QuerySet):
     def visible_to(self, user):
-        """Members see everything; the public only sees non-hidden events."""
+        """Members see everything; the public only sees non-hidden events.
+
+        ``user`` may be None (treated as anonymous), so this is safe to call
+        from aggregation helpers that don't always have a request user.
+        """
         qs = self.filter(is_cancelled=False)
-        if user.is_authenticated:
+        if user is not None and user.is_authenticated:
             return qs
         return qs.filter(members_only=False)
 
@@ -125,6 +129,10 @@ class Event(models.Model):
     def is_past(self):
         reference = self.end or self.start
         return reference < timezone.now()
+
+    @property
+    def has_started(self):
+        return self.start <= timezone.now()
 
     # --- sharing ---------------------------------------------------------------
 

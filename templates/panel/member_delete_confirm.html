@@ -13,9 +13,17 @@
 <div class="card">
   <p>Deleting <strong>{{ member }}</strong> permanently removes the account and, with it:</p>
   <ul>
-    <li><strong>{{ cascades.events }}</strong> event{{ cascades.events|pluralize }} they created — deleted, along with every RSVP on them.</li>
+    <li><strong>{{ cascades.events }}</strong> event{{ cascades.events|pluralize }} they created — deleted.</li>
     <li><strong>{{ cascades.rsvps }}</strong> RSVP{{ cascades.rsvps|pluralize }} of theirs to events — deleted.</li>
-    <li><strong>{{ cascades.ratings }}</strong> restaurant rating{{ cascades.ratings|pluralize }} — deleted.</li>
+    <li><strong>{{ cascades.ratings }}</strong> restaurant rating{{ cascades.ratings|pluralize }} of theirs — deleted.</li>
+    {% if cascades.others_rsvps_on_their_events or cascades.others_ratings_on_their_events %}
+    <li class="flash-danger" style="list-style:none; margin-left:-1rem; padding:.5rem .8rem; border-radius:6px;">
+      Because their events are deleted, this also removes
+      <strong>{{ cascades.others_rsvps_on_their_events }}</strong> RSVP{{ cascades.others_rsvps_on_their_events|pluralize }}
+      and <strong>{{ cascades.others_ratings_on_their_events }}</strong> restaurant rating{{ cascades.others_ratings_on_their_events|pluralize }}
+      left by <em>other members</em> on those events. Restaurant scores will change. Consider a <strong>ban</strong> instead to keep the history.
+    </li>
+    {% endif %}
     <li><strong>{{ cascades.guide_pages }}</strong> guide page{{ cascades.guide_pages|pluralize }} and
         <strong>{{ cascades.guide_revisions }}</strong> revision{{ cascades.guide_revisions|pluralize }} they wrote —
         <em>kept</em>, but their name is removed from them.</li>

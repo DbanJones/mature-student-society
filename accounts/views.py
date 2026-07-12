@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from core.models import SiteConfig
@@ -233,40 +234,17 @@ def waitlist(request):
                 # Honeypot tripped: a bot. Pretend it worked; save nothing.
                 return redirect("accounts:waitlist_done")
             email = form.cleaned_data["email"]
-            if (
+            # Uniform outcome regardless of whether an account or an earlier
+            # request already exists — otherwise the distinct messages would
+            # let an anonymous visitor probe who is/isn't an MSS member. Only
+            # create a genuinely new request; existing ones are left untouched.
+            already_known = (
                 User.objects.filter(email__iexact=email).exists()
                 or User.objects.filter(username__iexact=email).exists()
-            ):
-                messages.info(
-                    request,
-                    "Good news — that email address already has an MSS account. "
-                    "Try logging in below, or contact the committee if you've "
-                    "lost access.",
-                )
-                return redirect("accounts:login")
-            existing = WaitlistRequest.objects.filter(email__iexact=email).first()
-            if existing:
-                if existing.status == WaitlistRequest.Status.APPROVED:
-                    messages.info(
-                        request,
-                        "That request has already been approved — check your "
-                        "email for the set-password link, or contact the "
-                        "committee if it hasn't arrived.",
-                    )
-                elif existing.status == WaitlistRequest.Status.REJECTED:
-                    messages.info(
-                        request,
-                        "We already have a request for that email address. "
-                        "Please contact the committee to talk it over.",
-                    )
-                else:
-                    messages.info(
-                        request,
-                        "We already have your request — an admin will be in "
-                        "touch by email once it's been reviewed.",
-                    )
-                return redirect("accounts:waitlist_done")
-            form.save()
+                or WaitlistRequest.objects.filter(email__iexact=email).exists()
+            )
+            if not already_known:
+                form.save()
             return redirect("accounts:waitlist_done")
     else:
         form = WaitlistForm()
@@ -313,15 +291,23 @@ def whatsapp(request):
 
     if request.method == "POST":
         action = request.POST.get("action")
-        if action == "reveal" and user.can_view_whatsapp_link:
-            user.mark_whatsapp_link_viewed()
-            # Deliberately rendered on the POST response: the link is shown
-            # once, so there is no page it could be re-fetched from.
-            return render(
-                request,
-                "accounts/whatsapp.html",
-                {"state": "revealed", "link": link},
-            )
+        if action == "reveal":
+            # Atomic claim: only the request that actually flips the flag from
+            # NULL gets to reveal the link. Two concurrent reveals therefore
+            # can't both succeed — the loser falls through to the redirect and
+            # sees the "already used" state.
+            claimed = User.objects.filter(
+                pk=user.pk, whatsapp_link_viewed_at__isnull=True
+            ).update(whatsapp_link_viewed_at=timezone.now())
+            if claimed:
+                # Deliberately rendered on the POST response: the link is shown
+                # once, so there is no page it could be re-fetched from.
+                return render(
+                    request,
+                    "accounts/whatsapp.html",
+                    {"state": "revealed", "link": link},
+                )
+            return redirect("accounts:whatsapp")
         if action == "request" and not user.can_view_whatsapp_link:
             has_open = user.whatsapp_requests.filter(
                 status=WhatsAppAccessRequest.Status.OPEN

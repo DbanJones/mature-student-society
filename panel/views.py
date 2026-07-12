@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -79,29 +80,45 @@ def waitlist(request):
 @portal_admin_required
 @require_POST
 def waitlist_review(request, pk):
-    """Approve or reject one pending waitlist request (button name=decision)."""
-    wreq = get_object_or_404(
-        WaitlistRequest, pk=pk, status=WaitlistRequest.Status.PENDING
-    )
+    """Approve or reject one pending waitlist request (button name=decision).
+
+    The request row is locked for the duration and its PENDING status is
+    re-checked inside the lock, so two admins clicking Approve at the same
+    time can't both create an account (which would raise a duplicate-username
+    IntegrityError): the second one finds the request already handled.
+    """
     decision = request.POST.get("decision")
     note = request.POST.get("review_note", "").strip()[:200]
 
-    if decision == "approve":
-        _approve_waitlist_request(request, wreq, note)
-    elif decision == "reject":
-        wreq.status = WaitlistRequest.Status.REJECTED
-        wreq.reviewed_by = request.user
-        wreq.reviewed_at = timezone.now()
-        wreq.review_note = note
-        wreq.save()
-        AuditLog.record(
-            request.user, "reject_waitlist", target=wreq.email, detail=note
+    with transaction.atomic():
+        wreq = get_object_or_404(
+            WaitlistRequest.objects.select_for_update(), pk=pk
         )
-        messages.info(
-            request, f"Rejected the request from {wreq.first_name} {wreq.last_name}."
-        )
-    else:
-        messages.error(request, "Unknown decision — nothing was changed.")
+        if wreq.status != WaitlistRequest.Status.PENDING:
+            messages.info(
+                request,
+                f"That request was already {wreq.get_status_display().lower()} "
+                "by another admin — nothing changed.",
+            )
+            return redirect("panel:waitlist")
+
+        if decision == "approve":
+            _approve_waitlist_request(request, wreq, note)
+        elif decision == "reject":
+            wreq.status = WaitlistRequest.Status.REJECTED
+            wreq.reviewed_by = request.user
+            wreq.reviewed_at = timezone.now()
+            wreq.review_note = note
+            wreq.save()
+            AuditLog.record(
+                request.user, "reject_waitlist", target=wreq.email, detail=note
+            )
+            messages.info(
+                request,
+                f"Rejected the request from {wreq.first_name} {wreq.last_name}.",
+            )
+        else:
+            messages.error(request, "Unknown decision — nothing was changed.")
     return redirect("panel:waitlist")
 
 
@@ -316,18 +333,33 @@ def member_delete(request, pk):
         messages.error(request, "You cannot delete your own account from the panel.")
         return redirect("panel:members")
 
+    # Deleting a member cascades through the events they created: every RSVP
+    # and restaurant rating that OTHER members left on those events is deleted
+    # too. Surface that wider blast radius, not just the member's own rows.
+    from events.models import RSVP
+    from supper.models import Rating
+
+    others_rsvps = RSVP.objects.filter(event__created_by=member).exclude(
+        user=member
+    ).count()
+    others_ratings = Rating.objects.filter(event__created_by=member).exclude(
+        user=member
+    ).count()
     cascades = {
         "events": member.events_created.count(),
         "rsvps": member.rsvps.count(),
         "ratings": member.restaurant_ratings.count(),
         "guide_pages": member.guide_pages_created.count(),
         "guide_revisions": member.guide_revisions.count(),
+        "others_rsvps_on_their_events": others_rsvps,
+        "others_ratings_on_their_events": others_ratings,
     }
     if request.method == "POST":
         target = f"{_display_name(member)} <{member.email or member.username}>"
         detail = (
-            f"deleted {cascades['events']} events, {cascades['rsvps']} RSVPs, "
-            f"{cascades['ratings']} ratings"
+            f"deleted {cascades['events']} events, {cascades['rsvps']} own RSVPs, "
+            f"{cascades['ratings']} own ratings, plus {others_rsvps} RSVPs and "
+            f"{others_ratings} ratings by others on their events"
         )
         member.delete()
         AuditLog.record(request.user, "delete_user", target=target, detail=detail)

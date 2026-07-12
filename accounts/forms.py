@@ -137,6 +137,19 @@ class WaitlistForm(forms.ModelForm):
             return ""
         return clean_mobile_number(raw)
 
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        # Associates are, by definition, people WITHOUT a CRSid. A cam.ac.uk
+        # address means they should log in with Raven instead — and it avoids
+        # an associate account colliding with a future Raven account whose
+        # email defaults to <crsid>@cam.ac.uk.
+        if email.endswith("@cam.ac.uk"):
+            raise forms.ValidationError(
+                "That's a Cambridge address — you can log in directly with "
+                "Raven, no waitlist needed. Head to the members' login."
+            )
+        return email
+
     def validate_unique(self):
         """Skip the unique check on ``email``: the view greets repeat
         applicants with a friendly message instead of a form error."""

@@ -31,7 +31,7 @@ def index(request):
     """
     rated, unrated = [], []
     for restaurant in Restaurant.objects.all():
-        summary = restaurant.rating_summary()
+        summary = restaurant.rating_summary(request.user)
         if summary:
             rated.append({"restaurant": restaurant, "summary": summary})
         else:
@@ -87,7 +87,7 @@ def restaurant(request, pk):
     return render(request, "supper/restaurant.html", {
         "nav_active": "supper",
         "restaurant": restaurant,
-        "summary": restaurant.rating_summary(),
+        "summary": restaurant.rating_summary(request.user),
         "visits": visits,
         "ratings": ratings,
         "rate_prompts": rate_prompts,
@@ -109,6 +109,7 @@ def rate(request, event_pk):
         pk=event_pk,
         restaurant__isnull=False,
         category__has_restaurant_ratings=True,
+        is_cancelled=False,
     )
 
     if timezone.now() < event.start:
@@ -133,7 +134,7 @@ def rate(request, event_pk):
             rating.event = event
             rating.user = request.user
             rating.save()
-            overall = event.restaurant.rating_summary()["overall"]
+            overall = event.restaurant.rating_summary(request.user)["overall"]
             if existing:
                 messages.success(
                     request,

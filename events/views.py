@@ -124,7 +124,8 @@ def detail(request, pk):
     )
     can_rate = (
         is_going
-        and event.is_past
+        and event.has_started
+        and not event.is_cancelled
         and event.restaurant_id is not None
         and event.category.has_restaurant_ratings
     )
