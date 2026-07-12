@@ -22,6 +22,7 @@
       <a href="{% url 'events:calendar' %}" {% if nav_active == 'calendar' %}class="active"{% endif %}>Calendar</a>
       <a href="{% url 'guide:index' %}" {% if nav_active == 'guide' %}class="active"{% endif %}>The Guide</a>
       <a href="{% url 'supper:index' %}" {% if nav_active == 'supper' %}class="active"{% endif %}>Supper Club</a>
+      <a href="{% url 'core:about' %}" {% if nav_active == 'about' %}class="active"{% endif %}>About</a>
       {% if user.is_authenticated %}
         <a href="{% url 'dashboard:home' %}" {% if nav_active == 'dashboard' %}class="active"{% endif %}>My dashboard</a>
         {% if user.is_portal_admin %}
@@ -59,6 +60,8 @@
     <div class="footer-links">
       <a href="{% url 'events:calendar' %}">What's on</a>
       <a href="{% url 'guide:index' %}">Mature Students Guide</a>
+      <a href="{% url 'core:wellbeing' %}">Wellbeing</a>
+      <a href="{% url 'core:policies' %}">Community policies</a>
       <a href="{% url 'accounts:waitlist' %}">Join without a CRSid</a>
       {% if site_config.instagram_url %}<a href="{{ site_config.instagram_url }}">Instagram</a>{% endif %}
       {% if site_config.facebook_url %}<a href="{{ site_config.facebook_url }}">Facebook</a>{% endif %}

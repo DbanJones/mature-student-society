@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load md %}
+
+{% block title %}{{ revision.title }} ({{ revision.created_at|date:"j M Y" }}) · Guide{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      <a href="{% url 'guide:history' page.slug %}">← History of “{{ page.title }}”</a>
+    </p>
+    <h1>{{ revision.title }}</h1>
+    <p class="muted small">
+      Version saved {{ revision.created_at|date:"D j M Y, H:i" }} by {{ editor_name }}
+      {% if is_current %}· <span class="badge badge-ok">current version</span>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if not is_current %}
+      <form method="post" action="{% url 'guide:restore' page.slug revision.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-accent">Restore this version</button>
+      </form>
+    {% endif %}
+    <a class="btn btn-ghost" href="{{ page.get_absolute_url }}">Current page</a>
+  </div>
+</div>
+
+<div class="card">
+  <div class="prose">{{ revision.content|markdown }}</div>
+</div>
+
+{% if not is_current %}
+  <p class="muted small" style="margin-top:1rem">
+    Restoring applies this version’s title and content as a normal edit — the
+    page’s history keeps everything, so nothing is lost.
+  </p>
+{% endif %}
+{% endblock %}

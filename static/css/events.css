@@ -1,0 +1,36 @@
+/* Events app — calendar filter chips, "coming up" list, event detail.
+   Extends base.css; only rules base.css doesn't already provide. */
+
+.hidden { display: none; }
+
+/* --- category filter chips ------------------------------------- */
+
+.cat-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 1.25rem; }
+.cat-filter .cat-chip { text-decoration: none; }
+.cat-filter .cat-chip:hover { filter: brightness(1.15); color: #fff; }
+.cat-filter.filtered .cat-chip { opacity: .45; }
+.cat-filter.filtered .cat-chip.active { opacity: 1; outline: 2px solid var(--pine-900); outline-offset: 1px; }
+.cat-clear { margin-left: .3rem; white-space: nowrap; }
+
+/* --- "coming up" list ------------------------------------------- */
+
+.up-list { list-style: none; margin: 0; padding: 0; }
+.up-row { display: flex; align-items: center; gap: 1rem; padding: .75rem .1rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.up-row:last-child { border-bottom: none; padding-bottom: .2rem; }
+.up-row:first-child { padding-top: .2rem; }
+.up-date { flex: 0 0 56px; text-align: center; background: var(--sage-100); border-radius: var(--radius-small); padding: .3rem 0; line-height: 1.15; }
+.up-date .up-day { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--pine-900); }
+.up-date .up-mon { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft); }
+.up-main { flex: 1 1 16rem; min-width: 0; }
+.up-title { font-weight: 600; }
+.up-meta { display: block; font-size: .85rem; color: var(--ink-soft); }
+.up-going { display: flex; align-items: center; gap: .9rem; margin-left: auto; }
+
+/* --- event detail ------------------------------------------------ */
+
+.event-meta { list-style: none; padding: 0; margin: 0 0 1rem; }
+.event-meta li { padding: .2rem 0; }
+
+/* --- forms -------------------------------------------------------- */
+
+.check-row input[type="checkbox"] { width: auto; margin-right: .4rem; }

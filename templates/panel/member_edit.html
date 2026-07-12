@@ -1,0 +1,45 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Edit {{ member.get_full_name|default:member.username }}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Edit member</h1>
+    <p class="muted">
+      <span class="avatar-token">{{ member.initials }}</span>
+      {{ member }} ·
+      {% if member.account_type == 'raven' %}Raven account{% else %}associate account (logs in with email){% endif %}
+      · joined {{ member.created_at|date:"j M Y" }}
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit" class="btn btn-accent">Save changes</button>
+      <a class="btn btn-ghost" href="{% url 'panel:members' %}">Cancel</a>
+    </form>
+  </div>
+  <div class="card">
+    <h3>Account facts</h3>
+    <ul class="small">
+      <li>Username: <code>{{ member.username }}</code></li>
+      {% if member.crsid %}<li>CRSid: <code>{{ member.crsid }}</code></li>{% endif %}
+      <li>Admin: {% if member.is_portal_admin %}yes{% else %}no{% endif %}</li>
+      <li>Banned: {% if member.is_banned %}yes, since {{ member.banned_at|date:"j M Y" }}{% else %}no{% endif %}</li>
+      <li>WhatsApp invite:
+        {% if member.can_view_whatsapp_link %}
+          not yet viewed — they can see it once
+        {% else %}
+          viewed {{ member.whatsapp_link_viewed_at|date:"j M Y, H:i" }}
+        {% endif %}
+      </li>
+    </ul>
+    <p class="small muted">Changing an associate's email also changes the address they log in with.</p>
+  </div>
+</div>
+{% endblock %}

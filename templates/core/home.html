@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% load static md %}
+
+{% block title %}Welcome{% endblock %}
+{% block main_class %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+
+<section class="hero">
+  <div class="container">
+    <img class="hero-lion" src="{% static 'img/lion-mark.png' %}" alt="">
+    <div class="hero-awards">
+      <span class="badge badge-official">Winner: Outstanding Contribution to University Life 2025</span>
+      <span class="badge">Nominated: University Society of the Year 2025</span>
+    </div>
+    <h1>Welcoming Cambridge's mature students</h1>
+    <p>
+      As the University's community of mature students continues to grow, we're proud to be
+      Cambridge's friendliest and most sociable society. The Mature Student Society (MSS) hosted
+      over 100 events during 2024&ndash;25, ranging from pub-nights, Formals and Formal-swaps,
+      college lunches and tours, to museum/gallery trips, walks, runs and our famous Supper Clubs,
+      Flashtalks, Networking Potlucks and shared study/work sessions. So far in 2025&ndash;26 we've
+      added a Book Club, a History Club and a Sports hub to ensure that matures fully participate
+      in the University's myriad sports offerings.
+    </p>
+    <div class="hero-ctas">
+      {% if user.is_authenticated %}
+        <a class="btn btn-accent" href="{% url 'dashboard:home' %}">My dashboard</a>
+      {% else %}
+        <a class="btn btn-accent" href="{% url 'accounts:login' %}">Member login</a>
+      {% endif %}
+      <a class="btn" href="{% url 'events:calendar' %}">See what's on</a>
+      {% if not user.is_authenticated %}
+        <a class="small" href="{% url 'accounts:waitlist' %}">No CRSid? Request an account</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>What's on next</h2>
+    {% if next_events %}
+      <div class="grid grid-2">
+        {% for event in next_events %}
+          <div class="card event-row">
+            <div class="date-block">
+              <span class="date-day">{{ event.start|date:"j" }}</span>
+              <span class="date-month">{{ event.start|date:"M" }}</span>
+            </div>
+            <div class="event-row-body">
+              <span class="cat-chip" style="background: {{ event.category.color }}">{{ event.category.emoji }} {{ event.category.name }}</span>
+              {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+              {% if event.members_only %}<span class="badge badge-members">Members only</span>{% endif %}
+              <h3><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></h3>
+              <p class="small muted">
+                {{ event.start|date:"D j M, H:i" }}
+                {% if event.location %} &middot; {{ event.location }}{% endif %}
+                &middot; {{ event.num_going }} going
+              </p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty">Nothing scheduled just yet — check back soon.</div>
+    {% endif %}
+    <p class="band-more"><a href="{% url 'events:calendar' %}">See the full calendar &rarr;</a></p>
+  </div>
+</section>
+
+<section class="band band-sage">
+  <div class="container">
+    <h2>What we do</h2>
+    <p class="lede">
+      MSS is home to many active sub-groups, including music lovers, parents, partners as well as
+      LGBTQ+ and African-Caribbean communities. We even have our own marketplace for selling stuff
+      and giveaways. Whether you're looking to connect, explore, relax, get inspired or even buy a
+      bike: there's something for everyone at MSS.
+    </p>
+    <div class="grid grid-3">
+      {% for emoji, name, blurb in activities %}
+        <div class="card activity-card">
+          <span class="activity-emoji" aria-hidden="true">{{ emoji }}</span>
+          <h3>{{ name }}</h3>
+          <p>{{ blurb }}</p>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="band-more">
+      We also place a strong emphasis on well-being, peer support, advice, and advocacy —
+      <a href="{% url 'core:wellbeing' %}">read about our wellbeing support</a>.
+    </p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <h2>The Mature Students Guide</h2>
+    <p class="lede">Hard-won knowledge from members who've done it — colleges, money, families, and finding your feet.</p>
+    {% if guide_pages %}
+      <div class="grid grid-3">
+        {% for page in guide_pages %}
+          <div class="card">
+            <span class="badge">{{ page.get_section_display }}</span>
+            <h3><a href="{% url 'guide:page' page.slug %}">{{ page.title }}</a></h3>
+            <p class="small muted">Updated {{ page.updated_at|date:"j M Y" }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <p class="band-more"><a href="{% url 'guide:index' %}">Browse the whole guide &rarr;</a></p>
+  </div>
+</section>
+
+<section class="band band-sage">
+  <div class="container">
+    <h2>The Supper Club</h2>
+    <p class="lede">Cambridge's international cheap-eats, one restaurant at a time — rated by the members who went.</p>
+    {% if top_restaurants %}
+      <div class="grid grid-3">
+        {% for item in top_restaurants %}
+          <div class="card">
+            <h3><a href="{% url 'supper:restaurant' item.restaurant.pk %}">{{ item.restaurant.name }}</a></h3>
+            <p class="small muted">
+              {% if item.restaurant.cuisine %}{{ item.restaurant.cuisine }}{% endif %}
+              {% if item.restaurant.area %} &middot; {{ item.restaurant.area }}{% endif %}
+            </p>
+            <p>
+              <span class="stars">{{ item.summary.overall|stars }}</span>
+              {{ item.summary.overall|floatformat:1 }}
+              <span class="small muted">({{ item.summary.count }} rating{{ item.summary.count|pluralize }})</span>
+            </p>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <p class="band-more"><a href="{% url 'supper:index' %}">All restaurants and ratings &rarr;</a></p>
+  </div>
+</section>
+
+<section class="band">
+  <div class="container">
+    <div class="stat-row">
+      <div class="stat-tile">
+        <div class="stat-num">1,000</div>
+        <div class="stat-label">members (nearly!)</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num">2024</div>
+        <div class="stat-label">founded</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num">21</div>
+        <div class="stat-label">youngest member</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-num">80+</div>
+        <div class="stat-label">oldest member</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Complete your profile{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 38rem; margin: 0 auto;">
+  <h1>Welcome to MSS</h1>
+  <p class="lede">Lovely to have you. A few details so members can recognise
+     you at events — it takes under a minute.</p>
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-accent">Save and continue</button>
+  </form>
+  <p class="small muted" style="margin-top: 1rem;">Your mobile number is never
+     shown to other members — only to society admins and to the organiser of
+     an event you've RSVP'd to.</p>
+</div>
+{% endblock %}

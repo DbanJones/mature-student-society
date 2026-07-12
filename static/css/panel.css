@@ -1,0 +1,30 @@
+/* Admin panel — small extras on top of base.css. */
+
+/* section tab strip under the page header */
+.panel-tabs { display: flex; gap: .2rem; flex-wrap: wrap; margin-bottom: 1.6rem; border-bottom: 2px solid var(--line); }
+.panel-tabs a { text-decoration: none; padding: .35rem .85rem; font-size: .9rem; font-weight: 600; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.panel-tabs a:hover { color: var(--brick); }
+.panel-tabs a.active { color: var(--pine-900); border-bottom-color: var(--brick); }
+
+/* inline per-row action buttons/forms in tables */
+.row-actions { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+.row-actions form { margin: 0; display: inline-flex; gap: .35rem; align-items: center; }
+
+.note-input { width: 11rem; }
+.check-inline { display: inline-flex; align-items: center; gap: .35rem; font-weight: 400; font-size: .875rem; margin: 0; }
+.check-inline input { width: auto; }
+
+/* members search/filter bar */
+.filter-bar { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.filter-bar input[name="q"] { flex: 1 1 220px; width: auto; }
+.filter-bar select { width: auto; }
+
+/* the mailer draft body */
+.mailer-body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .85rem; line-height: 1.45; min-height: 26rem; }
+
+.pager { display: flex; gap: .8rem; align-items: center; margin-top: 1.2rem; }
+
+/* compact recent-activity list on the dashboard */
+.audit-list { list-style: none; margin: 0; padding: 0; }
+.audit-list li { padding: .45rem 0; border-bottom: 1px solid var(--line); font-size: .875rem; }
+.audit-list li:last-child { border-bottom: none; }

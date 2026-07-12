@@ -1,0 +1,34 @@
+/* Guide app — search bar, section listings, wiki editor, history deltas. */
+
+.guide-search { display: flex; gap: .5rem; max-width: 34rem; margin-bottom: 1.5rem; }
+.guide-search input { flex: 1; }
+
+.guide-page-list { list-style: none; margin: 0; padding: 0; }
+.guide-page-list li {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: .75rem; flex-wrap: wrap;
+  padding: .45rem 0; border-bottom: 1px solid var(--line);
+}
+.guide-page-list li:last-child { border-bottom: none; padding-bottom: 0; }
+
+/* Editor: form beside the markdown cheatsheet, stacking on small screens. */
+.guide-editor {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: 1rem; align-items: start;
+}
+@media (max-width: 780px) { .guide-editor { grid-template-columns: 1fr; } }
+
+.guide-editor textarea {
+  min-height: 22rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92rem;
+}
+
+.cheatsheet table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.cheatsheet td { padding: .3rem 0; vertical-align: top; }
+.cheatsheet td:first-child { padding-right: .8rem; white-space: nowrap; }
+
+.form-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: 1.25rem; }
+
+.delta-pos { color: var(--ok); font-weight: 600; }
+.delta-neg { color: var(--danger); font-weight: 600; }

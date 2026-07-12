@@ -1,0 +1,117 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Members{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Members</h1>
+    <p class="muted">{{ page.paginator.count }} account{{ page.paginator.count|pluralize }} matching. Mobile numbers are shown here because you are an admin — treat them as private.</p>
+  </div>
+</div>
+
+<form method="get" class="card filter-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search name, CRSid, email or college"
+         aria-label="Search members">
+  <select name="type" aria-label="Account type">
+    <option value="">All types</option>
+    <option value="raven" {% if type_filter == 'raven' %}selected{% endif %}>Raven</option>
+    <option value="associate" {% if type_filter == 'associate' %}selected{% endif %}>Associate</option>
+  </select>
+  <label class="check-inline"><input type="checkbox" name="admin" value="1" {% if only_admins %}checked{% endif %}> Admins only</label>
+  <label class="check-inline"><input type="checkbox" name="banned" value="1" {% if only_banned %}checked{% endif %}> Banned only</label>
+  <button type="submit" class="btn btn-small">Filter</button>
+  {% if q or type_filter or only_admins or only_banned %}
+    <a class="btn btn-small btn-ghost" href="{% url 'panel:members' %}">Clear</a>
+  {% endif %}
+</form>
+
+{% if page.object_list %}
+  <div class="table-scroll" style="margin-top:1rem">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>College</th>
+          <th>Type</th>
+          <th>Mobile</th>
+          <th>Joined</th>
+          <th>Flags</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for member in page.object_list %}
+          <tr>
+            <td>
+              <span class="avatar-token">{{ member.initials }}</span>
+              <strong>{{ member.get_full_name|default:member.username }}</strong><br>
+              <span class="small muted">{% if member.crsid %}{{ member.crsid }} · {% endif %}{{ member.email|default:member.username }}</span>
+            </td>
+            <td>{{ member.get_college_display|default:"—" }}</td>
+            <td>
+              {% if member.account_type == 'raven' %}
+                <span class="badge">Raven</span>
+              {% else %}
+                <span class="badge badge-members">Associate</span>
+              {% endif %}
+            </td>
+            <td class="small">{{ member.mobile|default:"—" }}</td>
+            <td class="small muted">{{ member.created_at|date:"j M Y" }}</td>
+            <td>
+              {% if member.is_portal_admin %}<span class="badge badge-official">Admin</span>{% endif %}
+              {% if member.is_banned %}<span class="badge badge-danger">Banned</span>{% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <a class="btn btn-small btn-ghost" href="{% url 'panel:member_edit' member.pk %}">Edit</a>
+                <form method="post" action="{% url 'panel:member_toggle_admin' member.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-small btn-ghost">
+                    {% if member.is_portal_admin %}Demote{% else %}Make admin{% endif %}
+                  </button>
+                </form>
+                {% if member.is_banned %}
+                  <form method="post" action="{% url 'panel:member_unban' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small">Unban</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="{% url 'panel:member_ban' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-danger">Ban</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="{% url 'panel:member_reset_whatsapp' member.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-small btn-ghost"
+                          title="Let them view the WhatsApp invite link once more">Reset WA link</button>
+                </form>
+                <a class="btn btn-small btn-ghost" href="{% url 'panel:member_delete' member.pk %}">Delete…</a>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.has_other_pages %}
+    <div class="pager">
+      {% if page.has_previous %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>
+      {% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}">Next →</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="empty" style="margin-top:1rem">No members match that search.</div>
+{% endif %}
+{% endblock %}

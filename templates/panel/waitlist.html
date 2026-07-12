@@ -1,0 +1,89 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Waitlist{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Waitlist</h1>
+    <p class="muted">Partners and guests without a CRSid are approved manually. Approval creates an associate account and emails a set-password link.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-small {% if status == 'pending' %}btn-accent{% else %}btn-ghost{% endif %}"
+       href="{% url 'panel:waitlist' %}">Pending ({{ tab_counts.pending|default:0 }})</a>
+    <a class="btn btn-small {% if status == 'approved' %}btn-accent{% else %}btn-ghost{% endif %}"
+       href="{% url 'panel:waitlist' %}?status=approved">Approved ({{ tab_counts.approved|default:0 }})</a>
+    <a class="btn btn-small {% if status == 'rejected' %}btn-accent{% else %}btn-ghost{% endif %}"
+       href="{% url 'panel:waitlist' %}?status=rejected">Rejected ({{ tab_counts.rejected|default:0 }})</a>
+  </div>
+</div>
+
+{% if requests %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Contact</th>
+          <th>Connection to the society</th>
+          {% if status == 'pending' %}
+            <th>Waiting</th>
+            <th>Decision</th>
+          {% else %}
+            <th>Reviewed</th>
+            <th>Note</th>
+            {% if status == 'approved' %}<th>Account</th>{% endif %}
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in requests %}
+          <tr>
+            <td><strong>{{ req.first_name }} {{ req.last_name }}</strong></td>
+            <td>
+              {{ req.email }}<br>
+              <span class="small muted">{{ req.mobile|default:"no mobile given" }}</span>
+            </td>
+            <td class="small">{{ req.connection }}</td>
+            {% if status == 'pending' %}
+              <td class="small muted">{{ req.created_at|timesince }} ago</td>
+              <td>
+                <form method="post" action="{% url 'panel:waitlist_review' req.pk %}" class="row-actions">
+                  {% csrf_token %}
+                  <input type="text" name="review_note" class="note-input" maxlength="200"
+                         placeholder="Note (optional)" aria-label="Review note">
+                  <button type="submit" name="decision" value="approve" class="btn btn-small btn-accent">Approve</button>
+                  <button type="submit" name="decision" value="reject" class="btn btn-small btn-danger">Reject</button>
+                </form>
+              </td>
+            {% else %}
+              <td class="small">
+                {{ req.reviewed_at|date:"D j M Y, H:i" }}<br>
+                <span class="muted">by {{ req.reviewed_by|default:"(deleted admin)" }}</span>
+              </td>
+              <td class="small">{{ req.review_note|default:"—" }}</td>
+              {% if status == 'approved' %}
+                <td class="small">
+                  {% if req.created_user %}
+                    <a href="{% url 'panel:member_edit' req.created_user.pk %}">{{ req.created_user }}</a>
+                  {% else %}
+                    <span class="muted">account deleted</span>
+                  {% endif %}
+                </td>
+              {% endif %}
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">
+    {% if status == 'pending' %}
+      No pending requests — the queue is clear.
+    {% else %}
+      No {{ status }} requests yet.
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

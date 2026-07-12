@@ -1,0 +1,132 @@
+{% extends "panel/base_panel.html" %}
+{% load md %}
+
+{% block title %}Statistics{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Society statistics</h1>
+    <p class="muted">Membership, events and activity across the portal.</p>
+  </div>
+</div>
+
+<div class="stat-row">
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.total_members }}</div>
+    <div class="stat-label">Members</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.raven_members }} / {{ summary.associate_members }}</div>
+    <div class="stat-label">Raven / associate</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.new_30d }}</div>
+    <div class="stat-label">New (30 days)</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.pending_waitlist }}</div>
+    <div class="stat-label">Pending waitlist</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.total_events }}</div>
+    <div class="stat-label">Events (all time)</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.events_14d }}</div>
+    <div class="stat-label">Events (next 14 days)</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.total_rsvps }}</div>
+    <div class="stat-label">RSVPs (all time)</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.guide_pages }}</div>
+    <div class="stat-label">Guide pages</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ summary.restaurants_rated }}</div>
+    <div class="stat-label">Restaurants rated</div>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top:1.5rem">
+  <div class="card">
+    <h3>Members by college (top 12)</h3>
+    {% for row in by_college %}
+      <div class="bar-row">
+        <span class="small">{{ row.label }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%"></div></div>
+        <span class="small muted">{{ row.count }}</span>
+      </div>
+    {% empty %}
+      <p class="muted">No college data yet.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Events by category (all time)</h3>
+    {% for row in by_category %}
+      <div class="bar-row">
+        <span class="small">{{ row.label }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%"></div></div>
+        <span class="small muted">{{ row.count }}</span>
+      </div>
+    {% empty %}
+      <p class="muted">No events yet.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>RSVPs per month (last 6 months)</h3>
+    {% for row in rsvps_by_month %}
+      <div class="bar-row">
+        <span class="small">{{ row.label }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%"></div></div>
+        <span class="small muted">{{ row.count }}</span>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h3>Top event hosts</h3>
+    {% for row in top_hosts %}
+      <div class="bar-row">
+        <span class="small">{{ row.label }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%"></div></div>
+        <span class="small muted">{{ row.count }}</span>
+      </div>
+    {% empty %}
+      <p class="muted">No events created yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h3>Top-rated Supper Club restaurants</h3>
+  {% if top_restaurants %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Restaurant</th>
+            <th>Overall</th>
+            <th>Ratings</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in top_restaurants %}
+            <tr>
+              <td><strong>{{ row.label }}</strong></td>
+              <td><span class="stars">{{ row.overall|stars }}</span> <span class="small muted">{{ row.overall|floatformat:1 }}</span></td>
+              <td class="small muted">{{ row.count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No supper club ratings yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

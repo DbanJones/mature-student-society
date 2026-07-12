@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load md static %}
+
+{% block title %}Supper Club{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/supper.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>🍽️ The MSS Supper Club</h1>
+    <p class="lede">
+      Eating our way through Cambridge's international cheap-eats, one restaurant
+      at a time. Every attendee scores the visit — food, service, atmosphere and
+      value for money — and the leaderboard below settles the arguments.
+    </p>
+    <p class="muted small">
+      Everyone can browse the scores; voting is reserved for members who were at
+      the table.
+    </p>
+  </div>
+</div>
+
+{% if next_event %}
+  <div class="card supper-next">
+    <h2>{{ next_event.category.emoji|default:"🍽️" }} Next outing: {{ next_event.title }}</h2>
+    <p>
+      {{ next_event.start|date:"D j M, H:i" }}
+      {% if next_event.location %} · {{ next_event.location }}{% endif %}
+      {% if next_event.restaurant %} · <a href="{% url 'supper:restaurant' next_event.restaurant.pk %}">{{ next_event.restaurant.name }} on the leaderboard</a>{% endif %}
+    </p>
+    <p class="muted small">
+      {{ next_event.going_count }} going{% if next_event.capacity %} of {{ next_event.capacity }} seat{{ next_event.capacity|pluralize }}{% endif %}.
+      {% if next_event.is_full %}Currently full — but cancellations happen, keep an eye on it.{% else %}RSVP to bag a seat (and a vote).{% endif %}
+    </p>
+    <a class="btn btn-accent" href="{% url 'events:detail' next_event.pk %}">Details &amp; RSVP</a>
+  </div>
+{% else %}
+  <div class="card supper-next">
+    <h2>🍽️ No supper on the books yet</h2>
+    <p class="muted">Watch the <a href="{% url 'events:calendar' %}">calendar</a> — the next outing won't be far away.</p>
+  </div>
+{% endif %}
+
+<h2>The leaderboard</h2>
+{% if rated %}
+  <ol class="leaderboard">
+    {% for row in rated %}
+      <li class="card lb-row">
+        <div class="lb-rank" aria-hidden="true">{% if row.medal %}{{ row.medal }}{% else %}#{{ row.rank }}{% endif %}</div>
+        <div class="lb-main">
+          <h3 class="lb-name">
+            <span class="sr-only">Rank {{ row.rank }}:</span>
+            <a href="{% url 'supper:restaurant' row.restaurant.pk %}">{{ row.restaurant.name }}</a>
+          </h3>
+          <p class="muted small lb-meta">
+            {{ row.restaurant.cuisine|default:"Cuisine TBC" }}{% if row.restaurant.area %} · {{ row.restaurant.area }}{% endif %}
+          </p>
+          <div class="rating-bars">
+            {% for d in row.summary.dimensions %}
+              <div class="bar-row">
+                <span>{{ d.label }}</span>
+                <div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.avg 5 100 %}%"></div></div>
+                <span class="small muted">{{ d.avg|floatformat:1 }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="lb-score">
+          <span class="stars" aria-hidden="true">{{ row.summary.overall|stars }}</span>
+          <span class="lb-num">{{ row.summary.overall|floatformat:1 }}<span class="small muted">/5</span></span>
+          <span class="small muted">{{ row.summary.count }} rating{{ row.summary.count|pluralize }} · {{ row.summary.visits }} visit{{ row.summary.visits|pluralize }}</span>
+        </div>
+      </li>
+    {% endfor %}
+  </ol>
+{% else %}
+  <div class="empty">
+    <p>No scores on the board yet — the first dinner will change that.</p>
+  </div>
+{% endif %}
+
+{% if unrated %}
+  <h2>Not yet rated</h2>
+  <p class="muted small">On the hit list — awaiting a visit, or the scores from one.</p>
+  <div class="grid grid-3">
+    {% for restaurant in unrated %}
+      <div class="card">
+        <h3><a href="{% url 'supper:restaurant' restaurant.pk %}">{{ restaurant.name }}</a></h3>
+        <p class="muted small">
+          {{ restaurant.cuisine|default:"Cuisine TBC" }}{% if restaurant.area %} · {{ restaurant.area }}{% endif %}
+        </p>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

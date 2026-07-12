@@ -1,0 +1,89 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}WhatsApp requests{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>WhatsApp access requests</h1>
+    <p class="muted">Members whose one-time invite link is used up and who want back into the group. Add them by hand, or reset their link so they can self-serve.</p>
+  </div>
+</div>
+
+{% if open_requests %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Message</th>
+          <th>Asked</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in open_requests %}
+          <tr>
+            <td>
+              <span class="avatar-token">{{ req.user.initials }}</span>
+              <strong>{{ req.user.get_full_name|default:req.user.username }}</strong><br>
+              <span class="small muted">{{ req.user.mobile|default:"no mobile on file" }}</span>
+            </td>
+            <td class="small">{{ req.message|default:"—" }}</td>
+            <td class="small muted">{{ req.created_at|timesince }} ago</td>
+            <td>
+              <form method="post" action="{% url 'panel:whatsapp_handle' req.pk %}" class="row-actions">
+                {% csrf_token %}
+                <label class="check-inline">
+                  <input type="checkbox" name="reset_link" value="1">
+                  also reset their one-time link
+                </label>
+                <button type="submit" name="action" value="handled" class="btn btn-small btn-accent">Handled</button>
+                <button type="submit" name="action" value="declined" class="btn btn-small btn-danger">Decline</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No open requests — everyone's in the group.</div>
+{% endif %}
+
+<h2>Recently handled</h2>
+{% if history %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Message</th>
+          <th>Outcome</th>
+          <th>Handled</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for req in history %}
+          <tr>
+            <td>{{ req.user.get_full_name|default:req.user.username }}</td>
+            <td class="small">{{ req.message|default:"—" }}</td>
+            <td>
+              {% if req.status == 'handled' %}
+                <span class="badge badge-ok">Handled</span>
+              {% else %}
+                <span class="badge badge-danger">Declined</span>
+              {% endif %}
+            </td>
+            <td class="small muted">
+              {{ req.handled_at|date:"D j M, H:i" }} by {{ req.handled_by|default:"(deleted admin)" }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="muted">Nothing handled yet.</p>
+{% endif %}
+{% endblock %}

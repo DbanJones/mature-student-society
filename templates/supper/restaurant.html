@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% load md static %}
+
+{% block title %}{{ restaurant.name }} · Supper Club{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/supper.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small"><a href="{% url 'supper:index' %}">← Supper Club leaderboard</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>{{ restaurant.name }}</h1>
+    <p class="muted">
+      {{ restaurant.cuisine|default:"Cuisine TBC" }}{% if restaurant.area %} · {{ restaurant.area }}{% endif %}
+      {% if restaurant.website %} · <a href="{{ restaurant.website }}" rel="noopener">Website</a>{% endif %}
+    </p>
+  </div>
+</div>
+
+{% for event in rate_prompts %}
+  <div class="card rate-prompt">
+    <h3>⭐ You were at the table — cast your stars!</h3>
+    <p>
+      You went to <strong>{{ event.title }}</strong> on {{ event.start|date:"D j M Y" }}
+      but haven't scored it yet.
+    </p>
+    <a class="btn btn-accent" href="{% url 'supper:rate' event.pk %}">Rate this visit</a>
+  </div>
+{% endfor %}
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Scorecard</h2>
+    {% if summary %}
+      <p class="scorecard-overall">
+        <span class="stars" aria-hidden="true">{{ summary.overall|stars }}</span>
+        <strong>{{ summary.overall|floatformat:1 }}</strong><span class="muted">/5 overall</span>
+      </p>
+      <p class="muted small">
+        {{ summary.count }} rating{{ summary.count|pluralize }} across
+        {{ summary.visits }} visit{{ summary.visits|pluralize }}.
+      </p>
+      <div class="rating-bars">
+        {% for d in summary.dimensions %}
+          <div class="bar-row">
+            <span>{{ d.label }}</span>
+            <div class="bar-track"><div class="bar-fill" style="width: {% widthratio d.avg 5 100 %}%"></div></div>
+            <span class="small muted">{{ d.avg|floatformat:1 }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No scores yet — this one is still on the hit list.</p>
+    {% endif %}
+    {% if restaurant.notes %}
+      <hr class="divider">
+      {{ restaurant.notes|linebreaks }}
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Visits</h2>
+    <ul class="visit-list">
+      {% for visit in visits %}
+        <li>
+          <a href="{% url 'events:detail' visit.pk %}">{{ visit.title }}</a>
+          — {{ visit.start|date:"D j M Y" }}
+          <span class="muted small">({{ visit.rating_count }} rating{{ visit.rating_count|pluralize }})</span>
+        </li>
+      {% empty %}
+        <li class="muted">No Supper Club visits on the books yet.</li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">
+      Everyone can see the scores; only members who attended a visit can rate it.
+    </p>
+  </div>
+</div>
+
+<h2>What members said</h2>
+<div class="stack">
+  {% for rating in ratings %}
+    <div class="card rating-card">
+      <div class="rating-head">
+        <span class="avatar-token" aria-hidden="true">{{ rating.user.initials }}</span>
+        <strong>{{ rating.user.first_name|default:rating.user.username }}</strong>
+        <span class="muted small">{{ rating.event.start|date:"j M Y" }}</span>
+        <span class="stars" aria-hidden="true">{{ rating.overall|stars }}</span>
+        <span class="small muted">{{ rating.overall|floatformat:1 }}</span>
+        {% if user.is_authenticated and user.pk == rating.user_id %}
+          <a class="btn btn-ghost btn-small" href="{% url 'supper:rate' rating.event_id %}">Edit your rating</a>
+        {% endif %}
+      </div>
+      <p class="small muted rating-dims">
+        Food <span class="stars">{{ rating.food|stars }}</span> ·
+        Service <span class="stars">{{ rating.service|stars }}</span> ·
+        Atmosphere <span class="stars">{{ rating.atmosphere|stars }}</span> ·
+        Value <span class="stars">{{ rating.value|stars }}</span>
+      </p>
+      {% if rating.comment %}<p class="rating-comment">“{{ rating.comment }}”</p>{% endif %}
+    </div>
+  {% empty %}
+    <div class="empty">No individual ratings yet — be the first after the next visit.</div>
+  {% endfor %}
+</div>
+{% endblock %}

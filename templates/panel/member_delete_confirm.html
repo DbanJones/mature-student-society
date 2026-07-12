@@ -1,0 +1,29 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Delete {{ member.get_full_name|default:member.username }}?{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Delete {{ member.get_full_name|default:member.username }}?</h1>
+    <p class="muted">This cannot be undone. Consider a ban instead if you might need the history.</p>
+  </div>
+</div>
+
+<div class="card">
+  <p>Deleting <strong>{{ member }}</strong> permanently removes the account and, with it:</p>
+  <ul>
+    <li><strong>{{ cascades.events }}</strong> event{{ cascades.events|pluralize }} they created — deleted, along with every RSVP on them.</li>
+    <li><strong>{{ cascades.rsvps }}</strong> RSVP{{ cascades.rsvps|pluralize }} of theirs to events — deleted.</li>
+    <li><strong>{{ cascades.ratings }}</strong> restaurant rating{{ cascades.ratings|pluralize }} — deleted.</li>
+    <li><strong>{{ cascades.guide_pages }}</strong> guide page{{ cascades.guide_pages|pluralize }} and
+        <strong>{{ cascades.guide_revisions }}</strong> revision{{ cascades.guide_revisions|pluralize }} they wrote —
+        <em>kept</em>, but their name is removed from them.</li>
+  </ul>
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Delete permanently</button>
+    <a class="btn btn-ghost" href="{% url 'panel:members' %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

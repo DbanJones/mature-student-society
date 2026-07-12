@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Wellbeing{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Wellbeing</h1>
+    <p class="lede">You're not alone &mdash; and we're here to help.</p>
+  </div>
+</div>
+
+<div class="prose">
+  <p>
+    At MSS, we understand that mature students at Cambridge face unique challenges &mdash; often
+    juggling academic pressures with careers, family responsibilities, or major life changes.
+    Many are new to the area, to the university system, or even to the UK itself. It's easy to
+    feel isolated or overwhelmed.
+  </p>
+</div>
+
+<h2>We offer</h2>
+<div class="grid grid-2">
+  <div class="card">
+    <h3>☕ A Mature Students Talking Group</h3>
+    <p>
+      A weekly in-person support group run with the University's Student Services &mdash; a
+      confidential space to talk about academic pressure, isolation, or adjusting to a new
+      environment.
+    </p>
+  </div>
+  <div class="card">
+    <h3>🧭 Practical advice</h3>
+    <p>
+      Housing, healthcare, childcare, course deadlines &mdash; peer-to-peer guidance and
+      &ldquo;hive mind&rdquo; solutions from people who've been there.
+    </p>
+  </div>
+  <div class="card">
+    <h3>📣 Advocacy</h3>
+    <p>
+      Help finding the right channels for department or college issues &mdash; or speaking up
+      on your behalf.
+    </p>
+  </div>
+  <div class="card">
+    <h3>🤝 Qualified support</h3>
+    <p>
+      Some wellbeing team members have professional training in counselling, coaching, or mental
+      health first aid. Not a replacement for professional services, but an informed,
+      compassionate bridge to further help.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 2rem;">
+  <h3>Reach the wellbeing team</h3>
+  <p style="margin-bottom: 0;">
+    Email <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
+    and mark your message for the wellbeing team. Everything is treated in confidence.
+  </p>
+</div>
+{% endblock %}

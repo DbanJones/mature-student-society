@@ -1,0 +1,96 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Admin panel{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Admin panel</h1>
+    <p class="muted">Approvals, member management, statistics and the What's On mailer.</p>
+  </div>
+</div>
+
+<div class="stat-row">
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.pending_waitlist }}</div>
+    <div class="stat-label">Pending waitlist</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.open_whatsapp }}</div>
+    <div class="stat-label">Open WhatsApp requests</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.total_members }}</div>
+    <div class="stat-label">Members</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.members_this_term }}</div>
+    <div class="stat-label">New this term</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.events_14d }}</div>
+    <div class="stat-label">Events (14 days)</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ counts.rsvps_14d }}</div>
+    <div class="stat-label">RSVPs (14 days)</div>
+  </div>
+</div>
+
+<h2>Needs attention</h2>
+<div class="grid grid-2">
+  <div class="card">
+    <h3>Waitlist approvals</h3>
+    {% if counts.pending_waitlist %}
+      <p>{{ counts.pending_waitlist }} request{{ counts.pending_waitlist|pluralize }} from partners/guests without a CRSid waiting for review.</p>
+      <a class="btn btn-accent btn-small" href="{% url 'panel:waitlist' %}">Review queue</a>
+    {% else %}
+      <p class="muted">No pending requests. <span class="badge badge-ok">All clear</span></p>
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:waitlist' %}">Open queue</a>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>WhatsApp re-grants</h3>
+    {% if counts.open_whatsapp %}
+      <p>{{ counts.open_whatsapp }} member{{ counts.open_whatsapp|pluralize }} asking to be let back into the WhatsApp group.</p>
+      <a class="btn btn-accent btn-small" href="{% url 'panel:whatsapp_requests' %}">Handle requests</a>
+    {% else %}
+      <p class="muted">No open requests. <span class="badge badge-ok">All clear</span></p>
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:whatsapp_requests' %}">Open queue</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h3>Quick links</h3>
+    <p class="stack">
+      <a class="btn btn-small" href="{% url 'panel:mailer' %}">Draft the What's On mailer</a><br>
+      <a class="btn btn-small btn-ghost" href="{% url 'panel:stats' %}">Society statistics</a><br>
+      <a class="btn btn-small btn-ghost" href="{% url 'panel:audit' %}">Full audit log</a><br>
+      {% if user.is_superuser %}
+        <a class="btn btn-small btn-ghost" href="/dj-admin/">Django admin (superusers)</a>
+      {% endif %}
+    </p>
+  </div>
+  <div class="card">
+    <h3>Recent admin activity</h3>
+    {% if recent_audit %}
+      <ul class="audit-list">
+        {% for entry in recent_audit %}
+          <li>
+            <strong>{{ entry.actor|default:"(deleted admin)" }}</strong>
+            {{ entry.action }}
+            {% if entry.target %}— {{ entry.target }}{% endif %}
+            <span class="muted">· {{ entry.created_at|date:"D j M, H:i" }}</span>
+            {% if entry.detail %}<br><span class="muted small">{{ entry.detail }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="small" style="margin-top:.8rem"><a href="{% url 'panel:audit' %}">See the full log →</a></p>
+    {% else %}
+      <p class="muted">Nothing logged yet.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

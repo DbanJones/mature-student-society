@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Diners only{% endblock %}
+
+{% block content %}
+<div class="empty">
+  <h1>🍽️ Only diners get to judge</h1>
+  <p class="lede">Only members who attended can rate — RSVP next time!</p>
+  <p class="muted">
+    Scores for <strong>{{ event.title }}</strong> ({{ event.start|date:"D j M Y" }})
+    are reserved for members who RSVP'd "going" to that dinner.
+  </p>
+  <p>
+    <a class="btn" href="{% url 'supper:index' %}">Back to the leaderboard</a>
+    {% if next_event %}
+      <a class="btn btn-accent" href="{% url 'events:detail' next_event.pk %}">RSVP to the next outing</a>
+    {% else %}
+      <a class="btn btn-accent" href="{% url 'events:calendar' %}">See what's on</a>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}

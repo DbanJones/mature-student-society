@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My profile{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>My profile</h1>
+    <p class="muted">What other members (and event organisers) see.</p>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="profile-identity">
+      <div class="profile-avatar">
+        {% if user.photo %}
+          <img src="{{ user.photo.url }}" alt="Photo of {{ user.get_full_name }}">
+        {% else %}
+          {{ user.initials }}
+        {% endif %}
+      </div>
+      <div>
+        <h2 style="margin: 0 0 .2rem;">{{ user.get_full_name|default:user.username }}</h2>
+        <p style="margin: 0;">
+          {% if user.account_type == "raven" %}
+            <span class="badge badge-members">Cambridge member</span>
+            {% if user.crsid %}<span class="badge">{{ user.crsid }}</span>{% endif %}
+          {% else %}
+            <span class="badge">Associate member</span>
+          {% endif %}
+          {% if user.is_portal_admin %}<span class="badge badge-official">admin</span>{% endif %}
+        </p>
+      </div>
+    </div>
+    <hr class="divider">
+    <p><strong>College</strong><br>{{ user.get_college_display|default:"—" }}</p>
+    <p><strong>Email</strong><br>{{ user.email }}</p>
+    <p><strong>Mobile</strong><br>{{ user.mobile|default:"—" }}
+       <span class="small muted">(only admins and your event organisers see this)</span></p>
+    <p><strong>Member since</strong><br>{{ user.date_joined|date:"j F Y" }}</p>
+    {% if user.account_type == "associate" %}
+      <p><a href="{% url 'accounts:password_change' %}">Change my password</a></p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Edit details</h2>
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      {{ form.as_p }}
+      <button type="submit" class="btn">Save changes</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

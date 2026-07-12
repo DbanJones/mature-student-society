@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}The Mature Students Guide{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>The Mature Students Guide</h1>
+    <p class="lede">
+      Written by mature students, for mature students: honest, current answers
+      about colleges, money, family and life in Cambridge. This is a community
+      wiki — every member can edit any page, so if something is out of date,
+      fix it.
+    </p>
+  </div>
+  <div class="actions">
+    {% if user.is_authenticated %}
+      <a class="btn btn-accent" href="{% url 'guide:new' %}">Write a new page</a>
+    {% endif %}
+  </div>
+</div>
+
+<form class="guide-search" method="get" action="{% url 'guide:index' %}" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search the guide…"
+         aria-label="Search the guide">
+  <button type="submit" class="btn">Search</button>
+</form>
+
+{% if not user.is_authenticated %}
+  <p class="muted small">
+    Spotted something missing or out of date?
+    <a href="{% url 'accounts:login' %}">Log in</a> to contribute — any member
+    can write or improve a page.
+  </p>
+{% endif %}
+
+{% if q %}
+  <h2>Results for “{{ q }}”</h2>
+  {% if results %}
+    <div class="stack">
+      {% for p in results %}
+        <div class="card">
+          <h3><a href="{{ p.get_absolute_url }}">{{ p.title }}</a></h3>
+          <p class="muted small">
+            <span class="badge">{{ p.get_section_display }}</span>
+            &nbsp;Updated {{ p.updated_at|date:"j M Y" }}{% if p.updated_by %}
+            by {{ p.updated_by.get_full_name|default:p.updated_by.username }}{% endif %}
+          </p>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      Nothing in the guide matches “{{ q }}”.
+      {% if user.is_authenticated %}
+        Know the answer? <a href="{% url 'guide:new' %}">Write the page</a>.
+      {% endif %}
+    </div>
+  {% endif %}
+  <p style="margin-top:1.5rem"><a href="{% url 'guide:index' %}">← Back to all sections</a></p>
+{% else %}
+  <div class="grid grid-2">
+    {% for section in sections %}
+      <div class="card">
+        <h2>{{ section.emoji }} {{ section.label }}</h2>
+        {% if section.pages %}
+          <ul class="guide-page-list">
+            {% for p in section.pages %}
+              <li>
+                <a href="{{ p.get_absolute_url }}">{{ p.title }}</a>
+                <span class="muted small">updated {{ p.updated_at|date:"j M Y" }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">
+            Nothing here yet.
+            {% if user.is_authenticated %}
+              Be the first — <a href="{% url 'guide:new' %}">write a page</a>
+              for this section.
+            {% else %}
+              Log in and be the first to write one.
+            {% endif %}
+          </p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

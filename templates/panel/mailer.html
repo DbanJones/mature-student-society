@@ -1,0 +1,64 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}What's On mailer{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>What's On mailer</h1>
+    <p class="muted">A plain-text digest of the next two weeks, drafted from the calendar. Edit anything before sending.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'panel:mailer' %}">Refresh draft</a>
+  </div>
+</div>
+
+<div class="card">
+  <p class="small muted">
+    <strong>{{ event_count }}</strong> event{{ event_count|pluralize }} in the next 14 days
+    {% if event_count %}are included in this draft{% else %}— the draft notes an empty diary{% endif %}.
+    Sending to the list address delivers to <strong>all newsletter subscribers</strong>.
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-accent">Send mailer</button>
+  </form>
+</div>
+
+<h2>Recent sends</h2>
+{% if recent_logs %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>By</th>
+          <th>Subject</th>
+          <th>To</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in recent_logs %}
+          <tr>
+            <td class="small muted">{{ log.sent_at|date:"D j M Y, H:i" }}</td>
+            <td class="small">{{ log.sent_by|default:"(deleted admin)" }}</td>
+            <td class="small">{{ log.subject }}</td>
+            <td class="small">{{ log.recipients }}</td>
+            <td>
+              {% if log.ok %}
+                <span class="badge badge-ok">Sent</span>
+              {% else %}
+                <span class="badge badge-danger" title="{{ log.error }}">Failed</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="muted">No mailers sent yet.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Log in{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="login-head">
+  <img src="{% static 'img/lion-mark.png' %}" alt="">
+  <h1>Welcome to the members' portal</h1>
+  <p class="lede" style="margin: 0 auto;">The kettle's on. Pick your door below.</p>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>Cambridge members</h2>
+    <p>Any current University of Cambridge student or staff member with a
+       CRSid can sign in with their University account — no separate
+       registration needed.</p>
+    <p><a class="btn btn-accent" href="{% url 'accounts:raven' %}">Log in with Raven</a></p>
+    <p class="small muted">First time here? Signing in creates your portal
+       account automatically.</p>
+  </div>
+
+  <div class="card">
+    <h2>Associates</h2>
+    <p>Partners and family members with an approved associate account log in
+       with their email address and password.</p>
+    <form method="post" action="{% url 'accounts:login' %}">
+      {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      {{ form.non_field_errors }}
+      <p>
+        {{ form.username.label_tag }}
+        {{ form.username }}
+        {{ form.username.errors }}
+      </p>
+      <p>
+        {{ form.password.label_tag }}
+        {{ form.password }}
+        {{ form.password.errors }}
+      </p>
+      <button type="submit" class="btn">Log in</button>
+    </form>
+    <hr class="divider">
+    <p class="small muted">No CRSid and no account yet?
+       <a href="{% url 'accounts:waitlist' %}">Join the associate waitlist</a>.<br>
+       Forgotten your password? Email
+       <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.</p>
+  </div>
+</div>
+
+{% if dev_login %}
+  <div class="dev-card">
+    <h2>Development impersonation</h2>
+    <p class="small">Local development only (<code>DEBUG</code> and
+       <code>RAVEN_MODE=dev</code>) — this card never appears in production.
+       Click a user to log in as them.</p>
+    <div class="dev-user-list">
+      {% for u in dev_users %}
+        <form method="post" action="{% url 'accounts:dev_login' %}">
+          {% csrf_token %}
+          <input type="hidden" name="user_id" value="{{ u.pk }}">
+          <button type="submit" class="dev-user-btn">
+            <code>{{ u.username }}</code>
+            <span>{{ u.get_full_name|default:"(no name yet)" }}</span>
+            {% if u.is_portal_admin %}<span class="badge badge-official">admin</span>{% endif %}
+          </button>
+        </form>
+      {% empty %}
+        <p class="muted small">No users yet — seed some with
+           <code>python manage.py seed_demo</code>, or create one below.</p>
+      {% endfor %}
+    </div>
+    <form method="post" action="{% url 'accounts:dev_login' %}" class="dev-crsid-form">
+      {% csrf_token %}
+      <div>
+        <label for="dev-crsid">Or any CRSid (creates the user)</label>
+        <input type="text" id="dev-crsid" name="crsid" placeholder="e.g. abc123"
+               autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn-small">Log in as CRSid</button>
+    </form>
+  </div>
+{% endif %}
+{% endblock %}

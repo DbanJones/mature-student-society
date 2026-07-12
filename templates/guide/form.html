@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% load static md %}
+
+{% block title %}{% if page %}Edit “{{ page.title }}”{% else %}Write a new page{% endif %} · Guide{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      {% if page %}
+        <a href="{{ page.get_absolute_url }}">← {{ page.title }}</a>
+      {% else %}
+        <a href="{% url 'guide:index' %}">← The Guide</a>
+      {% endif %}
+    </p>
+    <h1>{% if page %}Edit “{{ page.title }}”{% else %}Write a new page{% endif %}</h1>
+    <p class="lede">
+      {% if page %}
+        Every save is kept in the page history, so edit boldly — anything can
+        be restored.
+      {% else %}
+        Share what you wish someone had told you. Other members can refine it
+        later — that is the point of a wiki.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="guide-editor">
+  <form method="post" class="card">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <p>
+      <label for="{{ form.title.id_for_label }}">Title</label>
+      {{ form.title }}
+      {{ form.title.errors }}
+      {% if page %}
+        <span class="helptext">Page address: /guide/{{ page.slug }}/ (fixed, even if the title changes).</span>
+      {% else %}
+        <span class="helptext">The page address is generated from the title and never changes afterwards.</span>
+      {% endif %}
+    </p>
+
+    <p>
+      <label for="{{ form.section.id_for_label }}">Section</label>
+      {{ form.section }}
+      {{ form.section.errors }}
+    </p>
+
+    <p>
+      <label for="{{ form.content.id_for_label }}">Content</label>
+      {{ form.content }}
+      {{ form.content.errors }}
+      <span class="helptext">{{ form.content.help_text }}</span>
+    </p>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-accent">
+        {% if page %}Save changes{% else %}Publish page{% endif %}
+      </button>
+      <button type="submit" class="btn btn-ghost" name="preview" value="1">Preview</button>
+      <a class="btn btn-ghost" href="{% if page %}{{ page.get_absolute_url }}{% else %}{% url 'guide:index' %}{% endif %}">Cancel</a>
+    </div>
+  </form>
+
+  <aside class="card cheatsheet">
+    <h3>Markdown cheatsheet</h3>
+    <table>
+      <tr><td><code>## Heading</code></td><td>a section heading</td></tr>
+      <tr><td><code>**bold**</code></td><td><strong>bold</strong></td></tr>
+      <tr><td><code>*italics*</code></td><td><em>italics</em></td></tr>
+      <tr><td><code>[UIS](https://…)</code></td><td>a link</td></tr>
+      <tr><td><code>- item</code></td><td>a bulleted list</td></tr>
+      <tr><td><code>1. item</code></td><td>a numbered list</td></tr>
+      <tr><td><code>&gt; quote</code></td><td>a quotation</td></tr>
+    </table>
+    <p class="muted small" style="margin:.8rem 0 0">
+      Plain paragraphs work fine too — a blank line starts a new one. Use
+      “Preview” to check before saving.
+    </p>
+  </aside>
+</div>
+
+{% if previewing %}
+  <h2 id="preview">Preview</h2>
+  {% if preview_content %}
+    <div class="card"><div class="prose">{{ preview_content|markdown }}</div></div>
+  {% else %}
+    <div class="empty">Nothing to preview yet — write some content first.</div>
+  {% endif %}
+  <p class="muted small" style="margin-top:.6rem">
+    This preview is not saved — press
+    “{% if page %}Save changes{% else %}Publish page{% endif %}” when you are happy.
+  </p>
+{% endif %}
+{% endblock %}

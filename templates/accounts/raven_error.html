@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Raven login unavailable{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 34rem; margin: 0 auto;">
+  <h1>Raven login isn't working</h1>
+  <p>You reached the Raven entry point without being signed in, which means
+     the University-account authentication in front of this page appears to be
+     misconfigured — this isn't something you did wrong.</p>
+  <p>Please try again in a little while, or let the committee know at
+     <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
+     so we can fix it.</p>
+  <p><a class="btn btn-ghost" href="{% url 'accounts:login' %}">Back to login</a></p>
+</div>
+{% endblock %}

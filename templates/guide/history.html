@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}History of “{{ page.title }}” · Guide{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      <a href="{{ page.get_absolute_url }}">← {{ page.title }}</a>
+    </p>
+    <h1>Page history</h1>
+    <p class="muted">
+      Every save is recorded, newest first. Open a version to read it in full
+      or to restore it.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'guide:edit' page.slug %}">Edit this page</a>
+  </div>
+</div>
+
+{% if revisions %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Version</th>
+          <th>When</th>
+          <th>Editor</th>
+          <th>Size change</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rev in revisions %}
+          <tr>
+            <td>
+              #{{ forloop.revcounter }}
+              {% if forloop.first %}<span class="badge badge-ok">current</span>{% endif %}
+            </td>
+            <td>{{ rev.created_at|date:"D j M Y, H:i" }}</td>
+            <td>{{ rev.editor_name }}</td>
+            <td>
+              {% if rev.delta > 0 %}
+                <span class="delta-pos">+{{ rev.delta }}</span>
+              {% elif rev.delta < 0 %}
+                <span class="delta-neg">{{ rev.delta }}</span>
+              {% else %}
+                <span class="muted">±0</span>
+              {% endif %}
+              <span class="muted small">chars</span>
+            </td>
+            <td><a href="{% url 'guide:revision' page.slug rev.pk %}">View{% if not forloop.first %} / restore{% endif %}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No revisions recorded for this page yet.</div>
+{% endif %}
+{% endblock %}

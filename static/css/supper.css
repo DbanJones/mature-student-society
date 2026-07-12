@@ -1,0 +1,83 @@
+/* ============================================================
+   Supper Club — leaderboard, restaurant scorecards and the
+   CSS-only star-rating form. Extends base.css; no JS required.
+   ============================================================ */
+
+/* --- leaderboard -------------------------------------------- */
+
+.leaderboard { list-style: none; padding: 0; margin: 0 0 2rem; }
+.leaderboard li + li { margin-top: 1rem; }
+
+.lb-row { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 1rem; align-items: start; }
+.lb-rank {
+  font-family: var(--font-display);
+  font-size: 1.7rem; font-weight: 700; line-height: 1.2;
+  color: var(--pine-700); text-align: center; padding-top: .15rem;
+}
+.lb-name { margin-bottom: .1rem; }
+.lb-meta { margin-bottom: .6rem; }
+.lb-score { display: flex; flex-direction: column; align-items: flex-end; gap: .1rem; text-align: right; }
+.lb-num { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--pine-900); line-height: 1.1; }
+
+.rating-bars .bar-row { grid-template-columns: 110px 1fr 2.4rem; margin-bottom: .3rem; font-size: .85rem; }
+.rating-bars .bar-fill { background: var(--amber); }
+
+@media (max-width: 620px) {
+  .lb-row { grid-template-columns: 2.4rem 1fr; }
+  .lb-rank { font-size: 1.3rem; }
+  .lb-score { grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: .6rem; text-align: left; }
+  .rating-bars .bar-row { grid-template-columns: 90px 1fr 2.4rem; }
+}
+
+/* --- next-outing banner & prompts ---------------------------- */
+
+.supper-next { border-left: 5px solid var(--brick); margin-bottom: 2rem; }
+.rate-prompt { border-left: 5px solid var(--amber); background: var(--amber-soft); margin-bottom: 1.5rem; }
+
+/* --- restaurant page ------------------------------------------ */
+
+.scorecard-overall { font-size: 1.3rem; display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.visit-list { padding-left: 1.2rem; margin: 0 0 1rem; }
+.visit-list li { margin-bottom: .35rem; }
+
+.rating-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.rating-head .avatar-token { margin-right: 0; }
+.rating-dims { margin: .35rem 0 0; }
+.rating-dims .stars { font-size: .85em; }
+.rating-comment { margin: .5rem 0 0; }
+
+/* --- star-rating form (pure CSS, keyboard friendly) ----------- */
+/* Radios are rendered highest-first and displayed row-reverse so
+   `input:checked ~ label` lights the chosen star and everything below it. */
+
+.star-fieldset { border: none; padding: 0; margin: 0 0 1.1rem; }
+.star-fieldset legend {
+  font-family: var(--font-body); font-weight: 600; font-size: .9rem;
+  color: var(--pine-900); padding: 0; margin-bottom: .15rem;
+}
+
+.star-radio { display: inline-flex; flex-direction: row-reverse; justify-content: flex-end; }
+.star-radio input {
+  position: absolute; opacity: 0; width: 1px; height: 1px;
+  pointer-events: none;
+}
+.star-radio label {
+  font-size: 2rem; line-height: 1; padding: 0 .12rem;
+  color: var(--line); cursor: pointer;
+  transition: color .1s ease, transform .1s ease;
+}
+.star-radio label:hover { transform: scale(1.12); }
+.star-radio input:checked ~ label,
+.star-radio label:hover,
+.star-radio label:hover ~ label { color: var(--amber); }
+.star-radio input:focus-visible + label {
+  outline: 2px solid var(--sage-dark); outline-offset: 2px; border-radius: 4px;
+}
+
+/* --- screen-reader-only helper -------------------------------- */
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}

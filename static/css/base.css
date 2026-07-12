@@ -153,6 +153,7 @@ legend { font-family: var(--font-display); font-weight: 700; color: var(--pine-9
   padding: 1.25rem 1.4rem;
 }
 .card + .card { margin-top: 1rem; }
+.grid > .card + .card { margin-top: 0; }  /* grids space via gap, not margins */
 .card h2:first-child, .card h3:first-child { margin-top: 0; }
 
 .grid { display: grid; gap: 1rem; }

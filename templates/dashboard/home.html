@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}My dashboard{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div class="dash-greeting">
+    <span class="avatar-token avatar-lg">
+      {% if user.photo %}<img src="{{ user.photo.url }}" alt="">{% else %}{{ user.initials }}{% endif %}
+    </span>
+    <div>
+      <h1>Hello, {{ user.first_name|default:user.username }}</h1>
+      <p class="muted" style="margin: 0;">
+        {% if user.college %}{{ user.get_college_display }}{% endif %}
+        {% if user.is_portal_admin %} &middot; <span class="badge badge-official">Committee admin</span>{% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost btn-small" href="{% url 'accounts:profile' %}">Edit profile</a>
+  </div>
+</div>
+
+{% if not user.photo %}
+  <p class="small muted">
+    📷 Your profile has no photo yet — <a href="{% url 'accounts:profile' %}">add one</a> so
+    people recognise you at events.
+  </p>
+{% endif %}
+
+{% if next_up %}
+  <div class="card next-up">
+    <div class="date-block">
+      <span class="date-day">{{ next_up.start|date:"j" }}</span>
+      <span class="date-month">{{ next_up.start|date:"M" }}</span>
+    </div>
+    <div>
+      <p class="small muted" style="margin-bottom: .2rem;">Next up for you</p>
+      <h2 style="margin: 0 0 .25rem;"><a href="{% url 'events:detail' next_up.pk %}">{{ next_up.title }}</a></h2>
+      <p style="margin: 0;">
+        <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
+        {{ next_up.start|date:"D j M, H:i" }}
+        {% if next_up.location %} &middot; {{ next_up.location }}{% endif %}
+      </p>
+    </div>
+  </div>
+{% else %}
+  <div class="empty">
+    <p>Nothing in your diary yet.</p>
+    <a class="btn btn-accent" href="{% url 'events:calendar' %}">Find something on the calendar</a>
+  </div>
+{% endif %}
+
+<div class="grid grid-2" style="margin-top: 1.5rem;">
+  <div class="card">
+    <h3>You're going to</h3>
+    {% if going_events %}
+      <div class="stack">
+        {% for event in going_events %}
+          <div class="event-row">
+            <div class="date-block">
+              <span class="date-day">{{ event.start|date:"j" }}</span>
+              <span class="date-month">{{ event.start|date:"M" }}</span>
+            </div>
+            <div class="event-row-body">
+              <h3 style="margin-top: 0;"><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></h3>
+              <p class="small muted" style="margin: 0;">
+                {{ event.start|date:"D j M, H:i" }}
+                <span class="cat-chip" style="background: {{ event.category.color }}">{{ event.category.emoji }} {{ event.category.name }}</span>
+              </p>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No upcoming RSVPs. <a href="{% url 'events:calendar' %}">See what's on</a>.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>You're running</h3>
+    {% if running_events %}
+      <div class="stack">
+        {% for event in running_events %}
+          <div>
+            <strong><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></strong>
+            <p class="small muted" style="margin: 0 0 .2rem;">
+              {{ event.start|date:"D j M, H:i" }} &middot; {{ event.num_going }} going
+            </p>
+            <a class="btn btn-ghost btn-small" href="{% url 'events:edit' event.pk %}">Manage</a>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">You're not hosting anything at the moment.</p>
+    {% endif %}
+    <p style="margin: 1rem 0 0;"><a class="btn btn-small" href="{% url 'events:create' %}">Add an event</a></p>
+  </div>
+</div>
+
+{% if unrated_visits or show_guide_invite %}
+  <h2>Waiting on you</h2>
+  <div class="stack">
+    {% for event in unrated_visits %}
+      <div class="card">
+        🍽️ You went to <strong>{{ event.title }}</strong> on {{ event.start|date:"D j M" }} —
+        how was it?
+        <a class="btn btn-accent btn-small" href="{% url 'supper:rate' event.pk %}">Rate {{ event.restaurant.name }}</a>
+      </div>
+    {% endfor %}
+    {% if show_guide_invite %}
+      <div class="card">
+        📖 You haven't written in the <strong>Mature Students Guide</strong> yet. Know something
+        the next cohort should? <a href="{% url 'guide:index' %}">Add your knowledge</a>.
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
+<h2>Your year in numbers</h2>
+<div class="stat-row">
+  <div class="stat-tile">
+    <div class="stat-num">{{ stats.attended }}</div>
+    <div class="stat-label">events attended</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ stats.hosted }}</div>
+    <div class="stat-label">events hosted</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ stats.guide_edits }}</div>
+    <div class="stat-label">guide edits</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ stats.ratings }}</div>
+    <div class="stat-label">ratings given</div>
+  </div>
+</div>
+
+<div class="grid grid-2" style="margin-top: 1.5rem;">
+  <div class="card">
+    <h3>WhatsApp community</h3>
+    {% if user.can_view_whatsapp_link %}
+      <p>You have an unused one-time invite to the Open Forum group.</p>
+      <a class="btn btn-accent btn-small" href="{% url 'accounts:whatsapp' %}">View your invite</a>
+    {% else %}
+      <p class="muted small" style="margin-bottom: 0;">
+        Need back into the group? <a href="{% url 'accounts:whatsapp' %}">Request access</a>.
+      </p>
+    {% endif %}
+  </div>
+
+  {% if user.is_portal_admin %}
+    <div class="card">
+      <h3>Admin</h3>
+      <p>
+        {% if pending_approvals %}
+          <span class="badge badge-danger">{{ pending_approvals }}</span>
+          request{{ pending_approvals|pluralize }} waiting for review.
+        {% else %}
+          Nothing waiting for review.
+        {% endif %}
+      </p>
+      <a class="btn btn-small" href="{% url 'panel:home' %}">Open the admin panel</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

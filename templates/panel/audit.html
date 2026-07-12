@@ -1,0 +1,67 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Audit log{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Audit log</h1>
+    <p class="muted">Every admin action on the portal: approvals, bans, promotions, deletions, mailers.</p>
+  </div>
+  <div class="actions">
+    <form method="get" class="filter-bar">
+      <select name="action" aria-label="Filter by action">
+        <option value="">All actions</option>
+        {% for act in actions %}
+          <option value="{{ act }}" {% if act == action_filter %}selected{% endif %}>{{ act }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-small">Filter</button>
+      {% if action_filter %}
+        <a class="btn btn-small btn-ghost" href="{% url 'panel:audit' %}">Clear</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+{% if page.object_list %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>Target</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in page.object_list %}
+          <tr>
+            <td class="small muted">{{ entry.created_at|date:"D j M Y, H:i" }}</td>
+            <td>{{ entry.actor|default:"(deleted admin)" }}</td>
+            <td><span class="badge">{{ entry.action }}</span></td>
+            <td class="small">{{ entry.target|default:"—" }}</td>
+            <td class="small muted">{{ entry.detail|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.has_other_pages %}
+    <div class="pager">
+      {% if page.has_previous %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>
+      {% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}">Next →</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="empty">Nothing logged{% if action_filter %} for “{{ action_filter }}”{% endif %} yet.</div>
+{% endif %}
+{% endblock %}

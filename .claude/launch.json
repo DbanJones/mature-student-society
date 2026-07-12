@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mss-portal",
+      "runtimeExecutable": "/Users/dennis/Mature Student Society/.venv/bin/python",
+      "runtimeArgs": ["/Users/dennis/Mature Student Society/manage.py", "runserver", "8000"],
+      "port": 8000
+    }
+  ]
+}

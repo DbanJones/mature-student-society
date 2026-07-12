@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% load static md %}
+
+{% block title %}{{ event.title }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+{% if event.is_cancelled %}
+  <div class="flash flash-danger" style="margin-bottom: 1.25rem;">
+    This event has been cancelled.
+  </div>
+{% endif %}
+
+<div class="page-head">
+  <div>
+    <p style="margin-bottom: .4rem;">
+      <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
+      {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+      {% if event.members_only %}<span class="badge badge-members">Members only</span>{% endif %}
+    </p>
+    <h1>{{ event.title }}</h1>
+  </div>
+  {% if can_edit %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{% url 'events:edit' event.pk %}">Edit</a>
+      {% if not event.is_cancelled %}
+        <form method="post" action="{% url 'events:cancel' event.pk %}"
+              onsubmit="return confirm('Cancel this event for everyone? It will disappear from the calendar.');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-danger btn-small">Cancel event</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <ul class="event-meta">
+      <li>
+        <strong>📅 {{ event.start|date:"l j F Y, H:i" }}</strong>{% if event.end %} &ndash; {{ event.end|date:"H:i" }}{% endif %}
+      </li>
+      {% if event.location %}<li>📍 {{ event.location }}</li>{% endif %}
+      {% if event.capacity %}
+        <li>👥 Capacity {{ event.capacity }} — {% if spots_left %}{{ spots_left }} spot{{ spots_left|pluralize }} left{% else %}full{% endif %}</li>
+      {% endif %}
+      {% if event.restaurant and event.category.has_restaurant_ratings %}
+        <li>🍽️ <a href="{% url 'supper:restaurant' event.restaurant.pk %}">{{ event.restaurant.name }}</a>
+          {% if event.restaurant.cuisine %}<span class="muted small">— {{ event.restaurant.cuisine }}</span>{% endif %}</li>
+      {% endif %}
+    </ul>
+
+    {% if event.description %}
+      <div class="prose">{{ event.description|markdown }}</div>
+    {% endif %}
+
+    <p class="muted small" style="margin: 1rem 0 0;">
+      Added by {{ event.created_by.get_full_name|default:event.created_by.username }}
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Who's going</h2>
+    <p><strong>{{ going_count }}</strong> going{% if is_full %} — <span class="badge badge-danger">Event full</span>{% endif %}</p>
+
+    {% if user.is_authenticated %}
+      {% if attendees %}
+        <div class="avatars" style="margin-bottom: 1rem;">
+          {% for rsvp in attendees %}
+            <span class="avatar-token" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% else %}
+      <p class="muted small"><a href="{% url 'accounts:login' %}">Log in</a> to see who's going and RSVP.</p>
+    {% endif %}
+
+    {% if can_rsvp %}
+      <form method="post" action="{% url 'events:rsvp' event.pk %}" class="stack">
+        {% csrf_token %}
+        {% if is_going %}
+          <button type="submit" class="btn btn-ghost">Can't make it any more</button>
+        {% elif is_full %}
+          <button type="submit" class="btn" disabled>Event full</button>
+        {% else %}
+          <button type="submit" class="btn btn-accent">I'm going</button>
+        {% endif %}
+      </form>
+    {% elif event.is_past and not event.is_cancelled %}
+      <p class="muted small">This event has already happened.</p>
+    {% endif %}
+
+    {% if can_rate %}
+      <p style="margin-top: 1rem;">
+        <a class="btn btn-accent" href="{% url 'supper:rate' event.pk %}">Rate this restaurant</a>
+      </p>
+    {% endif %}
+
+    {% if user.is_authenticated %}
+      <hr class="divider" style="margin: 1.25rem 0;">
+      <p>
+        <a class="btn btn-small" href="{{ share_url }}" target="_blank" rel="noopener">Share to WhatsApp</a>
+      </p>
+      {% if can_edit %}
+        <p class="small">
+          <a href="{% url 'events:export' event.pk %}">Export attendee numbers</a>
+          <span class="muted">(creator &amp; admins only)</span>
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

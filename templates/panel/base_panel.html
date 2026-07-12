@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/panel.css' %}">{% endblock %}
+
+{% block content %}
+  <nav class="panel-tabs" aria-label="Admin panel sections">
+    <a href="{% url 'panel:home' %}" {% if panel_tab == 'home' %}class="active"{% endif %}>Overview</a>
+    <a href="{% url 'panel:waitlist' %}" {% if panel_tab == 'waitlist' %}class="active"{% endif %}>Waitlist</a>
+    <a href="{% url 'panel:members' %}" {% if panel_tab == 'members' %}class="active"{% endif %}>Members</a>
+    <a href="{% url 'panel:whatsapp_requests' %}" {% if panel_tab == 'whatsapp' %}class="active"{% endif %}>WhatsApp</a>
+    <a href="{% url 'panel:stats' %}" {% if panel_tab == 'stats' %}class="active"{% endif %}>Statistics</a>
+    <a href="{% url 'panel:mailer' %}" {% if panel_tab == 'mailer' %}class="active"{% endif %}>Mailer</a>
+    <a href="{% url 'panel:audit' %}" {% if panel_tab == 'audit' %}class="active"{% endif %}>Audit log</a>
+  </nav>
+  {% block panel_content %}{% endblock %}
+{% endblock %}

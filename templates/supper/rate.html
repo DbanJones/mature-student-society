@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Rate {{ restaurant.name }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/supper.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small"><a href="{% url 'supper:restaurant' restaurant.pk %}">← {{ restaurant.name }}</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>Rate {{ restaurant.name }}</h1>
+    <p class="lede">{{ event.title }} — {{ event.start|date:"D j M Y, H:i" }}</p>
+  </div>
+</div>
+
+<div class="card rate-card">
+  {% if is_update %}
+    <p class="muted">You've already scored this dinner — saving will update your stars, not add a second vote.</p>
+  {% endif %}
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form.star_fields %}
+      <fieldset class="star-fieldset">
+        <legend>{{ field.label }}</legend>
+        {{ field.errors }}
+        <div class="star-radio">
+          {% for radio in field reversed %}
+            {{ radio.tag }}<label for="{{ radio.id_for_label }}"><span aria-hidden="true">★</span><span class="sr-only">{{ radio.choice_label }}</span></label>
+          {% endfor %}
+        </div>
+      </fieldset>
+    {% endfor %}
+    <p>
+      <label for="{{ form.comment.id_for_label }}">
+        Comment <span class="muted small">(optional, up to 300 characters)</span>
+      </label>
+      {{ form.comment.errors }}
+      {{ form.comment }}
+    </p>
+    <button type="submit" class="btn btn-accent">
+      {% if is_update %}Update my rating{% else %}Submit my rating{% endif %}
+    </button>
+    <a class="btn btn-ghost" href="{% url 'supper:restaurant' restaurant.pk %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

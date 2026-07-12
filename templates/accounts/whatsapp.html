@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}WhatsApp Open Forum{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 38rem; margin: 0 auto;">
+
+  {% if state == "unconfigured" %}
+    <h1>WhatsApp Open Forum</h1>
+    <p>The group invite link hasn't been set up on the portal yet, so there's
+       nothing to reveal here for the moment.</p>
+    <p>Please contact an admin at
+       <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
+       and they'll add you to the group directly.</p>
+
+  {% elif state == "interstitial" %}
+    <h1>Your one-time invite</h1>
+    <p class="lede">The MSS Open Forum on WhatsApp is where day-to-day society
+       chatter happens — nearly a thousand members strong.</p>
+    <p><strong>For everyone's security the invite link is shown once, and only
+       once.</strong> When you reveal it, open it straight away and join the
+       group. If you lose it, you'll need to ask an admin to be re-added.</p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reveal">
+      <button type="submit" class="btn btn-accent">Reveal my invite link</button>
+    </form>
+    <p class="small muted" style="margin-top: 1rem;">Not ready right now?
+       Come back to this page whenever suits — the invite stays available
+       until you reveal it.</p>
+
+  {% elif state == "revealed" %}
+    <h1>Here's your invite — open it now</h1>
+    <p>This is the only time the portal will show you this link.</p>
+    <div class="wa-link-box">
+      <code id="wa-link">{{ link }}</code>
+      <button type="button" class="btn btn-small btn-ghost" id="wa-copy">Copy</button>
+    </div>
+    <p><a class="btn btn-accent" href="{{ link }}" rel="noopener">Open in WhatsApp</a></p>
+    <p class="small muted">If it doesn't work, or you close this page before
+       joining, use the request form on this page later and an admin will
+       re-add you.</p>
+
+  {% else %}{# state == "used" #}
+    <h1>WhatsApp Open Forum</h1>
+    <p>Your one-time invite link was revealed on
+       <strong>{{ user.whatsapp_link_viewed_at|date:"D j M Y, H:i" }}</strong>.
+       For security it can't be shown again.</p>
+    {% if open_request %}
+      <div class="flash flash-info" style="margin-bottom: 1rem;">
+        You have an open request from
+        {{ open_request.created_at|date:"D j M, H:i" }} — an admin will add
+        you back to the group soon.
+      </div>
+    {% else %}
+      {% if last_handled %}
+        <p class="small muted">Your last request
+           ({{ last_handled.created_at|date:"j M Y" }}) was marked
+           <strong>{{ last_handled.get_status_display|lower }}</strong>
+           {% if last_handled.handled_at %}on {{ last_handled.handled_at|date:"j M Y" }}{% endif %}.</p>
+      {% endif %}
+      <h2>Need back in?</h2>
+      <p>Ask the admins to re-add you — include your current number in your
+         profile so they can find you.</p>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="request">
+        {{ request_form.as_p }}
+        <button type="submit" class="btn">Request access again</button>
+      </form>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if state == "revealed" %}
+<script>
+  document.getElementById("wa-copy").addEventListener("click", function () {
+    var link = document.getElementById("wa-link").textContent;
+    navigator.clipboard.writeText(link).then(function () {
+      var btn = document.getElementById("wa-copy");
+      btn.textContent = "Copied!";
+      setTimeout(function () { btn.textContent = "Copy"; }, 2000);
+    });
+  });
+</script>
+{% endif %}
+{% endblock %}

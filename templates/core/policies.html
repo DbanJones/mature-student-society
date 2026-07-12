@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Community Policies{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Community Policies</h1>
+    <p class="lede">
+      A few simple expectations that keep MSS the friendliest society in Cambridge. These
+      policies apply to <strong>all MSS spaces</strong> &mdash; this portal, our events, and the
+      WhatsApp community (the Open Forum and every subgroup).
+    </p>
+  </div>
+</div>
+
+<div class="prose">
+  <h2>How we communicate</h2>
+  <p>
+    The <strong>Open Forum</strong> is our main WhatsApp group, alongside MSS Notifications, the
+    MSS Marketplace, and 50+ subgroups. The weekly newsletter rounds up everything that's on
+    &mdash; please <strong>check the newsletter before asking</strong> in the Open Forum; the
+    answer is often already there.
+  </p>
+
+  <h2>WhatsApp guidelines</h2>
+  <ul>
+    <li><strong>Post with kindness.</strong> Assume good faith; disagree with ideas, not people.</li>
+    <li><strong>Use your real full name</strong> on WhatsApp so members know who they're talking to.</li>
+    <li><strong>No unsolicited direct messages.</strong> Ask in the group, or ask permission before DMing someone.</li>
+    <li>Keep subgroup topics in their subgroup so the Open Forum stays readable for everyone.</li>
+  </ul>
+
+  <h2>Political neutrality</h2>
+  <p>
+    MSS is politically neutral. Political content is restricted to the MSS Notifications channel,
+    and calls-to-action are removed. As a matter of legal caution as well as community peace, the
+    society itself takes no position on political questions &mdash; our job is to make Cambridge
+    work for mature students of every background and view.
+  </p>
+
+  <h2>Images</h2>
+  <p>
+    Be thoughtful when sharing photos: ask before posting pictures in which other members (and
+    especially their children) are identifiable, and respect any request to take an image down.
+  </p>
+
+  <h2>Marketplace</h2>
+  <p>
+    Selling stuff and giveaways belong in the <strong>MSS Marketplace</strong> group, not the Open
+    Forum. Listings are between buyer and seller &mdash; the society doesn't vet items and can't
+    arbitrate sales.
+  </p>
+
+  <h2>Membership</h2>
+  <p>
+    The committee reserves the right to remove people from the community where these policies are
+    repeatedly or seriously breached. If you have any doubts or concerns, contact the committee at
+    <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.
+  </p>
+
+  <p class="small muted">
+    This page summarises the community policies; the full text is available from the committee on
+    request.
+  </p>
+</div>
+{% endblock %}

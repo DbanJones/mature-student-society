@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Join without a CRSid{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 40rem; margin: 0 auto;">
+  <h1>Partners &amp; family — join the waitlist</h1>
+  <p class="lede">MSS is for whole households, not just the person with the
+     University card. If you're the partner or family member of a Cambridge
+     mature student (or staff member) and don't have a CRSid of your own,
+     ask for an associate account here.</p>
+  <p class="muted small">An admin reviews each request — usually within a few
+     days. If approved, you'll get an email with a link to set your password.</p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      {{ form.first_name.label_tag }} {{ form.first_name }} {{ form.first_name.errors }}
+    </p>
+    <p>
+      {{ form.last_name.label_tag }} {{ form.last_name }} {{ form.last_name.errors }}
+    </p>
+    <p>
+      {{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}
+    </p>
+    <p>
+      {{ form.mobile.label_tag }} {{ form.mobile }}
+      <span class="helptext">{{ form.mobile.help_text }}</span>
+      {{ form.mobile.errors }}
+    </p>
+    <p>
+      {{ form.connection.label_tag }} {{ form.connection }}
+      <span class="helptext">{{ form.connection.help_text }}</span>
+      {{ form.connection.errors }}
+    </p>
+    <p class="hp-field" aria-hidden="true">
+      <label for="{{ form.website.id_for_label }}">Website</label>
+      <input type="text" name="{{ form.website.html_name }}"
+             id="{{ form.website.id_for_label }}" tabindex="-1" autocomplete="off">
+    </p>
+    <button type="submit" class="btn btn-accent">Request an account</button>
+  </form>
+
+  <hr class="divider">
+  <p class="small muted">Already have a CRSid? Just
+     <a href="{% url 'accounts:login' %}">log in with Raven</a> — no waitlist
+     needed.</p>
+</div>
+{% endblock %}

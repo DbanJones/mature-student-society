@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if event %}Edit: {{ event.title }}{% else %}Add an event{% endif %}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if event %}Edit event{% else %}Add an event{% endif %}</h1>
+    <p class="lede">{% if event %}{{ event.title }}{% else %}Anything goes — a coffee meet, a formal swap, a walk. Members run this calendar.{% endif %}</p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <p>
+      {{ form.title.label_tag }} {{ form.title }}
+      {{ form.title.errors }}
+    </p>
+    <p>
+      {{ form.category.label_tag }} {{ form.category }}
+      {{ form.category.errors }}
+    </p>
+
+    <div id="restaurant-block" class="restaurant-block hidden">
+      <fieldset>
+        <legend>🍽️ Supper Club restaurant</legend>
+        <p>
+          {{ form.restaurant.label_tag }} {{ form.restaurant }}
+          {{ form.restaurant.errors }}
+        </p>
+        <p>
+          {{ form.new_restaurant.label_tag }} {{ form.new_restaurant }}
+          <span class="helptext">{{ form.new_restaurant.help_text }}</span>
+          {{ form.new_restaurant.errors }}
+        </p>
+      </fieldset>
+    </div>
+
+    <p>
+      {{ form.description.label_tag }} {{ form.description }}
+      <span class="helptext">{{ form.description.help_text }}</span>
+      {{ form.description.errors }}
+    </p>
+    <p>
+      {{ form.location.label_tag }} {{ form.location }}
+      {{ form.location.errors }}
+    </p>
+
+    <div class="grid grid-2">
+      <p>
+        {{ form.start.label_tag }} {{ form.start }}
+        {{ form.start.errors }}
+      </p>
+      <p>
+        {{ form.end.label_tag }} {{ form.end }}
+        <span class="helptext">{{ form.end.help_text }}</span>
+        {{ form.end.errors }}
+      </p>
+    </div>
+
+    <p>
+      {{ form.capacity.label_tag }} {{ form.capacity }}
+      <span class="helptext">Leave blank for unlimited.</span>
+      {{ form.capacity.errors }}
+    </p>
+
+    <p class="check-row">
+      {{ form.members_only }} <label for="{{ form.members_only.id_for_label }}" style="display: inline;">{{ form.members_only.label }}</label>
+      <span class="helptext">{{ form.members_only.help_text }}</span>
+      {{ form.members_only.errors }}
+    </p>
+
+    {% if form.is_official %}
+      <p class="check-row">
+        {{ form.is_official }} <label for="{{ form.is_official.id_for_label }}" style="display: inline;">{{ form.is_official.label }}</label>
+        <span class="helptext">Prioritised in listings and the What's On mailer. Admins only.</span>
+        {{ form.is_official.errors }}
+      </p>
+    {% endif %}
+
+    {% if form.allow_past %}
+      <p class="check-row muted">
+        {{ form.allow_past }} <label for="{{ form.allow_past.id_for_label }}" style="display: inline;">{{ form.allow_past.label }}</label>
+        <span class="helptext">{{ form.allow_past.help_text }}</span>
+        {{ form.allow_past.errors }}
+      </p>
+    {% endif %}
+
+    <p style="margin-top: 1.5rem;">
+      <button type="submit" class="btn btn-accent">{% if event %}Save changes{% else %}Create event{% endif %}</button>
+      <a class="btn btn-ghost" href="{% if event %}{% url 'events:detail' event.pk %}{% else %}{% url 'events:calendar' %}{% endif %}">Back</a>
+    </p>
+  </form>
+</div>
+
+{{ cat_ratings|json_script:"cat-ratings" }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var ratings = JSON.parse(document.getElementById("cat-ratings").textContent);
+  var select = document.getElementById("{{ form.category.id_for_label }}");
+  var block = document.getElementById("restaurant-block");
+  if (!select || !block) return;
+  function sync() {
+    var hasRatings = Boolean(ratings[select.value]);
+    block.classList.toggle("hidden", !hasRatings);
+  }
+  select.addEventListener("change", sync);
+  sync();
+})();
+</script>
+{% endblock %}

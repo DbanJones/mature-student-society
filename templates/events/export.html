@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Attendees — {{ event.title }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Attendee numbers</h1>
+    <p class="lede">
+      <a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a> —
+      {{ event.start|date:"D j M, H:i" }}
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost btn-small" href="{% url 'events:export' event.pk %}?format=csv">Download CSV</a>
+  </div>
+</div>
+
+<div class="flash flash-info" style="margin: 0 0 1.25rem;">
+  Numbers are provided for adding attendees to the event WhatsApp group; treat
+  them as private. Please don't share them anywhere else.
+</div>
+
+{% if rows %}
+  <div class="grid grid-2">
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr><th>Name</th><th>College</th><th>Mobile</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>{{ row.name }}</td>
+              <td>{{ row.college|default:"—" }}</td>
+              <td>{{ row.mobile|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Paste into WhatsApp</h2>
+      <p class="small muted">One line per attendee — handy when building the group.</p>
+      <textarea id="paste-box" readonly rows="{{ rows|length|add:'1' }}">{{ paste_lines }}</textarea>
+      <p style="margin-top: .75rem;">
+        <button type="button" class="btn btn-small" id="copy-btn">Copy to clipboard</button>
+      </p>
+    </div>
+  </div>
+{% else %}
+  <div class="empty">Nobody has RSVP'd yet.</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var btn = document.getElementById("copy-btn");
+  var box = document.getElementById("paste-box");
+  if (!btn || !box) return;
+  btn.addEventListener("click", function () {
+    box.select();
+    var done = function () {
+      btn.textContent = "Copied!";
+      setTimeout(function () { btn.textContent = "Copy to clipboard"; }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(box.value).then(done);
+    } else {
+      document.execCommand("copy");
+      done();
+    }
+  });
+})();
+</script>
+{% endblock %}

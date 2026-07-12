@@ -1,0 +1,56 @@
+/* Accounts pages: login front door, dev impersonation card, profile avatar,
+   waitlist honeypot. Extends base.css — no new colours beyond the amber
+   family already used for warnings. */
+
+/* login front door */
+.login-head { text-align: center; margin-bottom: 2rem; }
+.login-head img { height: 84px; width: auto; margin-bottom: .6rem; }
+.login-head h1 { margin-bottom: .3rem; }
+
+/* development impersonation card */
+.dev-card {
+  margin-top: 2rem;
+  border: 2px dashed var(--amber);
+  background: var(--amber-soft);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.4rem;
+}
+.dev-card h2 { margin-top: 0; color: #7c5310; }
+.dev-user-list { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 1rem; }
+.dev-user-list form { margin: 0; }
+.dev-user-btn {
+  display: inline-flex; align-items: center; gap: .45rem;
+  background: #fff; border: 1px solid var(--amber);
+  border-radius: var(--radius-small); padding: .35rem .7rem;
+  font: inherit; font-size: .88rem; cursor: pointer; color: var(--ink);
+}
+.dev-user-btn:hover { background: var(--amber-soft); }
+.dev-user-btn code { background: none; padding: 0; font-weight: 700; }
+.dev-crsid-form { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; }
+.dev-crsid-form input[type="text"] { max-width: 14rem; }
+
+/* honeypot: visually removed but present for bots */
+.hp-field {
+  position: absolute !important;
+  left: -9999px !important;
+  width: 1px; height: 1px; overflow: hidden;
+}
+
+/* profile page avatar */
+.profile-avatar {
+  width: 96px; height: 96px; border-radius: 50%;
+  background: var(--pine-700); color: #fff;
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 2rem; font-weight: 700;
+  overflow: hidden; flex: none;
+}
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.profile-identity { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+
+/* revealed WhatsApp link */
+.wa-link-box {
+  display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  background: var(--sage-100); border: 1px solid var(--sage-dark);
+  border-radius: var(--radius-small); padding: .7rem .9rem; margin: 1rem 0;
+}
+.wa-link-box code { background: none; word-break: break-all; }

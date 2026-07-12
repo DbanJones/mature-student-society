@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Request received{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 34rem; margin: 0 auto; text-align: center;">
+  <img src="{% static 'img/lion-mark.png' %}" alt="" style="height: 72px;">
+  <h1>Thanks — you're on the list</h1>
+  <p class="lede" style="margin: 0 auto 1rem;">An admin will review your
+     request. If it's approved you'll get an email with a link to set your
+     password, and then you're in.</p>
+  <p class="muted small">Nothing after a week? Give us a nudge at
+     <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.</p>
+  <p><a class="btn btn-ghost" href="{% url 'core:home' %}">Back to the homepage</a></p>
+</div>
+{% endblock %}
