@@ -12,7 +12,7 @@ from django.shortcuts import redirect, render
 from accounts.models import COLLEGES, User
 
 from .data import COLLEGES_INFO, CONTACT_ROLES, DEPARTMENTS_INFO
-from .models import ContactNode
+from .models import ContactNode, DepartmentContact
 
 
 def index(request):
@@ -77,4 +77,6 @@ def department(request, slug):
         "nav_active": "guide",
         "slug": slug,
         "info": info,
+        "contacts": DepartmentContact.objects.filter(school=slug),
+        "can_edit": request.user.is_authenticated and request.user.is_portal_admin,
     })

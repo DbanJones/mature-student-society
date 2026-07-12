@@ -108,10 +108,45 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 .site-nav a:hover { color: var(--pine-900); background: var(--sage-100); }
 .site-nav a.active { color: var(--pine-900); background: var(--sage-100); font-weight: 650; }
 .site-nav .nav-admin { color: var(--brick-dark); font-weight: 650; }
-.site-nav .nav-ball { color: #8a6a20; }
-.site-nav .nav-ball:hover { background: var(--gold-soft); color: #6d5316; }
-.site-nav .nav-ball.active { background: var(--gold-soft); color: #6d5316; }
-.nav-logout { display: inline; margin: 0 0 0 .3rem; }
+.nav-logout { display: block; margin: 0; }
+
+/* --- grouped dropdown menus ---------------------------------- */
+
+.nav-group { position: relative; }
+.nav-group > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; gap: .3rem;
+  color: var(--ink-soft); font-size: .92rem; font-weight: 550;
+  padding: .34rem .7rem; border-radius: 99px;
+  transition: background .12s ease, color .12s ease;
+}
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary::after {
+  content: "▾"; font-size: .65em; opacity: .65; transition: transform .15s ease;
+}
+.nav-group[open] > summary::after { transform: rotate(180deg); }
+.nav-group > summary:hover,
+.nav-group[open] > summary { color: var(--pine-900); background: var(--sage-100); }
+.nav-group > summary.active { color: var(--pine-900); background: var(--sage-100); font-weight: 650; }
+
+.nav-menu {
+  position: absolute; top: calc(100% + .45rem); left: 0; z-index: 60;
+  min-width: 13.5rem;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow-lift);
+  padding: .35rem; display: flex; flex-direction: column; gap: 2px;
+}
+.site-nav .nav-menu a {
+  display: block; border-radius: 8px; padding: .45rem .7rem; font-weight: 500;
+}
+.nav-menu .nav-logout button.linklike {
+  display: block; width: 100%; text-align: left;
+  padding: .45rem .7rem; border-radius: 8px; font-weight: 500;
+}
+.nav-menu .nav-logout button.linklike:hover { background: var(--brick-soft); }
+@media (max-width: 720px) {
+  .nav-menu { left: auto; right: 0; }
+}
 
 .nav-badge {
   display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem;

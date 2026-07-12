@@ -62,15 +62,19 @@ def calendar_view(request):
 
     q = request.GET.get("q", "").strip()
     categories = list(Category.objects.all())
-    cat_slug = request.GET.get("cat", "")
-    active_category = next((c for c in categories if c.slug == cat_slug), None)
+    # Additive tag filter: ?cat= may repeat (and old comma links still work).
+    requested = []
+    for value in request.GET.getlist("cat"):
+        requested += [s for s in value.split(",") if s]
+    active_slugs = [c.slug for c in categories if c.slug in set(requested)]
+    active_categories = [c for c in categories if c.slug in active_slugs]
 
     weeks = calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 
     visible = Event.objects.visible_to(request.user).select_related("category")
-    if active_category:
-        visible = visible.filter(category=active_category)
+    if active_slugs:
+        visible = visible.filter(category__slug__in=active_slugs)
     if q:
         visible = visible.search(q)
 
@@ -106,29 +110,42 @@ def calendar_view(request):
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
 
+    # Each pill toggles its own tag in/out of the active set.
+    pills = []
+    for cat in categories:
+        toggled = [s for s in active_slugs if s != cat.slug]
+        if cat.slug not in active_slugs:
+            toggled = active_slugs + [cat.slug]
+        pills.append({
+            "cat": cat,
+            "active": cat.slug in active_slugs,
+            "query": _month_query(year, month, toggled, q),
+        })
+
     return render(request, "events/calendar.html", {
         "nav_active": "calendar",
         "grid": grid,
         "month_date": datetime.date(year, month, 1),
-        "categories": categories,
-        "active_category": active_category,
+        "pills": pills,
+        "active_categories": active_categories,
+        "active_slugs": active_slugs,
         "upcoming": upcoming,
         "q": q,
-        "prev_query": _month_query(prev_year, prev_month, cat_slug, q),
-        "next_query": _month_query(next_year, next_month, cat_slug, q),
-        "today_query": _month_query(today.year, today.month, cat_slug, q),
+        "all_query": _month_query(year, month, [], q),
+        "prev_query": _month_query(prev_year, prev_month, active_slugs, q),
+        "next_query": _month_query(next_year, next_month, active_slugs, q),
+        "today_query": _month_query(today.year, today.month, active_slugs, q),
         "is_current_month": (year, month) == (today.year, today.month),
     })
 
 
-def _month_query(year, month, cat_slug, q=""):
-    query = f"?y={year}&m={month}"
-    if cat_slug:
-        query += f"&cat={cat_slug}"
+def _month_query(year, month, cat_slugs, q=""):
+    from urllib.parse import urlencode
+    params = [("y", year), ("m", month)]
+    params += [("cat", slug) for slug in cat_slugs]
     if q:
-        from urllib.parse import quote_plus
-        query += f"&q={quote_plus(q)}"
-    return query
+        params.append(("q", q))
+    return "?" + urlencode(params)
 
 
 def detail_by_pk(request, pk):

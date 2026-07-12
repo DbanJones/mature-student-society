@@ -28,6 +28,12 @@
 {% if not tree %}
   <div class="empty">The contact map is empty — an admin can rebuild it from the panel.</div>
 {% else %}
+<div class="contact-app" id="contact-app">
+<div class="contact-app-bar">
+  <strong>🧭 Who do I contact?</strong>
+  <button type="button" class="btn btn-ghost btn-small" id="fs-toggle"
+          aria-pressed="false">⛶ Full screen</button>
+</div>
 <div class="contact-layout">
   <div class="stack">
     {# --- interactive decision flow --- #}
@@ -80,6 +86,7 @@
       </p>
     </div>
   </div>
+</div>
 </div>
 
 {{ tree|json_script:"contact-tree" }}
@@ -163,6 +170,42 @@
   backBtn.addEventListener("click", function () { render(stack.pop() || root); });
   restartBtn.addEventListener("click", function () { stack = []; render(root); });
   render(root);
+
+  /* --- full screen ------------------------------------------------------- */
+  var app = document.getElementById("contact-app");
+  var fsBtn = document.getElementById("fs-toggle");
+
+  function fsActive() {
+    return document.fullscreenElement === app || app.classList.contains("fs-fallback");
+  }
+  function syncFsButton() {
+    var on = fsActive();
+    fsBtn.textContent = on ? "✕ Exit full screen" : "⛶ Full screen";
+    fsBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+  fsBtn.addEventListener("click", function () {
+    if (document.fullscreenElement === app) {
+      document.exitFullscreen();
+    } else if (app.classList.contains("fs-fallback")) {
+      app.classList.remove("fs-fallback");
+      syncFsButton();
+    } else if (app.requestFullscreen) {
+      app.requestFullscreen().catch(function () {
+        app.classList.add("fs-fallback");
+        syncFsButton();
+      });
+    } else {
+      app.classList.add("fs-fallback");
+      syncFsButton();
+    }
+  });
+  document.addEventListener("fullscreenchange", syncFsButton);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && app.classList.contains("fs-fallback")) {
+      app.classList.remove("fs-fallback");
+      syncFsButton();
+    }
+  });
 })();
 </script>
 {% endif %}

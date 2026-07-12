@@ -20,12 +20,13 @@ from accounts.decorators import portal_admin_required, super_admin_required
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
 from core.models import SiteConfig, SitePage
 from events.models import RSVP, Category, Event
-from faq.models import ContactNode
+from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
 from . import services
 from .forms import (
     ContactNodeForm,
+    DepartmentContactForm,
     EmailSettingsForm,
     MailerForm,
     MemberEditForm,
@@ -725,7 +726,60 @@ def content(request):
         "pages": SitePage.objects.all(),
         "tabs_form": tabs_form,
         "contact_node_count": ContactNode.objects.count(),
+        "dept_contacts": DepartmentContact.objects.all(),
     })
+
+
+# --- recorded department contacts ------------------------------------------------------
+
+@portal_admin_required
+def dept_contact_add(request):
+    form = DepartmentContactForm(
+        request.POST or None, initial={"school": request.GET.get("school", "")}
+    )
+    if request.method == "POST" and form.is_valid():
+        contact = form.save(commit=False)
+        contact.added_by = request.user
+        contact.save()
+        AuditLog.record(
+            request.user, "add_dept_contact",
+            target=f"{contact.department} <{contact.email}>",
+        )
+        messages.success(request, f"Recorded {contact.department}.")
+        return redirect("faq:department", slug=contact.school)
+    return render(request, "panel/dept_contact_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "contact": None,
+    })
+
+
+@portal_admin_required
+def dept_contact_edit(request, pk):
+    contact = get_object_or_404(DepartmentContact, pk=pk)
+    form = DepartmentContactForm(request.POST or None, instance=contact)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        AuditLog.record(
+            request.user, "edit_dept_contact",
+            target=f"{contact.department} <{contact.email}>",
+        )
+        messages.success(request, f"Saved {contact.department}.")
+        return redirect("panel:content")
+    return render(request, "panel/dept_contact_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "contact": contact,
+    })
+
+
+@portal_admin_required
+@require_POST
+def dept_contact_delete(request, pk):
+    contact = get_object_or_404(DepartmentContact, pk=pk)
+    target = f"{contact.department} <{contact.email}>"
+    contact.delete()
+    AuditLog.record(request.user, "delete_dept_contact", target=target)
+    messages.success(request, f"Removed {contact.department}.")
+    return redirect("panel:content")
 
 
 @portal_admin_required

@@ -24,27 +24,28 @@
   <form class="cal-search" method="get" action="{% url 'events:calendar' %}" role="search">
     <input type="hidden" name="y" value="{{ month_date.year }}">
     <input type="hidden" name="m" value="{{ month_date.month }}">
-    {% if active_category %}<input type="hidden" name="cat" value="{{ active_category.slug }}">{% endif %}
+    {% for slug in active_slugs %}<input type="hidden" name="cat" value="{{ slug }}">{% endfor %}
     <input type="search" name="q" value="{{ q }}" placeholder="Search events — title, place, tag…"
            aria-label="Search events">
     <button type="submit" class="btn btn-small">Search</button>
   </form>
 
-  <div class="cat-filter{% if active_category %} filtered{% endif %}" role="group" aria-label="Filter by tag">
-    <a class="tag-pill{% if not active_category %} active{% endif %}"
-       href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">All</a>
-    {% for cat in categories %}
-      <a class="tag-pill{% if cat == active_category %} active{% endif %}"
-         style="--tag-color: {{ cat.color }};"
-         href="{% if cat == active_category %}?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}{% else %}?y={{ month_date.year }}&amp;m={{ month_date.month }}&amp;cat={{ cat.slug }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}{% endif %}"
-         title="{{ cat.description }}"><span class="tag-dot" aria-hidden="true"></span>{{ cat.emoji }} {{ cat.name }}</a>
+  <div class="cat-filter{% if active_slugs %} filtered{% endif %}" role="group"
+       aria-label="Filter by tag (pick as many as you like)">
+    <a class="tag-pill{% if not active_slugs %} active{% endif %}" href="{{ all_query }}">All</a>
+    {% for pill in pills %}
+      <a class="tag-pill{% if pill.active %} active{% endif %}"
+         style="--tag-color: {{ pill.cat.color }};"
+         href="{{ pill.query }}"
+         title="{{ pill.cat.description }}{% if pill.active %} (click to remove){% endif %}"><span class="tag-dot" aria-hidden="true"></span>{{ pill.cat.emoji }} {{ pill.cat.name }}{% if pill.active %} ✕{% endif %}</a>
     {% endfor %}
   </div>
-  {% if active_category %}
+  {% if active_categories %}
     <p class="small" style="margin:.4rem 0 0">
-      Showing <strong>{{ active_category.emoji }} {{ active_category.name }}</strong> —
-      <a href="{{ active_category.get_absolute_url }}">about this club</a> ·
-      <a href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">clear filter</a>
+      Showing
+      {% for cat in active_categories %}<strong>{{ cat.emoji }} <a href="{{ cat.get_absolute_url }}" title="About this club">{{ cat.name }}</a></strong>{% if not forloop.last %} + {% endif %}{% endfor %}
+      — pills toggle, so pick as many as you like ·
+      <a href="{{ all_query }}">clear filter</a>
     </p>
   {% endif %}
 </div>
@@ -52,8 +53,8 @@
 {% if q %}
   <div class="flash flash-info" style="margin:0 0 1rem">
     Showing events matching “{{ q }}”
-    {% if active_category %} in {{ active_category.name }}{% endif %} —
-    <a href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if active_category %}&amp;cat={{ active_category.slug }}{% endif %}">clear search</a>
+    {% if active_categories %} in {{ active_categories|join:" + " }}{% endif %} —
+    <a href="{% url 'events:calendar' %}?y={{ month_date.year }}&amp;m={{ month_date.month }}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}">clear search</a>
   </div>
 {% endif %}
 
@@ -127,9 +128,9 @@
 {% else %}
   <div class="empty">
     {% if q %}
-      No events match “{{ q }}”{% if active_category %} in {{ active_category.name }}{% endif %}.
+      No events match “{{ q }}”{% if active_categories %} in {{ active_categories|join:" + " }}{% endif %}.
     {% else %}
-      Nothing on the horizon{% if active_category %} in {{ active_category.name }}{% endif %} just yet.
+      Nothing on the horizon{% if active_categories %} in {{ active_categories|join:" + " }}{% endif %} just yet.
     {% endif %}
     {% if user.is_authenticated %}<a href="{% url 'events:create' %}">Add the first event.</a>{% endif %}
   </div>

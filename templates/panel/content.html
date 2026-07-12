@@ -60,6 +60,45 @@
     </div>
 
     <div class="card">
+      <h2>Department contacts</h2>
+      <p class="small muted">
+        Recorded departmental email addresses, shown on the Guide's
+        department pages. ✅ = members report the office runs well.
+      </p>
+      <p><a class="btn btn-small btn-accent" href="{% url 'panel:dept_contact_add' %}">Record a contact</a></p>
+      {% if dept_contacts %}
+        <table class="data">
+          <thead><tr><th>Department</th><th>School</th><th></th></tr></thead>
+          <tbody>
+            {% for contact in dept_contacts %}
+              <tr>
+                <td>
+                  <strong>{{ contact.department }}</strong>
+                  {% if contact.responds_well %}<span class="badge badge-ok">✅ runs well</span>{% endif %}
+                  <br><a class="small" href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+                  {% if contact.notes %}<br><span class="small muted">{{ contact.notes }}</span>{% endif %}
+                </td>
+                <td class="small">{{ contact.get_school_display }}</td>
+                <td>
+                  <div class="row-actions">
+                    <a class="btn btn-small btn-ghost" href="{% url 'panel:dept_contact_edit' contact.pk %}">Edit</a>
+                    <form method="post" action="{% url 'panel:dept_contact_delete' contact.pk %}"
+                          onsubmit="return confirm('Remove {{ contact.department|escapejs }}?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted small" style="margin:0">Nothing recorded yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
       <h2>Who-to-contact map</h2>
       <p class="small muted">
         The decision flow on the “Who do I contact?” page —

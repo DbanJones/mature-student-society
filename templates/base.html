@@ -19,35 +19,51 @@
            alt="{{ site_config.society_name }}">
     </a>
     <nav class="site-nav" aria-label="Main">
-      <a href="{% url 'events:calendar' %}" {% if nav_active == 'calendar' %}class="active"{% endif %}>What's on</a>
-      <a href="{% url 'guide:index' %}" {% if nav_active == 'guide' %}class="active"{% endif %}>The Guide</a>
-      {% if "supper" in visible_tabs %}
-        <a href="{% url 'supper:index' %}" {% if nav_active == 'supper' %}class="active"{% endif %}>Supper Club</a>
-      {% endif %}
-      {% if "ball" in visible_tabs %}
-        <a href="{% url 'core:winter_ball' %}" class="nav-ball {% if nav_active == 'ball' %}active{% endif %}">Winter Ball</a>
-      {% endif %}
-      {% if "about" in visible_tabs %}
-        <a href="{% url 'core:about' %}" {% if nav_active == 'about' %}class="active"{% endif %}>About</a>
-      {% endif %}
-      {% for page in nav_pages %}
-        <a href="{{ page.get_absolute_url }}" {% if nav_active == 'page-'|add:page.slug %}class="active"{% endif %}>{{ page.nav_label }}</a>
-      {% endfor %}
+      <details class="nav-group">
+        <summary class="{% if nav_active == 'calendar' or nav_active == 'supper' or nav_active == 'ball' %}active{% endif %}">What's on</summary>
+        <div class="nav-menu">
+          <a href="{% url 'events:calendar' %}">📅 Calendar</a>
+          {% if "supper" in visible_tabs %}<a href="{% url 'supper:index' %}">🍽️ Supper Club</a>{% endif %}
+          {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">❄️ Winter Ball</a>{% endif %}
+        </div>
+      </details>
+      <details class="nav-group">
+        <summary class="{% if nav_active == 'guide' %}active{% endif %}">Guide</summary>
+        <div class="nav-menu">
+          <a href="{% url 'guide:index' %}">📖 The Guide</a>
+          <a href="{% url 'faq:contacts' %}">🧭 Who to contact</a>
+          <a href="{% url 'faq:colleges' %}">🏰 Colleges</a>
+          <a href="{% url 'faq:departments' %}">🔬 Departments</a>
+        </div>
+      </details>
+      <details class="nav-group">
+        <summary class="{% if nav_active == 'about' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
+        <div class="nav-menu">
+          {% if "about" in visible_tabs %}<a href="{% url 'core:about' %}">🦁 About MSS</a>{% endif %}
+          <a href="{% url 'core:wellbeing' %}">💙 Wellbeing</a>
+          <a href="{% url 'core:policies' %}">🤝 Community policies</a>
+          {% for page in nav_pages %}
+            <a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>
+          {% endfor %}
+        </div>
+      </details>
       {% if user.is_authenticated %}
-        {% if "members" in visible_tabs %}
-          <a href="{% url 'members:directory' %}" {% if nav_active == 'members' %}class="active"{% endif %}>Members</a>
-        {% endif %}
-        {% if "messages" in visible_tabs %}
-          <a href="{% url 'inbox:inbox' %}" class="nav-messages {% if nav_active == 'messages' %}active{% endif %}">Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>
-        {% endif %}
-        <a href="{% url 'dashboard:home' %}" {% if nav_active == 'dashboard' %}class="active"{% endif %}>Dashboard</a>
+        <details class="nav-group">
+          <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
+          <div class="nav-menu">
+            <a href="{% url 'dashboard:home' %}">🏠 Dashboard</a>
+            {% if "members" in visible_tabs %}<a href="{% url 'members:directory' %}">👥 Members</a>{% endif %}
+            {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>{% endif %}
+            <a href="{% url 'accounts:profile' %}">✏️ My profile</a>
+            <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
+              {% csrf_token %}
+              <button type="submit" class="linklike">👋 Log out</button>
+            </form>
+          </div>
+        </details>
         {% if user.is_portal_admin %}
           <a href="{% url 'panel:home' %}" class="nav-admin {% if nav_active == 'panel' %}active{% endif %}">Admin</a>
         {% endif %}
-        <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
-          {% csrf_token %}
-          <button type="submit" class="linklike">Log out</button>
-        </form>
       {% else %}
         <a href="{% url 'accounts:login' %}" class="btn btn-small">Member login</a>
       {% endif %}
@@ -89,6 +105,21 @@
     </div>
   </div>
 </footer>
+<script>
+// One dropdown open at a time; click-away closes.
+document.querySelectorAll("details.nav-group > summary").forEach(function (s) {
+  s.addEventListener("click", function () {
+    document.querySelectorAll("details.nav-group[open]").forEach(function (d) {
+      if (d !== s.parentElement) d.removeAttribute("open");
+    });
+  });
+});
+document.addEventListener("click", function (e) {
+  document.querySelectorAll("details.nav-group[open]").forEach(function (d) {
+    if (!d.contains(e.target)) d.removeAttribute("open");
+  });
+});
+</script>
 {% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>{% endif %}
 {% block extra_js %}{% endblock %}
 </body>

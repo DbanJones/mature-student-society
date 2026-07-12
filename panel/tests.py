@@ -59,7 +59,7 @@ urlpatterns = [
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
-        ("profile-setup/", "profile_setup"),
+        ("profile-setup/", "profile_setup"), ("profile/", "profile"),
     ])),
     path("events/", _ns("events", [
         ("", "calendar"),
@@ -68,7 +68,8 @@ urlpatterns = [
         ("<slug:slug>/", "detail"),
     ])),
     path("guide/", _ns("guide", [("", "index")])),
-    path("faq/", _ns("faq", [("", "index"), ("who-to-contact/", "contacts")])),
+    path("faq/", _ns("faq", [("", "index"), ("who-to-contact/", "contacts"),
+                             ("colleges/", "colleges"), ("departments/", "departments")])),
     path("supper-club/", _ns("supper", [("", "index")])),
     path("members/", _ns("members", [
         ("", "directory"), ("<str:username>/", "profile"),

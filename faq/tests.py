@@ -217,3 +217,67 @@ class ContactMapAdminTests(TestCase):
         self.assertFalse(
             ContactNode.objects.filter(option_label="Half-made branch").exists()
         )
+
+
+class DepartmentContactTests(TestCase):
+    """Recorded departmental emails: admin CRUD + public display."""
+
+    def setUp(self):
+        self.admin = make_admin()
+
+    def _create(self):
+        from .models import DepartmentContact
+        return DepartmentContact.objects.create(
+            school="arts-humanities",
+            department="Faculty of History — Undergraduate Office",
+            email="ugoffice@hist.cam.ac.uk",
+            notes="Timetables and submission extensions.",
+            responds_well=True,
+            added_by=self.admin,
+        )
+
+    def test_contact_shown_on_department_page(self):
+        self._create()
+        response = self.client.get(
+            reverse("faq:department", args=["arts-humanities"])
+        )
+        self.assertContains(response, "ugoffice@hist.cam.ac.uk")
+        self.assertContains(response, "runs well")
+        # Not on other schools' pages.
+        other = self.client.get(reverse("faq:department", args=["technology"]))
+        self.assertNotContains(other, "ugoffice@hist.cam.ac.uk")
+
+    def test_admin_crud_via_panel(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("panel:dept_contact_add"), {
+            "school": "technology",
+            "department": "Department of Engineering — Teaching Office",
+            "email": "teaching@eng.cam.ac.uk",
+            "notes": "Lab clashes and coursework rules.",
+            "responds_well": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+        from .models import DepartmentContact
+        contact = DepartmentContact.objects.get(email="teaching@eng.cam.ac.uk")
+        self.assertTrue(contact.responds_well)
+        response = self.client.post(
+            reverse("panel:dept_contact_delete", args=[contact.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(DepartmentContact.objects.filter(pk=contact.pk).exists())
+
+    def test_crud_admin_gated(self):
+        contact = self._create()
+        member = User.objects.create_user(
+            username="mem8", password="pw", first_name="Mia", last_name="M",
+            college="darwin", mobile="+44 7700 900001",
+        )
+        self.client.force_login(member)
+        self.assertEqual(
+            self.client.get(reverse("panel:dept_contact_add")).status_code, 403
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse("panel:dept_contact_delete", args=[contact.pk])
+            ).status_code, 403,
+        )

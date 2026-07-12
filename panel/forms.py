@@ -6,7 +6,7 @@ from django.utils.text import slugify
 from accounts.models import User
 from core.models import BUILTIN_TABS, VISIBILITY_CHOICES, SitePage
 from events.models import Category
-from faq.models import ContactNode
+from faq.models import ContactNode, DepartmentContact
 
 
 class MemberEditForm(forms.ModelForm):
@@ -168,6 +168,14 @@ class TabVisibilityForm(forms.Form):
             for key, _label, _default in BUILTIN_TABS
         }
         config.save()
+
+
+class DepartmentContactForm(forms.ModelForm):
+    """A recorded departmental email address."""
+
+    class Meta:
+        model = DepartmentContact
+        fields = ["school", "department", "email", "notes", "responds_well"]
 
 
 class ContactNodeForm(forms.ModelForm):

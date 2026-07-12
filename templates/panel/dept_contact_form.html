@@ -1,0 +1,52 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if contact %}Edit contact{% else %}Record a contact{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:content' %}">← Site content</a></p>
+    <h1>{% if contact %}Edit “{{ contact.department }}”{% else %}Record a department contact{% endif %}</h1>
+    <p class="muted">
+      Departmental email addresses worth keeping — tick “runs well” for the
+      offices members report as quick and helpful.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      {{ form.school.label_tag }} {{ form.school }}
+      <span class="helptext">{{ form.school.help_text }}</span>
+      {{ form.school.errors }}
+    </p>
+    <p>
+      {{ form.department.label_tag }} {{ form.department }}
+      <span class="helptext">{{ form.department.help_text }}</span>
+      {{ form.department.errors }}
+    </p>
+    <p>
+      {{ form.email.label_tag }} {{ form.email }}
+      {{ form.email.errors }}
+    </p>
+    <p>
+      {{ form.notes.label_tag }} {{ form.notes }}
+      <span class="helptext">{{ form.notes.help_text }}</span>
+      {{ form.notes.errors }}
+    </p>
+    <p class="check-row">
+      {{ form.responds_well }}
+      <label for="{{ form.responds_well.id_for_label }}" style="display:inline">Runs well ✅</label>
+      <span class="helptext">{{ form.responds_well.help_text }}</span>
+      {{ form.responds_well.errors }}
+    </p>
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">{% if contact %}Save contact{% else %}Record contact{% endif %}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:content' %}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

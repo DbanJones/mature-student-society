@@ -38,7 +38,7 @@ urlpatterns = [
         "home", "about", "wellbeing", "policies", "winter_ball",
     ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
-    path("faq/", include(_stub_patterns("faq", ["index", "contacts"]))),
+    path("faq/", include(_stub_patterns("faq", ["index", "contacts", "colleges", "departments"]))),
     path("me/", include(_stub_patterns("dashboard", ["home"]))),
     path("admin/", include(_stub_patterns("panel", ["home"]))),
     path("members/", include(([
@@ -388,3 +388,38 @@ class RestaurantCreationTests(EventTestCase):
         self.assertFalse(Restaurant.objects.filter(name="Should Not Exist").exists())
         event = Event.objects.get(title="Pub night with stray restaurant")
         self.assertIsNone(event.restaurant)
+
+
+class AdditiveFilterTests(EventTestCase):
+    """Calendar tag pills combine: ?cat=a&cat=b shows events from both."""
+
+    def setUp(self):
+        self.supper_event = Event.objects.create(
+            title="Supper filter target", category=self.supper_category,
+            start=timezone.now() + datetime.timedelta(days=5),
+            created_by=self.creator,
+        )
+
+    def test_single_filter_still_works(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "pub-nights"})
+        self.assertContains(response, "Public pub night")
+        self.assertNotContains(response, "Supper filter target")
+
+    def test_filters_are_additive(self):
+        response = self.client.get(
+            reverse("events:calendar"), {"cat": ["pub-nights", "supper-club"]}
+        )
+        self.assertContains(response, "Public pub night")
+        self.assertContains(response, "Supper filter target")
+
+    def test_legacy_comma_links_still_work(self):
+        response = self.client.get(
+            reverse("events:calendar"), {"cat": "pub-nights,supper-club"}
+        )
+        self.assertContains(response, "Public pub night")
+        self.assertContains(response, "Supper filter target")
+
+    def test_unknown_slug_ignored(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "not-a-tag"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Public pub night")  # no filter applied

@@ -34,6 +34,36 @@
         Wrong door? Use the <a href="{% url 'faq:contacts' %}">who-to-contact map</a>.
       </p>
     </div>
+
+    <div class="card">
+      <h2>📇 Recorded contacts</h2>
+      <p class="small muted" style="margin-bottom:.6rem">
+        Addresses the committee has collected — ✅ marks offices members
+        report as running well (quick, helpful replies).
+      </p>
+      {% if contacts %}
+        <ul class="dept-contacts">
+          {% for contact in contacts %}
+            <li>
+              <strong>{{ contact.department }}</strong>
+              {% if contact.responds_well %}<span class="badge badge-ok" title="Members report quick, helpful replies">✅ runs well</span>{% endif %}
+              <br><a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+              {% if contact.notes %}<br><span class="small muted">{{ contact.notes }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted small" style="margin:0">
+          Nothing recorded for this School yet
+          {% if can_edit %} — you're an admin, add the first one below{% endif %}.
+        </p>
+      {% endif %}
+      {% if can_edit %}
+        <p style="margin:.8rem 0 0">
+          <a class="btn btn-small btn-ghost" href="{% url 'panel:dept_contact_add' %}?school={{ slug }}">+ Record a contact</a>
+        </p>
+      {% endif %}
+    </div>
     <div class="card">
       <h2>✅ Verify with your own department</h2>
       <p style="margin:0">{{ info.verify }}</p>

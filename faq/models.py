@@ -1,4 +1,5 @@
-"""The who-to-contact decision map, stored as an editable tree.
+"""The who-to-contact decision map, stored as an editable tree, plus the
+committee's recorded departmental contacts.
 
 Admins add/edit/delete nodes from the panel; the public page renders the
 tree both as an interactive flow and as a hierarchy diagram. A node is
@@ -6,6 +7,7 @@ either a QUESTION (has children reached via its option label) or a RESULT
 (who to contact, what to do, when to escalate, what to keep).
 """
 
+from django.conf import settings
 from django.db import models
 
 
@@ -139,3 +141,50 @@ class ContactNode(models.Model):
             "q": self.question,
             "children": [child.as_dict(user) for child in self.children.all()],
         }
+
+
+def _school_choices():
+    from .data import DEPARTMENTS_INFO
+    return [(slug, info["name"]) for slug, info in DEPARTMENTS_INFO.items()]
+
+
+class DepartmentContact(models.Model):
+    """A departmental email address the committee has recorded as worth
+    keeping — especially offices that actually answer.
+
+    Shown on the matching School's department page; managed by admins from
+    the panel's Content tab.
+    """
+
+    school = models.CharField(
+        max_length=30, choices=_school_choices,
+        help_text="Which School's page this contact appears on.",
+    )
+    department = models.CharField(
+        max_length=120,
+        help_text="e.g. 'Faculty of History — Undergraduate Office'.",
+    )
+    email = models.EmailField()
+    notes = models.CharField(
+        max_length=250, blank=True,
+        help_text="What they handle / when to use this address, e.g. "
+                  "'timetable clashes and submission extensions'.",
+    )
+    responds_well = models.BooleanField(
+        "runs well",
+        default=False,
+        help_text="Tick for offices members report as quick and helpful — "
+                  "they get a ✅ on the public page.",
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="department_contacts_added",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["school", "-responds_well", "department"]
+        unique_together = [("school", "department")]
+
+    def __str__(self):
+        return f"{self.department} <{self.email}>"

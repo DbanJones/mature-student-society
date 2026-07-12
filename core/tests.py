@@ -134,8 +134,8 @@ class TabVisibilityAndPagesTests(TestCase):
             college="darwin", mobile="+44 7700 900002", is_portal_admin=True,
         )
 
-    NAV_SUPPER = ">Supper Club</a>"
-    NAV_BALL = ">Winter Ball</a>"
+    NAV_SUPPER = "Supper Club</a>"
+    NAV_BALL = "Winter Ball</a>"
 
     def test_hidden_tab_disappears_for_members_but_not_admins(self):
         self.config.tab_visibility = {"supper": "admins"}
