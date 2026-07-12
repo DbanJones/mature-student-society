@@ -112,5 +112,32 @@ event's creator for that event's attendees (the WhatsApp-group export).
   deliverability and unsubscribe handling stay Mailman's job.
 - **SQLite locally / Postgres on SRCF** via `DB_ENGINE`; no ORM features that
   differ between them.
-- Markdown from members is HTML-escaped before rendering (core/templatetags/
-  md.py) — no raw HTML, no XSS, at the cost of blockquote syntax.
+- **Member Markdown is triple-guarded** (core/templatetags/md.py): the source
+  is HTML-escaped, rendered with a conservative extension set that excludes
+  `attr_list` (which would allow attribute/event-handler injection), then run
+  through a dependency-free allow-list sanitizer that keeps only formatting
+  tags and drops any `href` that isn't http/https/mailto. Headings, lists,
+  links, blockquotes, tables and code survive; scripts and `javascript:` URIs
+  do not.
+
+## Security review
+
+The codebase went through an adversarial multi-agent review (permissions,
+stored XSS, auth, admin self-harm, correctness). All confirmed findings were
+fixed; see the "Security & correctness fixes" commit. Highlights: closed a
+stored-XSS vector via Markdown `attr_list`; made supper-club score
+aggregation viewer-aware so members-only/cancelled visits never leak into
+public scores; row-locked waitlist approval; made the one-time WhatsApp
+reveal race-safe with an atomic conditional update. Regression tests cover
+each.
+
+## Known limitations / deferred
+
+- **Supper leaderboard N+1**: the leaderboard and homepage call
+  `rating_summary()` once per restaurant (~4 queries each). Fine at society
+  scale (tens of restaurants); would want a single grouped annotation if the
+  list ever grew into the hundreds.
+- **WhatsApp** integration is necessarily link-based (share deep-links,
+  one-time invite, number export) — there is no group API to automate joins.
+- **Bulk email** goes to the Mailman list, not per-member sends, so
+  unsubscribe/deliverability stay Mailman's responsibility.
