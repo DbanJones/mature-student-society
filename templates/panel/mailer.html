@@ -33,7 +33,18 @@
   <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit" class="btn btn-accent">Send mailer</button>
+    <div class="actions">
+      <button type="submit" name="action" value="ai_draft" class="btn btn-ghost"
+              {% if not site_config.email_api_key %}disabled title="Set an AI API key on the Super admin tab first"{% endif %}>
+        ✨ Draft with AI
+      </button>
+      <button type="submit" name="action" value="send" class="btn btn-accent">Send mailer</button>
+    </div>
+    <p class="small muted" style="margin:.5rem 0 0">
+      “Draft with AI” rewrites the body above in the society’s tone using
+      {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %} —
+      events, dates and links are kept exactly; you review before sending.
+    </p>
   </form>
 </div>
 

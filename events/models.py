@@ -181,7 +181,10 @@ class Event(models.Model):
 
     def build_slug(self):
         """'Winter Ball' on 12 Dec 2026 → 'winter-ball-12-dec-2026' (de-duped)."""
-        date_part = timezone.localtime(self.start).strftime("%-d-%b-%Y").lower()
+        # Format the day without a leading zero portably: the strftime "%-d"
+        # flag is glibc-only and raises on Windows, so build it from .day.
+        local_start = timezone.localtime(self.start)
+        date_part = f"{local_start.day}-{local_start:%b-%Y}".lower()
         base = slugify(f"{self.title} {date_part}")[:170] or f"event-{date_part}"
         slug, n = base, 2
         while slug in self.RESERVED_SLUGS or (

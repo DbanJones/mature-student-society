@@ -79,8 +79,15 @@ Docs: https://docs.srcf.net/tutorials/websites/deploy-a-web-app/
 
 ```bash
 #!/bin/bash
+# Fail loudly rather than booting gunicorn with a half-loaded environment.
+# The app itself refuses to start in a production auth mode (RAVEN_MODE!=dev)
+# unless DJANGO_DEBUG=false and a real DJANGO_SECRET_KEY are set; this wrapper
+# additionally guarantees .env was actually read before that check runs.
+set -euo pipefail
 cd /societies/<soc>/portal
+[ -r .env ] || { echo "run.sh: .env missing or unreadable" >&2; exit 1; }
 set -a; source .env; set +a
+.venv/bin/python manage.py check          # aborts the boot on unsafe config
 exec .venv/bin/gunicorn -w 2 \
   -b unix:/societies/<soc>/portal/web.sock \
   --log-file - config.wsgi:application
@@ -114,6 +121,7 @@ sudo -Hu <soc> XDG_RUNTIME_DIR=/run/user/$(id -u <soc>) systemctl --user enable 
 ```bash
 cd /societies/<soc>/portal
 set -a; source .env; set +a
+.venv/bin/python manage.py check --deploy   # prod-hardening warnings; refuses on unsafe config
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo --categories-only   # event categories only, no demo data
 .venv/bin/python manage.py createsuperuser               # Django admin at /dj-admin/
@@ -217,8 +225,10 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
    create a personal registration, ask your college Computer Officer or
    servicedesk@uis.cam.ac.uk to sponsor one. Client secrets last at most
    24 months — **diarise rotation**.
-2. `pip install mozilla-django-oidc`, then configure (settings already read
-   `RAVEN_OIDC_*` style env vars — wire per the library docs):
+2. `pip install mozilla-django-oidc`, then **wire it up in code** — this is
+   NOT yet implemented: `RAVEN_MODE=oidc` is currently a no-op, and the repo
+   has no OIDC config, `/oidc/callback/` route, or `RAVEN_OIDC_*` reader. You
+   will need to add all of that per the library docs:
    - discovery: `https://login.microsoftonline.com/49a50445-bdfa-4b79-ade3-547b4f3986e9/v2.0/.well-known/openid-configuration`
    - scopes: `openid profile email`
    - Map the username from the `upn` / `preferred_username` claim. Derive the
@@ -245,6 +255,11 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 2. Assign the domain to the society account in https://control.srcf.net.
 3. Opt in to Let's Encrypt via the form at https://srcf-admin.soc.srcf.net
    once DNS resolves. Docs: https://docs.srcf.net/reference/web-hosting/custom-domains/
+4. **Only after** HTTPS is confirmed working on the live domain, enable HSTS by
+   adding `DJANGO_HSTS_SECONDS=31536000` to `.env` and reloading. This clears
+   the `security.W004` warning; do it last because HSTS is hard to undo if the
+   certificate ever lapses (Django's own caution). `DJANGO_SSL_REDIRECT=true`
+   is optional — SRCF's Apache already redirects http→https.
 
 ## 11. Housekeeping
 

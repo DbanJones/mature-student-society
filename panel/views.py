@@ -23,7 +23,7 @@ from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
-from . import services
+from . import ai, services
 from .forms import (
     ContactNodeForm,
     DepartmentContactForm,
@@ -349,6 +349,9 @@ def member_toggle_mute(request, pk):
     if member == request.user:
         messages.error(request, "You cannot mute yourself.")
         return _redirect_back(request, fallback="panel:messages")
+    if member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be muted — demote them first.")
+        return _redirect_back(request, fallback="panel:messages")
     member.can_send_messages = not member.can_send_messages
     member.save(update_fields=["can_send_messages"])
     action = "unmute_messages" if member.can_send_messages else "mute_messages"
@@ -369,6 +372,8 @@ def member_ban(request, pk):
     member = get_object_or_404(User, pk=pk)
     if member == request.user:
         messages.error(request, "You cannot ban yourself.")
+    elif member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be banned — demote them first.")
     elif member.is_banned:
         messages.info(request, f"{_display_name(member)} is already banned.")
     else:
@@ -401,6 +406,9 @@ def member_delete(request, pk):
     member = get_object_or_404(User, pk=pk)
     if member == request.user:
         messages.error(request, "You cannot delete your own account from the panel.")
+        return redirect("panel:members")
+    if member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be deleted — demote them first.")
         return redirect("panel:members")
 
     # Deleting a member cascades through the events they created: every RSVP
@@ -1051,7 +1059,36 @@ def mailer(request):
 
     if request.method == "POST":
         form = MailerForm(request.POST)
-        if form.is_valid():
+        if form.is_valid() and request.POST.get("action") == "ai_draft":
+            # Rewrite the current draft with AI and re-render for review — do
+            # NOT send. Keeps whatever the admin has edited into recipient/
+            # subject, and only replaces the body.
+            if not config.email_api_key:
+                messages.error(
+                    request, "Add an AI API key on the Super admin tab first."
+                )
+            else:
+                try:
+                    new_body = services.ai_draft_mailer(
+                        config, form.cleaned_data["subject"], form.cleaned_data["body"]
+                    )
+                except ai.AIDraftError as exc:
+                    messages.error(request, f"AI drafting failed: {exc}")
+                else:
+                    AuditLog.record(
+                        request.user, "ai_draft_mailer",
+                        detail=f"engine={config.email_ai_engine}",
+                    )
+                    messages.success(
+                        request, "Draft rewritten by AI — review it before sending."
+                    )
+                    form = MailerForm(initial={
+                        "recipient": form.cleaned_data["recipient"],
+                        "subject": form.cleaned_data["subject"],
+                        "body": new_body,
+                    })
+            # fall through to render with the (re-drafted or unchanged) form
+        elif form.is_valid():
             recipient = form.cleaned_data["recipient"]
             subject = form.cleaned_data["subject"][:200]
             body = form.cleaned_data["body"]

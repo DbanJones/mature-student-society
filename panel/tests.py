@@ -7,6 +7,7 @@ parallel. Stub routes provide every URL name that base.html references.
 """
 
 import datetime
+import json
 import sys
 import types
 from unittest import mock
@@ -19,8 +20,9 @@ from django.urls import include, path, reverse
 from django.utils import timezone
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
+from core.models import SiteConfig
 from events.models import Category, Event
-from panel import services
+from panel import ai, services
 from panel.models import AuditLog, MailLog
 
 User = get_user_model()
@@ -280,6 +282,39 @@ class MemberManagementTests(PanelTestCase):
         self.admin.refresh_from_db()
         self.assertFalse(self.admin.is_banned)
 
+    def _other_admin(self):
+        return User.objects.create_user(
+            username="adm3", password="pw", email="adm3@cam.ac.uk", crsid="adm3",
+            first_name="Otto", last_name="Admin", college="darwin",
+            mobile="+44 7700 900004", is_portal_admin=True,
+        )
+
+    def test_admin_cannot_ban_another_admin(self):
+        # A portal admin must be demoted before they can be banned, mirroring
+        # the shadow-ban rule — otherwise a rogue admin can lock out peers/the
+        # super admin (whose Raven login the ban would also block).
+        target = self._other_admin()
+        self.client.post(reverse("panel:member_ban", args=[target.pk]))
+        target.refresh_from_db()
+        self.assertFalse(target.is_banned)
+        self.assertTrue(target.is_active)
+        self.assertFalse(AuditLog.objects.filter(action="ban").exists())
+
+    def test_admin_cannot_delete_another_admin(self):
+        target = self._other_admin()
+        response = self.client.post(
+            reverse("panel:member_delete", args=[target.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(User.objects.filter(pk=target.pk).exists())
+        self.assertFalse(AuditLog.objects.filter(action="delete_user").exists())
+
+    def test_admin_cannot_mute_another_admin(self):
+        target = self._other_admin()
+        self.client.post(reverse("panel:member_toggle_mute", args=[target.pk]))
+        target.refresh_from_db()
+        self.assertTrue(target.can_send_messages)
+
     def test_reset_whatsapp_link(self):
         self.member.whatsapp_link_viewed_at = timezone.now()
         self.member.save(update_fields=["whatsapp_link_viewed_at"])
@@ -399,6 +434,7 @@ class MailerTests(PanelTestCase):
             "recipient": "soc-mss-members@srcf.net",
             "subject": "MSS: What's On — test",
             "body": "Hello all,\n\nNothing this week.",
+            "action": "send",
         })
         self.assertRedirects(response, reverse("panel:mailer"))
         self.assertEqual(len(mail.outbox), 1)
@@ -411,3 +447,97 @@ class MailerTests(PanelTestCase):
         self.assertTrue(
             AuditLog.objects.filter(actor=self.admin, action="send_mailer").exists()
         )
+
+
+class MailerAIDraftTests(PanelTestCase):
+    """The 'Draft with AI' button rewrites the body without sending."""
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        config = SiteConfig.get()
+        config.email_api_key = "sk-test-key"
+        config.email_ai_engine = "anthropic"
+        config.email_tone = "Warm and plain English."
+        config.save()
+
+    def _draft(self, **extra):
+        data = {
+            "recipient": "soc-mss-members@srcf.net",
+            "subject": "MSS: What's On — test",
+            "body": "Hello all,\n\nPub night on Friday.",
+            "action": "ai_draft",
+        }
+        data.update(extra)
+        return self.client.post(reverse("panel:mailer"), data)
+
+    def test_ai_draft_replaces_body_logs_and_sends_nothing(self):
+        with mock.patch(
+            "panel.ai.draft_email", return_value="Hi everyone — pub night Friday!"
+        ) as draft:
+            response = self._draft()
+        self.assertEqual(response.status_code, 200)
+        # The configured engine and key are passed through to the dispatcher.
+        engine, key = draft.call_args.args[0], draft.call_args.args[1]
+        self.assertEqual(engine, "anthropic")
+        self.assertEqual(key, "sk-test-key")
+        # New body shown for review; nothing emailed; action audited.
+        self.assertContains(response, "Hi everyone — pub night Friday!")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(MailLog.objects.exists())
+        self.assertTrue(
+            AuditLog.objects.filter(actor=self.admin, action="ai_draft_mailer").exists()
+        )
+
+    def test_ai_draft_without_key_errors_and_does_not_call_engine(self):
+        config = SiteConfig.get()
+        config.email_api_key = ""
+        config.save()
+        with mock.patch("panel.ai.draft_email") as draft:
+            response = self._draft()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(draft.called)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(
+            AuditLog.objects.filter(action="ai_draft_mailer").exists()
+        )
+
+    def test_ai_draft_failure_preserves_the_draft(self):
+        with mock.patch("panel.ai.draft_email", side_effect=ai.AIDraftError("boom")):
+            response = self._draft()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pub night on Friday.")  # original kept
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class AIDispatchTests(TestCase):
+    """Unit tests for the provider dispatch layer (no network)."""
+
+    def test_unknown_engine_raises(self):
+        with self.assertRaises(ai.AIDraftError):
+            ai.draft_email("not-an-engine", "sk", "system", "user")
+
+    def test_blank_key_raises(self):
+        with self.assertRaises(ai.AIDraftError):
+            ai.draft_email("openai", "   ", "system", "user")
+
+    def _fake_urlopen(self, payload):
+        cm = mock.MagicMock()
+        cm.__enter__.return_value.read.return_value = json.dumps(payload).encode("utf-8")
+        return cm
+
+    def test_openai_shape_parses_content(self):
+        payload = {"choices": [{"message": {"content": "  Drafted email.  "}}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_urlopen(payload)):
+            out = ai.draft_email("deepseek", "sk", "system", "user")
+        self.assertEqual(out, "Drafted email.")
+
+    def test_anthropic_shape_parses_first_text_block(self):
+        payload = {"content": [{"type": "text", "text": "Claude draft."}]}
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_urlopen(payload)):
+            out = ai.draft_email("anthropic", "sk", "system", "user")
+        self.assertEqual(out, "Claude draft.")
+
+    def test_unexpected_response_raises(self):
+        with mock.patch("urllib.request.urlopen", return_value=self._fake_urlopen({"nope": 1})):
+            with self.assertRaises(ai.AIDraftError):
+                ai.draft_email("openai", "sk", "system", "user")
