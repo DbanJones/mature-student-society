@@ -1,0 +1,148 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Super admin{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Super admin</h1>
+    <p class="muted">
+      Webmaster controls: who is an admin, the society's tags and their
+      owners, and the email settings. Every change is audit-logged.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    <div class="card">
+      <h2>Society admins</h2>
+      <p class="small muted">
+        Admins can approve members, manage events and messages, and send the
+        mailer. Only you (the super admin) can appoint or remove them.
+      </p>
+      <table class="data">
+        <thead><tr><th>Admin</th><th></th></tr></thead>
+        <tbody>
+          {% for admin in admins %}
+            <tr>
+              <td>
+                <strong>{{ admin.get_full_name|default:admin.username }}</strong>
+                {% if admin.is_super_admin %}<span class="badge badge-official">Super admin</span>{% endif %}
+                <br><span class="small muted">{{ admin.email }}</span>
+              </td>
+              <td>
+                {% if admin != user %}
+                  <form method="post" action="{% url 'panel:member_toggle_admin' admin.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-danger">Remove admin</button>
+                  </form>
+                {% else %}
+                  <span class="small muted">that's you</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:1.2rem">Appoint a new admin</h3>
+      <form method="post" action="" class="filter-bar" id="appoint-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <select name="member" aria-label="Member to promote" id="appoint-select">
+          <option value="">Choose a member…</option>
+          {% for member in non_admins %}
+            <option value="{{ member.pk }}">{{ member.get_full_name|default:member.username }}{% if member.college %} ({{ member.get_college_display }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-small">Make admin</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Email settings</h2>
+      <p class="small muted">
+        The API key is stored server-side and only ever shown masked
+        {% if config.email_api_key %}(current: <code>{{ config.email_api_key_hint }}</code>){% else %}(none saved yet){% endif %}.
+        The tone-of-voice brief appears alongside the mailer so every send
+        sounds like the society.
+      </p>
+      <form method="post" action="{% url 'panel:superadmin_email' %}">
+        {% csrf_token %}
+        <p>
+          {{ email_form.email_ai_engine.label_tag }} {{ email_form.email_ai_engine }}
+          <span class="helptext">{{ email_form.email_ai_engine.help_text }}</span>
+        </p>
+        <p>
+          {{ email_form.email_api_key.label_tag }} {{ email_form.email_api_key }}
+          <span class="helptext">{{ email_form.email_api_key.help_text }}</span>
+        </p>
+        <p>
+          {{ email_form.email_tone.label_tag }} {{ email_form.email_tone }}
+          <span class="helptext">{{ email_form.email_tone.help_text }}</span>
+        </p>
+        <button type="submit" class="btn">Save email settings</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Tags</h2>
+    <p class="small muted">
+      Tags are the clubs and event types. Owners can mark their events
+      “official” and edit the tag's public page — they don't need to be site
+      admins.
+    </p>
+    <p><a class="btn btn-small btn-accent" href="{% url 'panel:tag_create' %}">Add a tag</a></p>
+    <table class="data">
+      <thead><tr><th>Tag</th><th>Owners</th><th>Events</th><th></th></tr></thead>
+      <tbody>
+        {% for tag in tags %}
+          <tr>
+            <td>
+              <span class="cat-chip" style="background-color: {{ tag.color }};">{{ tag.emoji }} {{ tag.name }}</span><br>
+              <a class="small" href="{{ tag.get_absolute_url }}">view page</a>
+            </td>
+            <td class="small">
+              {% for owner in tag.owners.all %}
+                {{ owner.get_full_name|default:owner.username }}{% if not forloop.last %}, {% endif %}
+              {% empty %}
+                <span class="muted">—</span>
+              {% endfor %}
+            </td>
+            <td>{{ tag.event_count }}</td>
+            <td>
+              <div class="row-actions">
+                <a class="btn btn-small btn-ghost" href="{% url 'panel:tag_admin_edit' tag.pk %}">Edit</a>
+                {% if not tag.event_count %}
+                  <form method="post" action="{% url 'panel:tag_delete' tag.pk %}"
+                        onsubmit="return confirm('Delete the {{ tag.name|escapejs }} tag?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var form = document.getElementById("appoint-form");
+  var select = document.getElementById("appoint-select");
+  if (!form || !select) return;
+  form.addEventListener("submit", function (e) {
+    if (!select.value) { e.preventDefault(); return; }
+    form.action = "{% url 'panel:member_toggle_admin' 0 %}".replace("/0/", "/" + select.value + "/");
+  });
+})();
+</script>
+{% endblock %}

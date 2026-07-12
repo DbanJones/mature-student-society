@@ -5,33 +5,51 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .forms import EventForm
+from .forms import EventForm, TagPageForm
 from .models import RSVP, Category, Event
 
 UPCOMING_LIMIT = 10
 UPCOMING_TOKENS = 6  # initials tokens shown per row before "+N"
 
 
-def _going_prefetch():
-    return Prefetch(
-        "rsvps",
-        queryset=RSVP.objects.filter(status=RSVP.Status.GOING).select_related("user"),
-        to_attr="going_list",
-    )
+def _going_prefetch(viewer=None):
+    """RSVPs for display. Shadow-banned attendees are hidden from everyone
+    except themselves and admins."""
+    qs = RSVP.objects.filter(status=RSVP.Status.GOING).select_related("user")
+    if viewer is None or not viewer.is_authenticated:
+        qs = qs.filter(user__is_shadow_banned=False)
+    elif not viewer.is_portal_admin:
+        qs = qs.filter(Q(user__is_shadow_banned=False) | Q(user=viewer))
+    return Prefetch("rsvps", queryset=qs, to_attr="going_list")
+
+
+def _visible_attendees(event, viewer):
+    """The GOING list, minus shadow-banned members (unless the viewer is an
+    admin or is that member)."""
+    rsvps = event.going
+    if viewer.is_authenticated and viewer.is_portal_admin:
+        return list(rsvps)
+    return [
+        r for r in rsvps
+        if not r.user.is_shadow_banned
+        or (viewer.is_authenticated and r.user == viewer)
+    ]
 
 
 def calendar_view(request):
     """Public month-grid calendar plus a 'coming up' list.
 
-    Anonymous visitors never see members_only events (Event.objects.visible_to)
-    and only see attendance counts, never names/initials.
+    Supports free-text search (?q=) across title, description, location and
+    tag, and tag filtering (?cat=). Anonymous visitors never see members_only
+    events (Event.objects.visible_to) and only see attendance counts, never
+    names/initials.
     """
     today = timezone.localdate()
     try:
@@ -42,6 +60,7 @@ def calendar_view(request):
     if not (1 <= month <= 12 and 1970 <= year <= 2100):
         year, month = today.year, today.month
 
+    q = request.GET.get("q", "").strip()
     categories = list(Category.objects.all())
     cat_slug = request.GET.get("cat", "")
     active_category = next((c for c in categories if c.slug == cat_slug), None)
@@ -52,10 +71,13 @@ def calendar_view(request):
     visible = Event.objects.visible_to(request.user).select_related("category")
     if active_category:
         visible = visible.filter(category=active_category)
+    if q:
+        visible = visible.search(q)
 
+    # Official events lead each day's cell, then the rest chronologically.
     month_events = visible.filter(
         start__date__gte=grid_start, start__date__lte=grid_end
-    ).order_by("start")
+    ).order_by("-is_official", "start")
     by_day = {}
     for event in month_events:
         by_day.setdefault(timezone.localtime(event.start).date(), []).append(event)
@@ -76,7 +98,7 @@ def calendar_view(request):
     upcoming = list(
         visible.filter(start__gte=timezone.now())
         .order_by("-is_official", "start")
-        .prefetch_related(_going_prefetch())[:UPCOMING_LIMIT]
+        .prefetch_related(_going_prefetch(request.user))[:UPCOMING_LIMIT]
     )
     for event in upcoming:
         event.extra_going = max(0, len(event.going_list) - UPCOMING_TOKENS)
@@ -91,26 +113,47 @@ def calendar_view(request):
         "categories": categories,
         "active_category": active_category,
         "upcoming": upcoming,
-        "prev_query": _month_query(prev_year, prev_month, cat_slug),
-        "next_query": _month_query(next_year, next_month, cat_slug),
-        "today_query": f"?cat={cat_slug}" if active_category else "",
+        "q": q,
+        "prev_query": _month_query(prev_year, prev_month, cat_slug, q),
+        "next_query": _month_query(next_year, next_month, cat_slug, q),
+        "today_query": _month_query(today.year, today.month, cat_slug, q),
         "is_current_month": (year, month) == (today.year, today.month),
     })
 
 
-def _month_query(year, month, cat_slug):
+def _month_query(year, month, cat_slug, q=""):
     query = f"?y={year}&m={month}"
-    return f"{query}&cat={cat_slug}" if cat_slug else query
+    if cat_slug:
+        query += f"&cat={cat_slug}"
+    if q:
+        from urllib.parse import quote_plus
+        query += f"&q={quote_plus(q)}"
+    return query
 
 
-def detail(request, pk):
+def detail_by_pk(request, pk):
+    """Permanent redirect from the old /events/<id>/ URLs to the slug form."""
+    event = get_object_or_404(Event, pk=pk)
+    return redirect(event, permanent=True)
+
+
+def detail(request, slug):
     event = get_object_or_404(
-        Event.objects.select_related("category", "created_by", "restaurant"), pk=pk
+        Event.objects.select_related(
+            "category", "created_by", "host", "restaurant"
+        ),
+        slug=slug,
     )
     if event.members_only and not request.user.is_authenticated:
         raise Http404("No event found.")
+    if (
+        event.created_by.is_shadow_banned
+        and request.user != event.created_by
+        and not (request.user.is_authenticated and request.user.is_portal_admin)
+    ):
+        raise Http404("No event found.")
 
-    attendees = list(event.going)  # select_related("user") in the property
+    attendees = _visible_attendees(event, request.user)
     going_count = len(attendees)
     is_full = event.capacity is not None and going_count >= event.capacity
     spots_left = (
@@ -158,10 +201,15 @@ def _ratings_map():
 
 @login_required
 def create(request):
-    form = EventForm(request.POST or None, user=request.user, is_create=True)
+    form = EventForm(
+        request.POST or None, request.FILES or None,
+        user=request.user, is_create=True,
+    )
     if request.method == "POST" and form.is_valid():
         event = form.save(commit=False)
         event.created_by = request.user
+        if not event.host:
+            event.host = request.user
         event.save()
         messages.success(
             request,
@@ -178,12 +226,13 @@ def create(request):
 
 
 @login_required
-def edit(request, pk):
-    event = get_object_or_404(Event.objects.select_related("category"), pk=pk)
+def edit(request, slug):
+    event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can edit it.")
     form = EventForm(
-        request.POST or None, instance=event, user=request.user, is_create=False
+        request.POST or None, request.FILES or None,
+        instance=event, user=request.user, is_create=False,
     )
     if request.method == "POST" and form.is_valid():
         form.save()  # created_by untouched: admins editing don't take ownership
@@ -199,8 +248,8 @@ def edit(request, pk):
 
 @require_POST
 @login_required
-def cancel(request, pk):
-    event = get_object_or_404(Event, pk=pk)
+def cancel(request, slug):
+    event = get_object_or_404(Event, slug=slug)
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can cancel it.")
     if not event.is_cancelled:
@@ -214,9 +263,9 @@ def cancel(request, pk):
 
 @require_POST
 @login_required
-def rsvp(request, pk):
+def rsvp(request, slug):
     """Toggle the viewer's RSVP, flipping GOING<->CANCELLED (never deleting)."""
-    event = get_object_or_404(Event, pk=pk)
+    event = get_object_or_404(Event, slug=slug)
     if event.is_cancelled:
         messages.error(request, "This event has been cancelled — RSVPs are closed.")
         return redirect(event)
@@ -246,14 +295,16 @@ def rsvp(request, pk):
 
 
 @login_required
-def export(request, pk):
+def export(request, slug):
     """Attendee names + mobiles for the organiser to build a WhatsApp group.
 
-    Mobile numbers are private: only the event's creator and portal admins may
-    see this page or the CSV.
+    Mobile numbers are private: only the event's creator/host and portal
+    admins may see this page, the CSV, or the contacts file. The ``vcf``
+    format bundles every attendee into one contacts file, so they can be
+    imported (and then added to a WhatsApp group) in one go.
     """
-    event = get_object_or_404(Event.objects.select_related("category"), pk=pk)
-    if not (request.user == event.created_by or request.user.is_portal_admin):
+    event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
+    if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can export attendees.")
 
     attendees = list(event.going.order_by("user__first_name", "user__last_name"))
@@ -276,12 +327,87 @@ def export(request, pk):
             writer.writerow([row["name"], row["college"], row["mobile"]])
         return response
 
+    if request.GET.get("format") == "vcf":
+        # One vCard per attendee with a number. Import the file into your
+        # phone's contacts, then add everyone to the WhatsApp group at once.
+        cards = []
+        for row in rows:
+            if not row["mobile"]:
+                continue
+            last, _, first = row["name"].rpartition(" ")
+            cards += [
+                "BEGIN:VCARD",
+                "VERSION:3.0",
+                f"N:{first};{last};;;" if last else f"N:{row['name']};;;;",
+                f"FN:{row['name']} (MSS)",
+                f"TEL;TYPE=CELL:{row['mobile']}",
+                "END:VCARD",
+            ]
+        response = HttpResponse(
+            "\r\n".join(cards) + "\r\n", content_type="text/vcard; charset=utf-8"
+        )
+        filename = f"{slugify(event.title) or 'event'}-attendees.vcf"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
     paste_lines = "\n".join(
         f"{row['name']} — {row['mobile'] or '—'}" for row in rows
     )
+    numbers = ", ".join(row["mobile"] for row in rows if row["mobile"])
     return render(request, "events/export.html", {
         "nav_active": "calendar",
         "event": event,
         "rows": rows,
         "paste_lines": paste_lines,
+        "numbers": numbers,
+        "with_mobile_count": sum(1 for row in rows if row["mobile"]),
+    })
+
+
+# --- tag subpages -----------------------------------------------------------------
+
+
+def tag_page(request, slug):
+    """PUBLIC. A tag's own page: blurb, owners, and its upcoming events."""
+    tag = get_object_or_404(Category, slug=slug)
+    upcoming = list(
+        Event.objects.visible_to(request.user)
+        .filter(category=tag, start__gte=timezone.now())
+        .select_related("category")
+        .prefetch_related(_going_prefetch(request.user))
+        .order_by("start")[:UPCOMING_LIMIT]
+    )
+    for event in upcoming:
+        event.extra_going = max(0, len(event.going_list) - UPCOMING_TOKENS)
+    past = (
+        Event.objects.visible_to(request.user)
+        .filter(category=tag, start__lt=timezone.now())
+        .order_by("-start")[:5]
+    )
+    return render(request, "events/tag_page.html", {
+        "nav_active": "calendar",
+        "tag": tag,
+        "owners": tag.owners.filter(is_banned=False),
+        "upcoming": upcoming,
+        "past": past,
+        "can_edit": tag.can_edit_page(request.user),
+    })
+
+
+@login_required
+def tag_edit(request, slug):
+    """Tag owners (who need not be site admins) and society admins can edit
+    the tag's page content and blurb."""
+    tag = get_object_or_404(Category, slug=slug)
+    if not tag.can_edit_page(request.user):
+        raise PermissionDenied("Only this tag's owners or an admin can edit its page.")
+    form = TagPageForm(request.POST or None, instance=tag)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"The {tag.name} page has been updated.")
+        return redirect(tag)
+    return render(request, "events/tag_form.html", {
+        "nav_active": "calendar",
+        "tag": tag,
+        "form": form,
     })

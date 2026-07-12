@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% load static md %}
+
+{% block title %}{{ tag.emoji }} {{ tag.name }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="tag-hero" style="--tag-color: {{ tag.color }};">
+  <p class="small" style="margin:0 0 .3rem"><a href="{% url 'events:calendar' %}">← What's on</a></p>
+  <h1><span class="tag-hero-emoji">{{ tag.emoji }}</span> {{ tag.name }}</h1>
+  {% if tag.description %}<p class="lede">{{ tag.description }}</p>{% endif %}
+  {% if owners %}
+    <p class="small tag-owners">
+      Run by
+      {% for owner in owners %}{% if not forloop.first %}{% if forloop.last %} and {% else %}, {% endif %}{% endif %}{% if user.is_authenticated %}<a href="{% url 'members:profile' owner.username %}">{{ owner.get_full_name|default:owner.username }}</a>{% else %}{{ owner.get_full_name|default:owner.username }}{% endif %}{% endfor %}
+    </p>
+  {% endif %}
+  {% if can_edit %}
+    <p style="margin:.6rem 0 0"><a class="btn btn-small" href="{% url 'events:tag_edit' tag.slug %}">Edit this page</a></p>
+  {% endif %}
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    {% if tag.page_content %}
+      <div class="card"><div class="prose">{{ tag.page_content|richtext }}</div></div>
+    {% elif can_edit %}
+      <div class="empty">
+        This tag doesn't have a page yet —
+        <a href="{% url 'events:tag_edit' tag.slug %}">write one</a>.
+      </div>
+    {% endif %}
+
+    {% if past %}
+      <div class="card">
+        <h2>Recently</h2>
+        <ul class="up-list">
+          {% for event in past %}
+            <li class="up-row">
+              <span class="up-date">
+                <span class="up-day">{{ event.start|date:"j" }}</span>
+                <span class="up-mon">{{ event.start|date:"M" }}</span>
+              </span>
+              <span class="up-main">
+                <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+                <span class="up-meta">{{ event.start|date:"D j M Y" }}</span>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>Coming up</h2>
+      {% if upcoming %}
+        <ul class="up-list">
+          {% for event in upcoming %}
+            <li class="up-row">
+              <span class="up-date">
+                <span class="up-day">{{ event.start|date:"j" }}</span>
+                <span class="up-mon">{{ event.start|date:"M" }}</span>
+              </span>
+              <span class="up-main">
+                {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+                <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+                <span class="up-meta">
+                  {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
+                </span>
+              </span>
+              <span class="up-going"><span class="muted small">{{ event.going_list|length }} going</span></span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Nothing scheduled just yet.
+          {% if user.is_authenticated %}<a href="{% url 'events:create' %}">Add one?</a>{% endif %}
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

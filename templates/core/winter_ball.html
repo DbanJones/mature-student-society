@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Winter Ball{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/ball.css' %}">{% endblock %}
+
+{% block main_class %}ball-main{% endblock %}
+
+{% block content %}
+<section class="ball-hero">
+  <div class="container">
+    <p class="ball-kicker">The Mature Student Society presents</p>
+    <h1 class="ball-title">The Winter Ball</h1>
+    <p class="ball-flourish" aria-hidden="true">❄ ✦ ❄</p>
+    {% if ball %}
+      <p class="ball-when">{{ ball.start|date:"l j F Y" }} · {{ ball.start|date:"H:i" }} till late</p>
+      <p class="ball-where">{{ ball.location }}</p>
+    {% else %}
+      <p class="ball-when">This December — date to be announced</p>
+      <p class="ball-where">Cambridge</p>
+    {% endif %}
+    <div class="ball-cta">
+      {% if ball %}
+        {% if user.is_authenticated %}
+          {% if is_going %}
+            <a class="btn-ball btn-ball-ghost" href="{{ ball.get_absolute_url }}">You're on the list ✓ — view your RSVP</a>
+          {% else %}
+            <a class="btn-ball" href="{{ ball.get_absolute_url }}">Reserve your place</a>
+          {% endif %}
+        {% else %}
+          <a class="btn-ball" href="{% url 'accounts:login' %}?next={{ ball.get_absolute_url|urlencode }}">Log in to reserve your place</a>
+        {% endif %}
+        {% if spots_left is not None %}
+          <p class="ball-capacity">{{ going_count }} going · {% if spots_left %}{{ spots_left }} place{{ spots_left|pluralize }} left{% else %}fully booked — email us for the waiting list{% endif %}</p>
+        {% endif %}
+      {% else %}
+        <p class="ball-capacity">Tickets open when the date is announced — watch the calendar and the What's On mailer.</p>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="ball-section container">
+  <div class="ball-intro">
+    <h2>One night, properly done</h2>
+    <p>
+      Once a year the society swaps campus cafés and pub snugs for candlelight,
+      white tablecloths and a string quartet. The Winter Ball is our flagship
+      evening: a welcome drink, a proper three-course dinner, dancing until the
+      small hours — and the rare pleasure of seeing your seminar neighbours in
+      black tie.
+    </p>
+    <p>
+      It is, emphatically, <strong>not just for students</strong>: partners are
+      warmly invited, and the timing (school-night-proof, carriages at one) is
+      chosen with families in mind.
+    </p>
+  </div>
+</section>
+
+<section class="ball-section ball-programme">
+  <div class="container">
+    <h2>The evening</h2>
+    <ol class="ball-timeline">
+      <li><span class="ball-time">19:00</span><span class="ball-what"><strong>Champagne reception</strong> — welcome drinks and canapés by the fire</span></li>
+      <li><span class="ball-time">19:45</span><span class="ball-what"><strong>Dinner is served</strong> — three courses, wine on the table, dietary needs catered</span></li>
+      <li><span class="ball-time">21:30</span><span class="ball-what"><strong>Speeches &amp; toasts</strong> — short, we promise</span></li>
+      <li><span class="ball-time">22:00</span><span class="ball-what"><strong>The band strikes up</strong> — dance floor opens, casino tables and quiet lounge alongside</span></li>
+      <li><span class="ball-time">23:30</span><span class="ball-what"><strong>Midnight fare</strong> — bacon rolls and hot chocolate for the survivors</span></li>
+      <li><span class="ball-time">01:00</span><span class="ball-what"><strong>Carriages</strong> — taxis pre-bookable at the cloakroom</span></li>
+    </ol>
+  </div>
+</section>
+
+<section class="ball-section container">
+  <div class="ball-grid">
+    <div class="ball-card">
+      <h3>Dress code</h3>
+      <p>
+        Black tie &amp; evening wear — or the nearest your wardrobe allows.
+        National dress and vintage are actively encouraged; gowns may be worn.
+        Nobody is turned away over a missing bow tie.
+      </p>
+    </div>
+    <div class="ball-card">
+      <h3>Tickets</h3>
+      <p>
+        RSVP on the portal reserves your place{% if ball and ball.capacity %} (capacity {{ ball.capacity }}){% endif %};
+        payment details follow by email. Partner tickets bought the same way —
+        just RSVP for two and note it in the form.
+      </p>
+    </div>
+    <div class="ball-card">
+      <h3>Getting home</h3>
+      <p>
+        We finish at 01:00. The cloakroom desk can pre-book taxis from 22:00,
+        and the venue is a ten-minute walk from the city-centre ranks.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="ball-section ball-faq-wrap">
+  <div class="container">
+    <h2>Questions, answered</h2>
+    <dl class="ball-faq">
+      <dt>Can I bring my partner?</dt>
+      <dd>Yes — partners and guests are a core part of the night, not an afterthought.</dd>
+      <dt>I don't dance. Is this still for me?</dt>
+      <dd>The quiet lounge and casino tables are open all night, and the dinner alone is worth the ticket.</dd>
+      <dt>What about dietary requirements?</dt>
+      <dd>The menu covers vegetarian, vegan, gluten-free and halal as standard; a form circulates two weeks before the night for anything else.</dd>
+      <dt>Is there parking?</dt>
+      <dd>Limited blue-badge parking at the venue — email us and we'll reserve a space. Otherwise the Grand Arcade car park is open all night.</dd>
+      <dt>I can no longer make it — can I get a refund?</dt>
+      <dd>Full refunds up to a fortnight before; after that we'll offer your place to the waiting list first.</dd>
+    </dl>
+    <p class="ball-contact">
+      Anything else? Write to <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
+      — or ask in the Open Forum.
+    </p>
+  </div>
+</section>
+{% endblock %}

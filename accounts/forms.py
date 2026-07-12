@@ -58,15 +58,33 @@ class ProfileForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "college", "mobile", "email", "photo"]
+        fields = [
+            "first_name", "last_name", "college", "course", "bio",
+            "talk_to_me_about", "work", "interests",
+            "mobile", "email", "photo",
+        ]
         labels = {
+            "course": "What you're studying",
+            "bio": "About me",
+            "talk_to_me_about": "Talk to me about…",
+            "work": "Work",
+            "interests": "Interests",
             "mobile": "Mobile number",
             "photo": "Profile photo (optional)",
         }
         help_texts = {
+            "course": "e.g. 'MPhil History of Science' — shown on your profile.",
+            "bio": "A few sentences for your member profile (optional).",
+            "talk_to_me_about": "The easiest icebreaker on your profile — "
+                                "give people an opening (optional).",
+            "work": "What you do or did before Cambridge (optional).",
+            "interests": "Comma-separated is fine (optional).",
             "mobile": "Only visible to society admins and to the organisers of "
                       "events you RSVP to — never to other members.",
             "photo": f"JPEG/PNG, up to {settings.MAX_UPLOAD_SIZE_MB} MB.",
+        }
+        widgets = {
+            "bio": forms.Textarea(attrs={"rows": 4}),
         }
 
     def __init__(self, *args, **kwargs):

@@ -15,3 +15,16 @@ def portal_admin_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+def super_admin_required(view_func):
+    """Allow only the super admin(s) (User.is_super_admin) through."""
+
+    @login_required
+    @functools.wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_super_admin:
+            raise PermissionDenied("Super admin access required.")
+        return view_func(request, *args, **kwargs)
+
+    return wrapper

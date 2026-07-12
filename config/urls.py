@@ -8,7 +8,10 @@ urlpatterns = [
     path("accounts/", include("accounts.urls")),
     path("events/", include("events.urls")),
     path("guide/", include("guide.urls")),
+    path("faq/", include("faq.urls")),
     path("supper-club/", include("supper.urls")),
+    path("members/", include("accounts.member_urls")),
+    path("messages/", include("inbox.urls")),
     path("me/", include("dashboard.urls")),
     path("admin/", include("panel.urls")),
     # Django's low-level admin, superuser only; the society-facing admin panel

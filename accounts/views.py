@@ -7,8 +7,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -220,6 +221,74 @@ class PasswordChangeView(auth_views.PasswordChangeView):
     def form_valid(self, form):
         messages.success(self.request, "Password changed.")
         return super().form_valid(form)
+
+
+# --- Member directory & profiles -------------------------------------------------
+
+
+def _members_visible_to(viewer):
+    """Members shown in the directory: not banned, profile complete enough to
+    be recognisable. Shadow-banned members appear only to admins (and to
+    themselves, so nothing looks amiss)."""
+    qs = User.objects.filter(is_banned=False).exclude(first_name="")
+    if not viewer.is_portal_admin:
+        qs = qs.filter(Q(is_shadow_banned=False) | Q(pk=viewer.pk))
+    return qs
+
+
+@login_required
+def member_directory(request):
+    q = request.GET.get("q", "").strip()
+    members_qs = _members_visible_to(request.user)
+    if q:
+        members_qs = members_qs.filter(
+            Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(course__icontains=q)
+            | Q(college__icontains=q)
+            | Q(work__icontains=q)
+            | Q(interests__icontains=q)
+            | Q(talk_to_me_about__icontains=q)
+        )
+    return render(request, "members/directory.html", {
+        "nav_active": "members",
+        "members": members_qs.order_by("first_name", "last_name"),
+        "q": q,
+    })
+
+
+@login_required
+def member_profile(request, username):
+    member = get_object_or_404(
+        _members_visible_to(request.user) | User.objects.filter(
+            pk=request.user.pk
+        ),
+        username=username,
+    )
+    from events.models import RSVP, Event
+
+    now = timezone.now()
+    hosting = (
+        Event.objects.visible_to(request.user)
+        .filter(Q(host=member) | Q(created_by=member, host__isnull=True),
+                start__gte=now)
+        .select_related("category")
+        .order_by("start")[:6]
+    )
+    attended_count = RSVP.objects.filter(
+        user=member, status=RSVP.Status.GOING,
+        event__start__lt=now, event__is_cancelled=False,
+    ).count()
+
+    return render(request, "members/profile.html", {
+        "nav_active": "members",
+        "member": member,
+        "hosting": hosting,
+        "attended_count": attended_count,
+        "hosted_count": member.events_created.filter(is_cancelled=False).count(),
+        "tags_owned": member.tags_owned.all(),
+        "is_self": member == request.user,
+    })
 
 
 # --- Associate waitlist ---------------------------------------------------------

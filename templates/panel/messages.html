@@ -1,0 +1,100 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Message moderation{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Message moderation</h1>
+    <p class="muted">
+      {{ page.paginator.count }} message{{ page.paginator.count|pluralize }} matching.
+      Members are told their messages may be reviewed. Removing a message
+      leaves a tombstone in the thread; muting stops a member sending at all.
+    </p>
+  </div>
+</div>
+
+<form method="get" class="card filter-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search sender, recipient or text"
+         aria-label="Search messages">
+  <button type="submit" class="btn btn-small">Search</button>
+  {% if q %}<a class="btn btn-small btn-ghost" href="{% url 'panel:messages' %}">Clear</a>{% endif %}
+</form>
+
+{% if muted %}
+  <div class="flash flash-warning" style="margin-top:1rem">
+    Currently muted:
+    {% for member in muted %}
+      {{ member.get_full_name|default:member.username }}{% if not forloop.last %}, {% endif %}
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if page.object_list %}
+  <div class="table-scroll" style="margin-top:1rem">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>From → To</th>
+          <th>Message</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for dm in page.object_list %}
+          <tr {% if dm.is_removed %}class="row-removed"{% endif %}>
+            <td class="small muted">{{ dm.created_at|date:"j M, H:i" }}</td>
+            <td class="small">
+              {{ dm.sender.get_full_name|default:dm.sender.username }}
+              {% if dm.sender.is_shadow_banned %}<span class="badge badge-danger">shadow</span>{% endif %}
+              {% if not dm.sender.can_send_messages %}<span class="badge badge-danger">muted</span>{% endif %}
+              →<br>{{ dm.recipient.get_full_name|default:dm.recipient.username }}
+            </td>
+            <td class="small" style="max-width:26rem">
+              {% if dm.is_removed %}
+                <em class="muted">removed {{ dm.removed_at|date:"j M, H:i" }} by
+                  {{ dm.removed_by.get_full_name|default:"an admin" }}</em><br>
+              {% endif %}
+              {{ dm.body|truncatechars:200 }}
+            </td>
+            <td>
+              <div class="row-actions">
+                {% if not dm.is_removed %}
+                  <form method="post" action="{% url 'panel:message_remove' dm.pk %}"
+                        onsubmit="return confirm('Remove this message from the thread?');">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-danger">Remove</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="{% url 'panel:member_toggle_mute' dm.sender.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" class="btn btn-small btn-ghost">
+                    {% if dm.sender.can_send_messages %}Mute sender{% else %}Unmute sender{% endif %}
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.has_other_pages %}
+    <div class="pager">
+      {% if page.has_previous %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>
+      {% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}">Next →</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="empty" style="margin-top:1rem">No messages match.</div>
+{% endif %}
+{% endblock %}

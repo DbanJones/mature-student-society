@@ -1,0 +1,113 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Events{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Events</h1>
+    <p class="muted">{{ page.paginator.count }} event{{ page.paginator.count|pluralize }} matching.
+      Cancel takes an event off the calendar (reversible); delete removes it and its RSVPs for good.</p>
+  </div>
+</div>
+
+<form method="get" class="card filter-bar">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search title, place, tag or description"
+         aria-label="Search events">
+  <select name="show" aria-label="Which events">
+    <option value="upcoming" {% if show == 'upcoming' %}selected{% endif %}>Upcoming</option>
+    <option value="past" {% if show == 'past' %}selected{% endif %}>Past</option>
+    <option value="cancelled" {% if show == 'cancelled' %}selected{% endif %}>Cancelled</option>
+    <option value="all" {% if show == 'all' %}selected{% endif %}>Everything</option>
+  </select>
+  <button type="submit" class="btn btn-small">Filter</button>
+  {% if q or show != 'upcoming' %}
+    <a class="btn btn-small btn-ghost" href="{% url 'panel:events' %}">Clear</a>
+  {% endif %}
+</form>
+
+{% if page.object_list %}
+  <div class="table-scroll" style="margin-top:1rem">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>When</th>
+          <th>Created by</th>
+          <th>Going</th>
+          <th>Flags</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in page.object_list %}
+          <tr>
+            <td>
+              <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span><br>
+              <a href="{{ event.get_absolute_url }}"><strong>{{ event.title }}</strong></a>
+              {% if event.location %}<br><span class="small muted">{{ event.location }}</span>{% endif %}
+            </td>
+            <td class="small">{{ event.start|date:"D j M Y, H:i" }}</td>
+            <td class="small">{{ event.created_by.get_full_name|default:event.created_by.username }}</td>
+            <td>{{ event.going_count_agg }}</td>
+            <td>
+              {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+              {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
+              {% if event.is_cancelled %}<span class="badge badge-danger">Cancelled</span>{% endif %}
+              {% if event.created_by.is_shadow_banned %}<span class="badge badge-danger">Creator shadow-banned</span>{% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <form method="post" action="{% url 'panel:event_action' event.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="action" value="toggle_official">
+                  <button type="submit" class="btn btn-small btn-ghost">
+                    {% if event.is_official %}Unmark official{% else %}Mark official{% endif %}
+                  </button>
+                </form>
+                {% if event.is_cancelled %}
+                  <form method="post" action="{% url 'panel:event_action' event.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="hidden" name="action" value="restore">
+                    <button type="submit" class="btn btn-small">Restore</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="{% url 'panel:event_action' event.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="hidden" name="action" value="cancel">
+                    <button type="submit" class="btn btn-small btn-ghost">Cancel</button>
+                  </form>
+                {% endif %}
+                <form method="post" action="{% url 'panel:event_action' event.pk %}"
+                      onsubmit="return confirm('Delete “{{ event.title|escapejs }}” and all its RSVPs permanently?');">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="action" value="delete">
+                  <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page.has_other_pages %}
+    <div class="pager">
+      {% if page.has_previous %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>
+      {% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}">Next →</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="empty" style="margin-top:1rem">No events match.</div>
+{% endif %}
+{% endblock %}

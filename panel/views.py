@@ -16,12 +16,24 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import portal_admin_required
+from accounts.decorators import portal_admin_required, super_admin_required
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
-from core.models import SiteConfig
+from core.models import SiteConfig, SitePage
+from events.models import RSVP, Category, Event
+from faq.models import ContactNode
+from inbox.models import DirectMessage
 
 from . import services
-from .forms import MailerForm, MemberEditForm
+from .forms import (
+    ContactNodeForm,
+    EmailSettingsForm,
+    MailerForm,
+    MemberEditForm,
+    SitePageForm,
+    TabVisibilityForm,
+    TagAdminForm,
+    WhatsAppSettingsForm,
+)
 from .models import AuditLog, MailLog
 
 
@@ -270,14 +282,15 @@ def member_edit(request, pk):
     })
 
 
-@portal_admin_required
+@super_admin_required
 @require_POST
 def member_toggle_admin(request, pk):
+    """Appointing and removing admins is reserved for the super admin."""
     member = get_object_or_404(User, pk=pk)
     if member == request.user and member.is_portal_admin:
         messages.error(
             request,
-            "You cannot remove your own admin access — ask another admin to do it.",
+            "You cannot remove your own admin access.",
         )
         return _redirect_back(request)
     member.is_portal_admin = not member.is_portal_admin
@@ -291,6 +304,62 @@ def member_toggle_admin(request, pk):
             request, f"{_display_name(member)} is no longer a society admin."
         )
     return _redirect_back(request)
+
+
+@portal_admin_required
+@require_POST
+def member_shadow_ban(request, pk):
+    member = get_object_or_404(User, pk=pk)
+    if member == request.user:
+        messages.error(request, "You cannot shadow-ban yourself.")
+    elif member.is_portal_admin:
+        messages.error(request, "Admins can't be shadow-banned — demote them first.")
+    elif member.is_shadow_banned:
+        messages.info(request, f"{_display_name(member)} is already shadow-banned.")
+    else:
+        member.shadow_ban()
+        AuditLog.record(request.user, "shadow_ban", target=member)
+        messages.success(
+            request,
+            f"Shadow-banned {_display_name(member)}. They can keep using the "
+            "site, but their events and messages are now invisible to everyone "
+            "else.",
+        )
+    return _redirect_back(request)
+
+
+@portal_admin_required
+@require_POST
+def member_shadow_unban(request, pk):
+    member = get_object_or_404(User, pk=pk)
+    if not member.is_shadow_banned:
+        messages.info(request, f"{_display_name(member)} is not shadow-banned.")
+    else:
+        member.shadow_unban()
+        AuditLog.record(request.user, "shadow_unban", target=member)
+        messages.success(request, f"Removed the shadow ban on {_display_name(member)}.")
+    return _redirect_back(request)
+
+
+@portal_admin_required
+@require_POST
+def member_toggle_mute(request, pk):
+    member = get_object_or_404(User, pk=pk)
+    if member == request.user:
+        messages.error(request, "You cannot mute yourself.")
+        return _redirect_back(request, fallback="panel:messages")
+    member.can_send_messages = not member.can_send_messages
+    member.save(update_fields=["can_send_messages"])
+    action = "unmute_messages" if member.can_send_messages else "mute_messages"
+    AuditLog.record(request.user, action, target=member)
+    if member.can_send_messages:
+        messages.success(request, f"{_display_name(member)} can send messages again.")
+    else:
+        messages.success(
+            request,
+            f"Muted {_display_name(member)} — they can read but not send messages.",
+        )
+    return _redirect_back(request, fallback="panel:messages")
 
 
 @portal_admin_required
@@ -393,6 +462,7 @@ def member_reset_whatsapp(request, pk):
 
 @portal_admin_required
 def whatsapp_requests(request):
+    config = SiteConfig.get()
     open_requests = (
         WhatsAppAccessRequest.objects.filter(status=WhatsAppAccessRequest.Status.OPEN)
         .select_related("user")
@@ -407,7 +477,46 @@ def whatsapp_requests(request):
         "panel_tab": "whatsapp",
         "open_requests": open_requests,
         "history": history,
+        "settings_form": WhatsAppSettingsForm(
+            initial={"whatsapp_group_link": config.whatsapp_group_link}
+        ),
+        "used_count": User.objects.filter(
+            whatsapp_link_viewed_at__isnull=False
+        ).count(),
     })
+
+
+@portal_admin_required
+@require_POST
+def whatsapp_settings(request):
+    """Update the group invite link and/or reset everyone's one-time view
+    (e.g. after WhatsApp rotates the invite)."""
+    config = SiteConfig.get()
+    form = WhatsAppSettingsForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "That doesn't look like a valid invite link.")
+        return redirect("panel:whatsapp_requests")
+
+    new_link = form.cleaned_data["whatsapp_group_link"]
+    if new_link != config.whatsapp_group_link:
+        config.whatsapp_group_link = new_link
+        config.save()
+        AuditLog.record(request.user, "update_whatsapp_link")
+        messages.success(request, "Group invite link updated.")
+
+    if request.POST.get("reset_all"):
+        reset = User.objects.filter(
+            whatsapp_link_viewed_at__isnull=False
+        ).update(whatsapp_link_viewed_at=None)
+        AuditLog.record(
+            request.user, "reset_whatsapp_all", detail=f"{reset} member(s)"
+        )
+        messages.success(
+            request,
+            f"Reset the one-time invite for {reset} member(s) — everyone can "
+            "view the link once more.",
+        )
+    return redirect("panel:whatsapp_requests")
 
 
 @portal_admin_required
@@ -448,6 +557,420 @@ def whatsapp_handle(request, pk):
     wa.handled_at = timezone.now()
     wa.save()
     return redirect("panel:whatsapp_requests")
+
+
+# --- event management -----------------------------------------------------------------
+
+@portal_admin_required
+def events_admin(request):
+    """Add, remove or ban (cancel/hide) events; toggle official status."""
+    q = request.GET.get("q", "").strip()
+    show = request.GET.get("show", "upcoming")
+    events_qs = Event.objects.select_related("category", "created_by").annotate(
+        going_count_agg=Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
+    )
+    if q:
+        events_qs = events_qs.search(q)
+    if show == "past":
+        events_qs = events_qs.filter(start__lt=timezone.now()).order_by("-start")
+    elif show == "cancelled":
+        events_qs = events_qs.filter(is_cancelled=True).order_by("-start")
+    elif show == "all":
+        events_qs = events_qs.order_by("-start")
+    else:
+        show = "upcoming"
+        events_qs = events_qs.filter(
+            start__gte=timezone.now(), is_cancelled=False
+        ).order_by("start")
+
+    page = Paginator(events_qs, 40).get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
+    return render(request, "panel/events.html", {
+        "nav_active": "panel",
+        "panel_tab": "events",
+        "page": page,
+        "q": q,
+        "show": show,
+        "qs": params.urlencode(),
+    })
+
+
+@portal_admin_required
+@require_POST
+def event_action(request, pk):
+    event = get_object_or_404(Event, pk=pk)
+    action = request.POST.get("action")
+
+    if action == "cancel":
+        event.is_cancelled = True
+        event.save(update_fields=["is_cancelled", "updated_at"])
+        AuditLog.record(request.user, "cancel_event", target=event.title)
+        messages.success(request, f"Cancelled “{event.title}” — it's off the calendar.")
+    elif action == "restore":
+        event.is_cancelled = False
+        event.save(update_fields=["is_cancelled", "updated_at"])
+        AuditLog.record(request.user, "restore_event", target=event.title)
+        messages.success(request, f"Restored “{event.title}” to the calendar.")
+    elif action == "toggle_official":
+        event.is_official = not event.is_official
+        event.save(update_fields=["is_official", "updated_at"])
+        AuditLog.record(
+            request.user,
+            "mark_official" if event.is_official else "unmark_official",
+            target=event.title,
+        )
+        messages.success(
+            request,
+            f"“{event.title}” is {'now' if event.is_official else 'no longer'} "
+            "an official society event.",
+        )
+    elif action == "delete":
+        title = event.title
+        rsvp_count = event.rsvps.count()
+        event.delete()
+        AuditLog.record(
+            request.user, "delete_event", target=title,
+            detail=f"removed with {rsvp_count} RSVPs",
+        )
+        messages.success(request, f"Deleted “{title}” and its {rsvp_count} RSVPs.")
+    else:
+        messages.error(request, "Unknown action — nothing was changed.")
+    return _redirect_back(request, fallback="panel:events")
+
+
+# --- message moderation ------------------------------------------------------------------
+
+@portal_admin_required
+def messages_admin(request):
+    """Review recent direct messages, remove abusive ones, mute senders.
+
+    Members are told (on the messages page) that admins can review message
+    traffic — this is the enforcement side of that.
+    """
+    q = request.GET.get("q", "").strip()
+    dms = DirectMessage.objects.select_related("sender", "recipient", "removed_by")
+    if q:
+        dms = dms.filter(
+            Q(sender__username__icontains=q)
+            | Q(sender__first_name__icontains=q)
+            | Q(sender__last_name__icontains=q)
+            | Q(recipient__username__icontains=q)
+            | Q(recipient__first_name__icontains=q)
+            | Q(recipient__last_name__icontains=q)
+            | Q(body__icontains=q)
+        )
+    page = Paginator(dms.order_by("-created_at"), 50).get_page(
+        request.GET.get("page")
+    )
+    params = request.GET.copy()
+    params.pop("page", None)
+
+    muted = User.objects.filter(can_send_messages=False).order_by("first_name")
+    return render(request, "panel/messages.html", {
+        "nav_active": "panel",
+        "panel_tab": "messages",
+        "page": page,
+        "q": q,
+        "qs": params.urlencode(),
+        "muted": muted,
+    })
+
+
+@portal_admin_required
+@require_POST
+def message_remove(request, pk):
+    dm = get_object_or_404(
+        DirectMessage.objects.select_related("sender", "recipient"), pk=pk
+    )
+    if dm.is_removed:
+        messages.info(request, "That message was already removed.")
+    else:
+        dm.remove(request.user)
+        AuditLog.record(
+            request.user, "remove_message",
+            target=f"{dm.sender} → {dm.recipient}",
+            detail=dm.body[:120],
+        )
+        messages.success(
+            request,
+            "Message removed — the thread shows it was removed by an admin.",
+        )
+    return _redirect_back(request, fallback="panel:messages")
+
+
+# --- content: CMS pages, tab visibility, contact map --------------------------------------
+
+@portal_admin_required
+def content(request):
+    """One tab for everything editorial: site pages, who sees which nav
+    tabs, and the who-to-contact map."""
+    config = SiteConfig.get()
+    if request.method == "POST" and "save_tabs" in request.POST:
+        tabs_form = TabVisibilityForm(request.POST, config=config)
+        if tabs_form.is_valid():
+            tabs_form.apply(config)
+            AuditLog.record(
+                request.user, "update_tab_visibility",
+                detail=str(config.tab_visibility)[:250],
+            )
+            messages.success(request, "Navigation visibility saved.")
+            return redirect("panel:content")
+    else:
+        tabs_form = TabVisibilityForm(config=config)
+
+    return render(request, "panel/content.html", {
+        "nav_active": "panel",
+        "panel_tab": "content",
+        "pages": SitePage.objects.all(),
+        "tabs_form": tabs_form,
+        "contact_node_count": ContactNode.objects.count(),
+    })
+
+
+@portal_admin_required
+def page_create(request):
+    form = SitePageForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        page = form.save(commit=False)
+        page.updated_by = request.user
+        page.save()
+        AuditLog.record(request.user, "create_page", target=page.title)
+        messages.success(
+            request, f"Created “{page.title}” at /pages/{page.slug}/."
+        )
+        return redirect("panel:content")
+    return render(request, "panel/page_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "page": None,
+    })
+
+
+@portal_admin_required
+def page_edit(request, pk):
+    page = get_object_or_404(SitePage, pk=pk)
+    form = SitePageForm(request.POST or None, instance=page)
+    if request.method == "POST" and form.is_valid():
+        page = form.save(commit=False)
+        page.updated_by = request.user
+        page.save()
+        AuditLog.record(request.user, "edit_page", target=page.title)
+        messages.success(request, f"Saved “{page.title}”.")
+        return redirect("panel:content")
+    return render(request, "panel/page_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "page": page,
+    })
+
+
+@portal_admin_required
+@require_POST
+def page_delete(request, pk):
+    page = get_object_or_404(SitePage, pk=pk)
+    title = page.title
+    page.delete()
+    AuditLog.record(request.user, "delete_page", target=title)
+    messages.success(request, f"Deleted “{title}”.")
+    return redirect("panel:content")
+
+
+# --- who-to-contact map editor --------------------------------------------------------------
+
+def _map_rows(node, depth=0):
+    rows = [(node, depth)]
+    for child in node.children.all():
+        rows += _map_rows(child, depth + 1)
+    return rows
+
+
+@portal_admin_required
+def contact_map(request):
+    root = ContactNode.get_root()
+    rows = _map_rows(root) if root else []
+    return render(request, "panel/contact_map.html", {
+        "nav_active": "panel",
+        "panel_tab": "content",
+        "rows": rows,
+        "root": root,
+    })
+
+
+@portal_admin_required
+def contact_node_add(request):
+    parent = get_object_or_404(ContactNode, pk=request.GET.get("parent")
+                               or request.POST.get("parent"))
+    form = ContactNodeForm(request.POST or None,
+                           initial={"kind": ContactNode.Kind.RESULT})
+    if request.method == "POST" and form.is_valid():
+        node = form.save(commit=False)
+        node.parent = parent
+        node.save()
+        AuditLog.record(
+            request.user, "add_contact_node", target=node.option_label,
+        )
+        messages.success(request, f"Added “{node.option_label}” to the map.")
+        return redirect("panel:contact_map")
+    return render(request, "panel/contact_node_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "node": None, "parent": parent,
+    })
+
+
+@portal_admin_required
+def contact_node_edit(request, pk):
+    node = get_object_or_404(ContactNode, pk=pk)
+    is_root = node.parent_id is None
+    form = ContactNodeForm(request.POST or None, instance=node, is_root=is_root)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        AuditLog.record(
+            request.user, "edit_contact_node",
+            target=node.option_label or node.question,
+        )
+        messages.success(request, "Contact map updated.")
+        return redirect("panel:contact_map")
+    return render(request, "panel/contact_node_form.html", {
+        "nav_active": "panel", "panel_tab": "content",
+        "form": form, "node": node, "parent": node.parent,
+    })
+
+
+@portal_admin_required
+@require_POST
+def contact_node_delete(request, pk):
+    node = get_object_or_404(ContactNode, pk=pk)
+    if node.parent_id is None:
+        messages.error(request, "The root question can't be deleted — edit it instead.")
+        return redirect("panel:contact_map")
+    label = node.option_label
+    descendant_count = len(_map_rows(node)) - 1
+    node.delete()
+    AuditLog.record(
+        request.user, "delete_contact_node", target=label,
+        detail=f"with {descendant_count} descendant node(s)",
+    )
+    messages.success(
+        request,
+        f"Deleted “{label}”"
+        + (f" and its {descendant_count} descendant node(s)." if descendant_count else "."),
+    )
+    return redirect("panel:contact_map")
+
+
+# --- super admin -------------------------------------------------------------------------
+
+@super_admin_required
+def superadmin(request):
+    """The webmaster's tab: appoint admins, manage tags & their owners, and
+    hold the email API key + tone-of-voice brief."""
+    config = SiteConfig.get()
+    admins = User.objects.filter(is_portal_admin=True).order_by("first_name")
+    non_admins = User.objects.filter(
+        is_portal_admin=False, is_banned=False
+    ).order_by("first_name")
+    tags = Category.objects.prefetch_related("owners").annotate(
+        event_count=Count("events")
+    )
+    return render(request, "panel/superadmin.html", {
+        "nav_active": "panel",
+        "panel_tab": "superadmin",
+        "admins": admins,
+        "non_admins": non_admins,
+        "tags": tags,
+        "email_form": EmailSettingsForm(initial={
+            "email_tone": config.email_tone,
+            "email_ai_engine": config.email_ai_engine,
+        }),
+        "config": config,
+    })
+
+
+@super_admin_required
+@require_POST
+def superadmin_email(request):
+    config = SiteConfig.get()
+    form = EmailSettingsForm(request.POST)
+    if form.is_valid():
+        changed = []
+        new_key = form.cleaned_data["email_api_key"].strip()
+        if new_key:
+            config.email_api_key = new_key
+            changed.append("API key")
+        if form.cleaned_data["email_ai_engine"] != config.email_ai_engine:
+            config.email_ai_engine = form.cleaned_data["email_ai_engine"]
+            changed.append(
+                f"AI engine → {form.cleaned_data['email_ai_engine']}"
+            )
+        if form.cleaned_data["email_tone"] != config.email_tone:
+            config.email_tone = form.cleaned_data["email_tone"]
+            changed.append("tone of voice")
+        if changed:
+            config.save()
+            AuditLog.record(
+                request.user, "update_email_settings", detail=", ".join(changed)
+            )
+            messages.success(request, f"Saved: {', '.join(changed)}.")
+        else:
+            messages.info(request, "Nothing changed.")
+    else:
+        messages.error(request, "Couldn't save the email settings.")
+    return redirect("panel:superadmin")
+
+
+@super_admin_required
+def tag_create(request):
+    form = TagAdminForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        tag = form.save()
+        AuditLog.record(request.user, "create_tag", target=tag.name)
+        messages.success(request, f"Created the “{tag.name}” tag.")
+        return redirect("panel:superadmin")
+    return render(request, "panel/tag_form.html", {
+        "nav_active": "panel",
+        "panel_tab": "superadmin",
+        "form": form,
+        "tag": None,
+    })
+
+
+@super_admin_required
+def tag_admin_edit(request, pk):
+    tag = get_object_or_404(Category, pk=pk)
+    form = TagAdminForm(request.POST or None, instance=tag)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        AuditLog.record(
+            request.user, "edit_tag", target=tag.name,
+            detail="owners: " + ", ".join(
+                str(u) for u in form.cleaned_data["owners"]
+            )[:250],
+        )
+        messages.success(request, f"Saved the “{tag.name}” tag.")
+        return redirect("panel:superadmin")
+    return render(request, "panel/tag_form.html", {
+        "nav_active": "panel",
+        "panel_tab": "superadmin",
+        "form": form,
+        "tag": tag,
+    })
+
+
+@super_admin_required
+@require_POST
+def tag_delete(request, pk):
+    tag = get_object_or_404(Category.objects.annotate(event_count=Count("events")), pk=pk)
+    if tag.event_count:
+        messages.error(
+            request,
+            f"“{tag.name}” still has {tag.event_count} event(s) — move or "
+            "delete them first.",
+        )
+    else:
+        name = tag.name
+        tag.delete()
+        AuditLog.record(request.user, "delete_tag", target=name)
+        messages.success(request, f"Deleted the “{name}” tag.")
+    return redirect("panel:superadmin")
 
 
 # --- statistics ----------------------------------------------------------------------

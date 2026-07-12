@@ -59,19 +59,38 @@
             <td class="small">{{ member.mobile|default:"—" }}</td>
             <td class="small muted">{{ member.created_at|date:"j M Y" }}</td>
             <td>
+              {% if member.is_super_admin %}<span class="badge badge-official">Super admin</span>{% endif %}
               {% if member.is_portal_admin %}<span class="badge badge-official">Admin</span>{% endif %}
               {% if member.is_banned %}<span class="badge badge-danger">Banned</span>{% endif %}
+              {% if member.is_shadow_banned %}<span class="badge badge-danger">Shadow-banned</span>{% endif %}
+              {% if not member.can_send_messages %}<span class="badge badge-danger">Muted</span>{% endif %}
             </td>
             <td>
               <div class="row-actions">
                 <a class="btn btn-small btn-ghost" href="{% url 'panel:member_edit' member.pk %}">Edit</a>
-                <form method="post" action="{% url 'panel:member_toggle_admin' member.pk %}">
-                  {% csrf_token %}
-                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                  <button type="submit" class="btn btn-small btn-ghost">
-                    {% if member.is_portal_admin %}Demote{% else %}Make admin{% endif %}
-                  </button>
-                </form>
+                {% if user.is_super_admin %}
+                  <form method="post" action="{% url 'panel:member_toggle_admin' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-ghost">
+                      {% if member.is_portal_admin %}Demote{% else %}Make admin{% endif %}
+                    </button>
+                  </form>
+                {% endif %}
+                {% if member.is_shadow_banned %}
+                  <form method="post" action="{% url 'panel:member_shadow_unban' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small">Lift shadow ban</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="{% url 'panel:member_shadow_ban' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-ghost"
+                            title="They keep using the site, but their events and messages become invisible to others">Shadow ban</button>
+                  </form>
+                {% endif %}
                 {% if member.is_banned %}
                   <form method="post" action="{% url 'panel:member_unban' member.pk %}">
                     {% csrf_token %}

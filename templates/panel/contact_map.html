@@ -1,0 +1,65 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Contact map editor{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:content' %}">← Site content</a></p>
+    <h1>Who-to-contact map</h1>
+    <p class="muted">
+      Questions branch; results tell people who to contact. Deleting a
+      question removes everything under it. Changes appear on the
+      <a href="{% url 'faq:contacts' %}">public page</a> immediately.
+    </p>
+  </div>
+</div>
+
+{% if not root %}
+  <div class="empty">
+    The map is empty. Re-run the seed migration, or contact the webmaster.
+  </div>
+{% else %}
+  <div class="card map-editor">
+    <table class="data">
+      <thead>
+        <tr><th>Node</th><th>Type</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for node, depth in rows %}
+          <tr>
+            <td>
+              <span class="map-indent" style="--depth: {{ depth }};">
+                {% if node.option_label %}<span class="badge">{{ node.option_label }}</span>{% endif %}
+                {% if node.is_result %}
+                  <strong>{{ node.who }}</strong>
+                {% else %}
+                  <strong>{{ node.question }}</strong>
+                {% endif %}
+              </span>
+            </td>
+            <td class="small">
+              {% if node.is_result %}Result{% else %}Question · {{ node.children.count }} option{{ node.children.count|pluralize }}{% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <a class="btn btn-small btn-ghost" href="{% url 'panel:contact_node_edit' node.pk %}">Edit</a>
+                {% if not node.is_result %}
+                  <a class="btn btn-small" href="{% url 'panel:contact_node_add' %}?parent={{ node.pk }}">+ Option</a>
+                {% endif %}
+                {% if node.parent_id %}
+                  <form method="post" action="{% url 'panel:contact_node_delete' node.pk %}"
+                        onsubmit="return confirm('Delete “{{ node.option_label|escapejs }}”{% if not node.is_result %} and everything beneath it{% endif %}?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

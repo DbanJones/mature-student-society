@@ -1,0 +1,96 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Site content{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Site content</h1>
+    <p class="muted">
+      Pages, navigation visibility and the who-to-contact map. The calendar
+      and the Guide have their own editing systems and aren't managed here.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    <div class="card">
+      <h2>Pages</h2>
+      <p class="small muted">
+        Admin-managed pages served at /pages/&lt;slug&gt;/ — optionally shown
+        in the navigation for the audience you pick.
+      </p>
+      <p><a class="btn btn-small btn-accent" href="{% url 'panel:page_create' %}">Add a page</a></p>
+      {% if pages %}
+        <table class="data">
+          <thead><tr><th>Page</th><th>Nav</th><th></th></tr></thead>
+          <tbody>
+            {% for page in pages %}
+              <tr>
+                <td>
+                  <strong>{{ page.title }}</strong>
+                  {% if not page.is_published %}<span class="badge badge-danger">Unpublished</span>{% endif %}
+                  <br><a class="small" href="{{ page.get_absolute_url }}">/pages/{{ page.slug }}/</a>
+                </td>
+                <td class="small">
+                  {% if page.nav_label %}
+                    “{{ page.nav_label }}” · {{ page.get_nav_visibility_display }}
+                  {% else %}
+                    <span class="muted">not in nav</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="row-actions">
+                    <a class="btn btn-small btn-ghost" href="{% url 'panel:page_edit' page.pk %}">Edit</a>
+                    <form method="post" action="{% url 'panel:page_delete' page.pk %}"
+                          onsubmit="return confirm('Delete “{{ page.title|escapejs }}”?');">
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="muted small" style="margin:0">No pages yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Who-to-contact map</h2>
+      <p class="small muted">
+        The decision flow on the “Who do I contact?” page —
+        {{ contact_node_count }} node{{ contact_node_count|pluralize }} at the
+        moment. Add, edit or remove questions and results.
+      </p>
+      <p style="margin:0">
+        <a class="btn btn-small" href="{% url 'panel:contact_map' %}">Open the map editor</a>
+        <a class="btn btn-small btn-ghost" href="{% url 'faq:contacts' %}">View the public page</a>
+      </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Navigation tabs</h2>
+    <p class="small muted">
+      Who sees each built-in tab. “What's on”, “The Guide”, the dashboard and
+      this admin area are always visible. Admins see everything that isn't
+      hidden, so you can always find your way back here.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="save_tabs" value="1">
+      {% for field in tabs_form %}
+        <p>
+          {{ field.label_tag }} {{ field }}
+          {{ field.errors }}
+        </p>
+      {% endfor %}
+      <button type="submit" class="btn">Save visibility</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

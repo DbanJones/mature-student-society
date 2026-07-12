@@ -1,0 +1,99 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if node %}Edit map node{% else %}Add map node{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:contact_map' %}">← Contact map</a></p>
+    <h1>{% if node %}Edit node{% else %}Add an option{% endif %}</h1>
+    {% if parent %}
+      <p class="muted">Under: <strong>{{ parent.question }}</strong></p>
+    {% else %}
+      <p class="muted">This is the root question — the map's starting point.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if parent and not node %}<input type="hidden" name="parent" value="{{ parent.pk }}">{% endif %}
+    {{ form.non_field_errors }}
+
+    <div class="grid grid-2">
+      <p>
+        {{ form.kind.label_tag }} {{ form.kind }}
+        {{ form.kind.errors }}
+      </p>
+      <p>
+        {{ form.sort_order.label_tag }} {{ form.sort_order }}
+        <span class="helptext">Lower numbers list first among siblings.</span>
+      </p>
+    </div>
+    <p>
+      {{ form.option_label.label_tag }} {{ form.option_label }}
+      <span class="helptext">The button text members click to reach this node,
+        e.g. “💷 Money” or “A deadline I will (or did) miss”.</span>
+      {{ form.option_label.errors }}
+    </p>
+
+    <fieldset id="question-fields">
+      <legend>If it's a question</legend>
+      <p>
+        {{ form.question.label_tag }} {{ form.question }}
+        {{ form.question.errors }}
+      </p>
+      <p class="helptext" style="margin:0">Add its answer options from the map
+        page after saving.</p>
+    </fieldset>
+
+    <fieldset id="result-fields">
+      <legend>If it's a result</legend>
+      <p>
+        {{ form.who.label_tag }} {{ form.who }}
+        {{ form.who.errors }}
+      </p>
+      <p>
+        {{ form.action.label_tag }} {{ form.action }}
+        {{ form.action.errors }}
+      </p>
+      <p>
+        {{ form.escalate.label_tag }} {{ form.escalate }}
+        {{ form.escalate.errors }}
+      </p>
+      <p>
+        {{ form.keep.label_tag }} {{ form.keep }}
+        {{ form.keep.errors }}
+      </p>
+      <p>
+        {{ form.email_template.label_tag }} {{ form.email_template }}
+        <span class="helptext">{{ form.email_template.help_text }}</span>
+        {{ form.email_template.errors }}
+      </p>
+    </fieldset>
+
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">Save node</button>
+      <a class="btn btn-ghost" href="{% url 'panel:contact_map' %}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var kind = document.getElementById("{{ form.kind.id_for_label }}");
+  var q = document.getElementById("question-fields");
+  var r = document.getElementById("result-fields");
+  if (!kind || !q || !r) return;
+  function sync() {
+    q.style.display = kind.value === "question" ? "" : "none";
+    r.style.display = kind.value === "result" ? "" : "none";
+  }
+  kind.addEventListener("change", sync);
+  sync();
+})();
+</script>
+{% endblock %}

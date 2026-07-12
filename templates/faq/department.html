@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ info.name }} · Department info{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/faq.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'faq:departments' %}">← All departments</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>{{ info.emoji }} {{ info.name }}</h1>
+    <p class="muted" style="margin:0">{{ info.examples }}</p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    <div class="card">
+      <h2>What the workload actually looks like</h2>
+      <p style="margin:0">{{ info.shape }}</p>
+    </div>
+    <div class="card card-going">
+      <h2>For mature students</h2>
+      <p style="margin:0">{{ info.mature }}</p>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <h2>Who to contact in the department</h2>
+      <p style="margin:0">{{ info.contacts }}</p>
+      <p class="small" style="margin:.6rem 0 0">
+        Wrong door? Use the <a href="{% url 'faq:contacts' %}">who-to-contact map</a>.
+      </p>
+    </div>
+    <div class="card">
+      <h2>✅ Verify with your own department</h2>
+      <p style="margin:0">{{ info.verify }}</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

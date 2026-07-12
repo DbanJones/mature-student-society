@@ -1,16 +1,36 @@
-/* Events app — calendar filter chips, "coming up" list, event detail.
-   Extends base.css; only rules base.css doesn't already provide. */
+/* Events app — calendar toolbar & tag pills, "coming up" list, event detail,
+   tag subpages. Extends base.css; only rules base.css doesn't already provide. */
 
 .hidden { display: none; }
 
-/* --- category filter chips ------------------------------------- */
+/* --- calendar toolbar: search + tag filter ----------------------- */
 
-.cat-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0 0 1.25rem; }
-.cat-filter .cat-chip { text-decoration: none; }
-.cat-filter .cat-chip:hover { filter: brightness(1.15); color: #fff; }
-.cat-filter.filtered .cat-chip { opacity: .45; }
-.cat-filter.filtered .cat-chip.active { opacity: 1; outline: 2px solid var(--pine-900); outline-offset: 1px; }
-.cat-clear { margin-left: .3rem; white-space: nowrap; }
+.cal-toolbar { margin: 0 0 1.25rem; }
+
+.cal-search { display: flex; gap: .5rem; max-width: 30rem; margin-bottom: .8rem; }
+.cal-search input[type="search"] { flex: 1; }
+
+.cat-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+
+.tag-pill {
+  --tag-color: var(--pine-700);
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .22rem .7rem; border-radius: 99px;
+  font-size: .8rem; font-weight: 600;
+  color: var(--ink); background: var(--card);
+  border: 1px solid var(--line);
+  text-decoration: none; white-space: nowrap;
+  transition: border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.tag-pill:hover { border-color: var(--tag-color); box-shadow: var(--shadow); color: var(--ink); }
+.tag-pill.active {
+  background: var(--tag-color); border-color: var(--tag-color); color: #fff;
+}
+.tag-pill .tag-dot {
+  width: .55rem; height: .55rem; border-radius: 50%;
+  background: var(--tag-color); flex: none;
+}
+.tag-pill.active .tag-dot { background: #fff; }
 
 /* --- "coming up" list ------------------------------------------- */
 
@@ -28,8 +48,45 @@
 
 /* --- event detail ------------------------------------------------ */
 
+.event-hero { margin: 0 0 1.25rem; }
+.event-hero img {
+  width: 100%; max-height: 380px; object-fit: cover; display: block;
+  border-radius: var(--radius); box-shadow: var(--shadow-lift);
+}
+
+.event-layout {
+  display: grid; gap: 1rem;
+  grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+  align-items: start;
+}
+@media (max-width: 820px) { .event-layout { grid-template-columns: 1fr; } }
+
 .event-meta { list-style: none; padding: 0; margin: 0 0 1rem; }
 .event-meta li { padding: .2rem 0; }
+
+.card-going { border-color: var(--ok); background: linear-gradient(180deg, var(--ok-soft), var(--card) 55%); }
+.going-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
+
+.card-map h2 { margin-bottom: .8rem; }
+.map-frame {
+  border-radius: var(--radius-small); overflow: hidden;
+  border: 1px solid var(--line); aspect-ratio: 4 / 3; background: var(--sage-100);
+}
+.map-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+/* --- tag subpages -------------------------------------------------- */
+
+.tag-hero {
+  border-left: 6px solid var(--tag-color, var(--pine-700));
+  background: var(--card); border-radius: var(--radius);
+  border-top: 1px solid var(--line); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.6rem; margin-bottom: 1.25rem;
+}
+.tag-hero h1 { margin-bottom: .2rem; }
+.tag-hero .lede { margin-bottom: .2rem; }
+.tag-hero-emoji { font-size: 1.6rem; margin-right: .2rem; }
+.tag-owners { margin: 0; color: var(--ink-soft); }
 
 /* --- forms -------------------------------------------------------- */
 

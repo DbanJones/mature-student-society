@@ -55,14 +55,28 @@ urlpatterns = [
     path("", _ns("core", [
         ("", "home"), ("about/", "about"),
         ("wellbeing/", "wellbeing"), ("policies/", "policies"),
+        ("winter-ball/", "winter_ball"),
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
         ("profile-setup/", "profile_setup"),
     ])),
-    path("events/", _ns("events", [("", "calendar"), ("<int:pk>/", "detail")])),
+    path("events/", _ns("events", [
+        ("", "calendar"),
+        ("tags/<slug:slug>/", "tag_page"),
+        ("tags/<slug:slug>/edit/", "tag_edit"),
+        ("<slug:slug>/", "detail"),
+    ])),
     path("guide/", _ns("guide", [("", "index")])),
+    path("faq/", _ns("faq", [("", "index"), ("who-to-contact/", "contacts")])),
     path("supper-club/", _ns("supper", [("", "index")])),
+    path("members/", _ns("members", [
+        ("", "directory"), ("<str:username>/", "profile"),
+    ])),
+    path("messages/", _ns("inbox", [
+        ("", "inbox"), ("<str:username>/", "thread"),
+        ("<str:username>/block/", "block_toggle"),
+    ])),
     path("me/", _ns("dashboard", [("", "home")])),
 ]
 
@@ -71,10 +85,12 @@ urlpatterns = [
 class PanelTestCase(TestCase):
     @classmethod
     def setUpTestData(cls):
+        # The panel's default actor is the super admin (webmaster): admin
+        # appointment/removal is reserved for them.
         cls.admin = User.objects.create_user(
             username="adm1", password="pw", email="adm1@cam.ac.uk", crsid="adm1",
             first_name="Ada", last_name="Admin", college="wolfson",
-            mobile="+44 7700 900000", is_portal_admin=True,
+            mobile="+44 7700 900000", is_portal_admin=True, is_super_admin=True,
         )
         cls.member = User.objects.create_user(
             username="mem1", password="pw", email="mem1@cam.ac.uk", crsid="mem1",
@@ -120,10 +136,26 @@ class PermissionTests(PanelTestCase):
 
     def test_admin_can_load_every_page(self):
         self.client.force_login(self.admin)
-        for name in ["home", "waitlist", "members", "whatsapp_requests",
-                     "stats", "mailer", "audit"]:
+        for name in ["home", "waitlist", "members", "events", "messages",
+                     "whatsapp_requests", "content", "contact_map", "stats",
+                     "mailer", "audit", "superadmin"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
+
+    def test_regular_admin_cannot_manage_admins_or_super_tab(self):
+        regular = User.objects.create_user(
+            username="adm2", password="pw", email="adm2@cam.ac.uk", crsid="adm2",
+            first_name="Reg", last_name="Admin", college="darwin",
+            mobile="+44 7700 900003", is_portal_admin=True,
+        )
+        self.client.force_login(regular)
+        response = self.client.post(
+            reverse("panel:member_toggle_admin", args=[self.member.pk])
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse("panel:superadmin")).status_code, 403
+        )
 
 
 class WaitlistTests(PanelTestCase):
@@ -357,8 +389,8 @@ class MailerTests(PanelTestCase):
         # Window and cancellation filters hold.
         self.assertNotIn("Too Far Away", body)
         self.assertNotIn("Cancelled Thing", body)
-        # RSVP links are absolute.
-        self.assertIn(f"http://testserver/events/{self.official.pk}/", body)
+        # RSVP links are absolute and use the name-and-date slug.
+        self.assertIn(f"http://testserver/events/{self.official.slug}/", body)
 
     def test_send_records_maillog_and_audit(self):
         self.client.force_login(self.admin)

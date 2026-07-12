@@ -1,0 +1,87 @@
+/* Members directory, member profiles and direct messages.
+   Extends base.css. */
+
+/* --- directory ---------------------------------------------------- */
+
+.dir-search { display: flex; gap: .5rem; max-width: 30rem; margin-bottom: 1.5rem; }
+.dir-search input[type="search"] { flex: 1; }
+
+.member-grid {
+  display: grid; gap: .8rem;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+}
+.member-card {
+  display: flex; align-items: center; gap: .8rem;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: .8rem .95rem; text-decoration: none; color: var(--ink);
+  transition: box-shadow .12s ease, transform .12s ease, border-color .12s ease;
+}
+.member-card:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); border-color: var(--sage); color: var(--ink); }
+.member-card-body { display: flex; flex-direction: column; min-width: 0; }
+.member-card-body strong { color: var(--pine-900); }
+.member-card-body .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.member-photo {
+  width: 48px; height: 48px; border-radius: 50%; flex: none;
+  overflow: hidden; display: grid; place-items: center;
+  background: var(--pine-700); color: #fff;
+}
+.member-photo img { width: 100%; height: 100%; object-fit: cover; }
+.member-initials { font-weight: 700; font-size: .95rem; letter-spacing: .03em; text-transform: uppercase; }
+.member-photo-lg { width: 96px; height: 96px; }
+.member-photo-lg .member-initials { font-size: 1.7rem; }
+
+/* --- profile ------------------------------------------------------ */
+
+.profile-head { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.profile-id { flex: 1 1 16rem; min-width: 0; }
+.profile-id h1 { margin-bottom: .15rem; }
+.profile-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+/* profile fact list (talk to me about / work / interests) */
+.profile-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem; }
+.profile-facts dt { font-weight: 650; color: var(--pine-900); white-space: nowrap; }
+.profile-facts dd { margin: 0; }
+@media (max-width: 540px) { .profile-facts { grid-template-columns: 1fr; } .profile-facts dd { margin-bottom: .4rem; } }
+
+/* --- inbox -------------------------------------------------------- */
+
+.convo-list { list-style: none; margin: 0; padding: 0; }
+.convo-row {
+  display: flex; align-items: center; gap: .85rem;
+  padding: .7rem .5rem; border-bottom: 1px solid var(--line);
+  text-decoration: none; color: var(--ink); border-radius: var(--radius-small);
+}
+.convo-list li:last-child .convo-row { border-bottom: none; }
+.convo-row:hover { background: var(--sage-100); color: var(--ink); }
+.convo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.convo-main strong { color: var(--pine-900); }
+.convo-preview { font-size: .88rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.convo-row.unread .convo-preview { color: var(--ink); font-weight: 600; }
+.convo-side { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; flex: none; }
+
+/* --- thread ------------------------------------------------------- */
+
+.thread-head { display: flex; align-items: center; gap: .85rem; margin-bottom: 1rem; }
+
+.thread { display: flex; flex-direction: column; gap: .45rem; max-height: 55vh; overflow-y: auto; }
+
+.bubble-row { display: flex; }
+.bubble-row.mine { justify-content: flex-end; }
+.bubble {
+  max-width: 72%;
+  padding: .5rem .8rem .35rem;
+  border-radius: 14px;
+  background: var(--sage-100);
+  color: var(--ink);
+  font-size: .95rem;
+  box-shadow: 0 1px 1px rgba(20, 53, 42, .06);
+}
+.bubble-row.mine .bubble { background: var(--pine-800); color: #f2f7f3; border-bottom-right-radius: 4px; }
+.bubble-row.theirs .bubble { border-bottom-left-radius: 4px; }
+.bubble-meta { display: block; font-size: .68rem; opacity: .65; margin-top: .2rem; text-align: right; }
+
+.thread-compose { margin-top: 1rem; }
+.thread-compose textarea { min-height: 4.5rem; }
+.thread-compose-foot { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .6rem; }

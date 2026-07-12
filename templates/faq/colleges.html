@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}College-specific information{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/faq.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'guide:index' %}">← The Guide</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>College-specific information</h1>
+    <p class="lede">
+      A decision map, not a league table. Descriptions are editorial
+      orientation from our master report; accommodation, eligibility and
+      dining details change — <strong>always verify with the college
+      itself</strong> before relying on anything here.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>The three mature colleges</h2>
+  <p class="small muted">
+    Undergraduate intake restricted to mature students (21+). An open mature
+    application is allocated to one of these — but mature applicants may
+    apply to <em>any</em> undergraduate college, and a mature college is not
+    automatically quieter, cheaper or better for families. Compare the actual
+    room licence, charges and family rules.
+  </p>
+  <div class="faq-portals" style="margin:0">
+    {% for entry in mature %}
+      <a class="faq-portal" href="{% url 'faq:college' entry.slug %}">
+        <span class="faq-portal-emoji">🦁</span>
+        <strong>{{ entry.name }}</strong>
+        <span class="muted small">{{ entry.character|truncatechars:90 }}</span>
+      </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="college-grid">
+  {% for entry in entries %}
+    <a class="college-card" href="{% url 'faq:college' entry.slug %}">
+      <strong>{{ entry.name }}</strong>
+      <span class="small muted">{{ entry.area }} · {{ entry.status }}</span>
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}

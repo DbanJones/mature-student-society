@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ member.get_full_name|default:member.username }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/social.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'members:directory' %}">← Members</a></p>
+
+<div class="profile-head card">
+  <span class="member-photo member-photo-lg">
+    {% if member.photo %}
+      <img src="{{ member.photo.url }}" alt="{{ member.get_full_name }}">
+    {% else %}
+      <span class="member-initials">{{ member.initials }}</span>
+    {% endif %}
+  </span>
+  <div class="profile-id">
+    <h1>{{ member.get_full_name|default:member.username }}
+      {% if member.is_portal_admin %}<span class="badge">Committee admin</span>{% endif %}
+    </h1>
+    <p class="muted" style="margin:0">
+      {% if member.college %}{{ member.get_college_display }}{% endif %}
+      {% if member.course %}{% if member.college %} · {% endif %}{{ member.course }}{% endif %}
+    </p>
+    {% if tags_owned %}
+      <p class="small" style="margin:.4rem 0 0">
+        Runs:
+        {% for tag in tags_owned %}
+          <a class="cat-chip" style="background-color: {{ tag.color }};" href="{{ tag.get_absolute_url }}">{{ tag.emoji }} {{ tag.name }}</a>
+        {% endfor %}
+      </p>
+    {% endif %}
+  </div>
+  <div class="profile-actions">
+    {% if is_self %}
+      <a class="btn" href="{% url 'accounts:profile' %}">Edit my profile</a>
+    {% else %}
+      <a class="btn btn-accent" href="{% url 'inbox:thread' member.username %}">Message</a>
+      <a class="btn btn-ghost" href="mailto:{{ member.email }}">Email</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start; margin-top:1rem">
+  <div class="stack">
+    <div class="card">
+      <h2>About</h2>
+      {% if member.bio %}
+        <p style="white-space:pre-line">{{ member.bio }}</p>
+      {% elif not member.talk_to_me_about and not member.work and not member.interests %}
+        <p class="muted" style="margin:0">
+          {% if is_self %}You haven't written an “about me” yet — <a href="{% url 'accounts:profile' %}">add one</a>.{% else %}No “about me” yet.{% endif %}
+        </p>
+      {% endif %}
+      {% if member.talk_to_me_about or member.work or member.interests %}
+        <dl class="profile-facts">
+          {% if member.talk_to_me_about %}
+            <dt>💬 Talk to me about</dt><dd>{{ member.talk_to_me_about }}</dd>
+          {% endif %}
+          {% if member.work %}
+            <dt>💼 Work</dt><dd>{{ member.work }}</dd>
+          {% endif %}
+          {% if member.interests %}
+            <dt>✨ Interests</dt><dd>{{ member.interests }}</dd>
+          {% endif %}
+        </dl>
+      {% endif %}
+      {% if is_self and not member.talk_to_me_about %}
+        <p class="muted small" style="margin:.6rem 0 0">
+          Tip: “Talk to me about…” is the easiest icebreaker you can give
+          people — <a href="{% url 'accounts:profile' %}">add yours</a>.
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Contact</h2>
+      <ul class="event-meta">
+        <li>✉️ <a href="mailto:{{ member.email }}">{{ member.email }}</a></li>
+        {% if not is_self %}
+          <li>💬 <a href="{% url 'inbox:thread' member.username %}">Message on the portal</a></li>
+        {% endif %}
+        {% if user.is_portal_admin and member.mobile %}
+          <li>📱 {{ member.mobile }} <span class="muted small">(visible to admins only)</span></li>
+        {% endif %}
+      </ul>
+      <p class="muted small" style="margin:0">
+        Mobile numbers stay private — organisers see them only for their own
+        events' attendees.
+      </p>
+    </div>
+
+    {% if member.is_shadow_banned and user.is_portal_admin %}
+      <div class="flash flash-warning">
+        This member is shadow-banned: only admins (and they themselves) can
+        see this profile, their events and their messages.
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>Around the society</h2>
+      <div class="stat-row" style="grid-template-columns: repeat(2, 1fr);">
+        <div class="stat-tile"><div class="stat-num">{{ attended_count }}</div><div class="stat-label">events attended</div></div>
+        <div class="stat-tile"><div class="stat-num">{{ hosted_count }}</div><div class="stat-label">events hosted</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Hosting next</h2>
+      {% if hosting %}
+        <ul class="up-list">
+          {% for event in hosting %}
+            <li class="up-row">
+              <span class="up-date">
+                <span class="up-day">{{ event.start|date:"j" }}</span>
+                <span class="up-mon">{{ event.start|date:"M" }}</span>
+              </span>
+              <span class="up-main">
+                <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+                <span class="up-meta">{{ event.start|date:"D j M, H:i" }}</span>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted" style="margin:0">Nothing scheduled at the moment.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

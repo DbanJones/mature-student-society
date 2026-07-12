@@ -63,6 +63,8 @@ INSTALLED_APPS = [
     "supper",
     "dashboard",
     "panel",
+    "inbox",
+    "faq",
 ]
 
 MIDDLEWARE = [
@@ -90,6 +92,8 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "core.context_processors.site_config",
+                "core.context_processors.navigation",
+                "inbox.context_processors.unread_messages",
             ],
         },
     },

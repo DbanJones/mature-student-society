@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ info.name }} · College info{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/faq.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'faq:colleges' %}">← All colleges</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>{{ info.name }}</h1>
+    <p class="muted" style="margin:0">
+      <span class="badge">{{ info.area }}</span>
+      <span class="badge{% if 'Mature-only' in info.status %} badge-official{% endif %}">{{ info.status }}</span>
+      {% if member_count %}
+        <span class="badge badge-members">{{ member_count }} MSS member{{ member_count|pluralize }}</span>
+      {% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if user.is_authenticated and member_count %}
+      <a class="btn btn-ghost btn-small" href="{% url 'members:directory' %}?q={{ college_display|urlencode }}">Find members here</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    <div class="card">
+      <h2>In brief</h2>
+      <p style="margin:0">{{ info.character }}</p>
+    </div>
+    {% if info.mature_note %}
+      <div class="card card-going">
+        <h2>For mature students</h2>
+        <p style="margin:0">{{ info.mature_note }}</p>
+      </div>
+    {% endif %}
+    <div class="card">
+      <h2>🕯️ Formal Hall</h2>
+      <p style="margin:0">{{ info.formal }}</p>
+      <p class="small muted" style="margin:.6rem 0 0">
+        Rhythms, dress codes and menus change termly — the live calendar sits
+        behind the college booking system. An ordinary Formal benchmarks at
+        roughly £12–25.
+      </p>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>✅ Verify before relying on it</h2>
+      <p>{{ info.verify }}</p>
+      <p class="small muted" style="margin:0">
+        Plus the universal five: total contract length &amp; vacation
+        residence, kitchens, partner/child rules, accessibility of the actual
+        room, and named welfare contacts. Ask in writing; keep the reply.
+      </p>
+    </div>
+    <div class="card">
+      <h2>Questions that change daily life</h2>
+      <ul class="small" style="margin:0; padding-left:1.1rem">
+        <li>Is a room guaranteed, and is the licence 27, 30, 39 or 52 weeks?</li>
+        <li>Can a partner or child live, stay overnight, or come to dinner?</li>
+        <li>Oven, hob-and-microwave, or effectively no self-catering?</li>
+        <li>Door-to-door time to <em>your</em> faculty, placement or school run?</li>
+        <li>How many mature undergraduates entered last year?</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% if node.label %}<span class="org-branch">{{ node.label }}</span>{% endif %}
+{% if node.result %}
+  <span class="org-node org-result" title="{{ node.result.do }}">
+    {{ node.result.who }}
+  </span>
+{% else %}
+  <span class="org-node org-question">{{ node.q }}</span>
+  <ul>
+    {% for child in node.children %}
+      <li>{% include "faq/_map_node.html" with node=child %}</li>
+    {% endfor %}
+  </ul>
+{% endif %}

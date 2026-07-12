@@ -6,6 +6,8 @@ into a GuideRevision, so the history list reads newest-state-first and any
 older version can be restored (which is itself just a normal edit).
 """
 
+import re
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
@@ -13,6 +15,8 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.formats import date_format
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
@@ -56,15 +60,73 @@ def _unique_slug(title):
     return slug
 
 
+def _search_guide(pages, q):
+    """Ranked multi-word search with highlighted snippets.
+
+    Every term must appear somewhere in the title or content (AND); results
+    are ordered by weighted hit count (title hits count treble). Each result
+    carries a plain-text snippet around the first match with the terms
+    wrapped in <mark>.
+    """
+    terms = [t for t in q.split() if t][:6]
+    if not terms:
+        return []
+    cond = Q()
+    for term in terms:
+        cond &= Q(title__icontains=term) | Q(content__icontains=term)
+    highlight = re.compile(
+        "(" + "|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True)) + ")",
+        re.IGNORECASE,
+    )
+    results = []
+    for page in pages.filter(cond):
+        title_l, content_l = page.title.lower(), page.content.lower()
+        score = sum(
+            3 * title_l.count(t.lower()) + content_l.count(t.lower())
+            for t in terms
+        )
+        results.append({
+            "page": page,
+            "score": score,
+            "snippet": _snippet(page.content, terms, highlight),
+            "title_html": mark_safe(highlight.sub(
+                r"<mark>\1</mark>", escape(page.title)
+            )),
+        })
+    results.sort(key=lambda r: (-r["score"], r["page"].title))
+    return results
+
+
+def _snippet(content, terms, highlight, radius=110):
+    """~2 lines of plain text around the first term hit, terms marked."""
+    text = re.sub(r"[#*_`>\[\]|]", " ", content)  # strip markdown syntax
+    text = re.sub(r"\(https?://\S+\)", "", text)  # and bare link targets
+    text = re.sub(r"\s+", " ", text).strip()
+    low = text.lower()
+    hits = [low.find(t.lower()) for t in terms]
+    pos = min((h for h in hits if h != -1), default=0)
+    start, end = max(0, pos - radius), min(len(text), pos + radius * 2)
+    # Snap to word boundaries so the snippet doesn't start mid-word.
+    if start > 0:
+        start = text.find(" ", start) + 1
+    excerpt = text[start:end]
+    parts = highlight.split(excerpt)  # odd indices are the matched terms
+    built = "".join(
+        f"<mark>{escape(part)}</mark>" if i % 2 else escape(part)
+        for i, part in enumerate(parts)
+    )
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(text) else ""
+    return mark_safe(f"{prefix}{built}{suffix}")
+
+
 def index(request):
     """PUBLIC. Front page: pages grouped by section, or search results (?q=)."""
     q = request.GET.get("q", "").strip()
     pages = GuidePage.objects.filter(is_published=True).select_related("updated_by")
     context = {"nav_active": "guide", "q": q}
     if q:
-        context["results"] = pages.filter(
-            Q(title__icontains=q) | Q(content__icontains=q)
-        )
+        context["results"] = _search_guide(pages, q)
     else:
         by_section = {}
         for guide_page in pages:  # Meta.ordering gives section, then title

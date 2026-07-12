@@ -19,12 +19,28 @@
            alt="{{ site_config.society_name }}">
     </a>
     <nav class="site-nav" aria-label="Main">
-      <a href="{% url 'events:calendar' %}" {% if nav_active == 'calendar' %}class="active"{% endif %}>Calendar</a>
+      <a href="{% url 'events:calendar' %}" {% if nav_active == 'calendar' %}class="active"{% endif %}>What's on</a>
       <a href="{% url 'guide:index' %}" {% if nav_active == 'guide' %}class="active"{% endif %}>The Guide</a>
-      <a href="{% url 'supper:index' %}" {% if nav_active == 'supper' %}class="active"{% endif %}>Supper Club</a>
-      <a href="{% url 'core:about' %}" {% if nav_active == 'about' %}class="active"{% endif %}>About</a>
+      {% if "supper" in visible_tabs %}
+        <a href="{% url 'supper:index' %}" {% if nav_active == 'supper' %}class="active"{% endif %}>Supper Club</a>
+      {% endif %}
+      {% if "ball" in visible_tabs %}
+        <a href="{% url 'core:winter_ball' %}" class="nav-ball {% if nav_active == 'ball' %}active{% endif %}">Winter Ball</a>
+      {% endif %}
+      {% if "about" in visible_tabs %}
+        <a href="{% url 'core:about' %}" {% if nav_active == 'about' %}class="active"{% endif %}>About</a>
+      {% endif %}
+      {% for page in nav_pages %}
+        <a href="{{ page.get_absolute_url }}" {% if nav_active == 'page-'|add:page.slug %}class="active"{% endif %}>{{ page.nav_label }}</a>
+      {% endfor %}
       {% if user.is_authenticated %}
-        <a href="{% url 'dashboard:home' %}" {% if nav_active == 'dashboard' %}class="active"{% endif %}>My dashboard</a>
+        {% if "members" in visible_tabs %}
+          <a href="{% url 'members:directory' %}" {% if nav_active == 'members' %}class="active"{% endif %}>Members</a>
+        {% endif %}
+        {% if "messages" in visible_tabs %}
+          <a href="{% url 'inbox:inbox' %}" class="nav-messages {% if nav_active == 'messages' %}active{% endif %}">Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>
+        {% endif %}
+        <a href="{% url 'dashboard:home' %}" {% if nav_active == 'dashboard' %}class="active"{% endif %}>Dashboard</a>
         {% if user.is_portal_admin %}
           <a href="{% url 'panel:home' %}" class="nav-admin {% if nav_active == 'panel' %}active{% endif %}">Admin</a>
         {% endif %}
@@ -59,7 +75,9 @@
     </div>
     <div class="footer-links">
       <a href="{% url 'events:calendar' %}">What's on</a>
+      {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">Winter Ball</a>{% endif %}
       <a href="{% url 'guide:index' %}">Mature Students Guide</a>
+      <a href="{% url 'faq:contacts' %}">Who to contact</a>
       <a href="{% url 'core:wellbeing' %}">Wellbeing</a>
       <a href="{% url 'core:policies' %}">Community policies</a>
       <a href="{% url 'accounts:waitlist' %}">Join without a CRSid</a>
@@ -71,6 +89,7 @@
     </div>
   </div>
 </footer>
+{% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

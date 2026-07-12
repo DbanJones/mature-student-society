@@ -20,23 +20,48 @@
   </div>
 </div>
 
-<div class="cat-filter{% if active_category %} filtered{% endif %}">
-  {% for cat in categories %}
-    <a class="cat-chip{% if cat == active_category %} active{% endif %}"
-       style="background-color: {{ cat.color }};"
-       href="{% if cat == active_category %}?y={{ month_date.year }}&amp;m={{ month_date.month }}{% else %}?y={{ month_date.year }}&amp;m={{ month_date.month }}&amp;cat={{ cat.slug }}{% endif %}"
-       title="{{ cat.description }}">{{ cat.emoji }} {{ cat.name }}</a>
-  {% endfor %}
+<div class="cal-toolbar">
+  <form class="cal-search" method="get" action="{% url 'events:calendar' %}" role="search">
+    <input type="hidden" name="y" value="{{ month_date.year }}">
+    <input type="hidden" name="m" value="{{ month_date.month }}">
+    {% if active_category %}<input type="hidden" name="cat" value="{{ active_category.slug }}">{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="Search events — title, place, tag…"
+           aria-label="Search events">
+    <button type="submit" class="btn btn-small">Search</button>
+  </form>
+
+  <div class="cat-filter{% if active_category %} filtered{% endif %}" role="group" aria-label="Filter by tag">
+    <a class="tag-pill{% if not active_category %} active{% endif %}"
+       href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">All</a>
+    {% for cat in categories %}
+      <a class="tag-pill{% if cat == active_category %} active{% endif %}"
+         style="--tag-color: {{ cat.color }};"
+         href="{% if cat == active_category %}?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}{% else %}?y={{ month_date.year }}&amp;m={{ month_date.month }}&amp;cat={{ cat.slug }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}{% endif %}"
+         title="{{ cat.description }}"><span class="tag-dot" aria-hidden="true"></span>{{ cat.emoji }} {{ cat.name }}</a>
+    {% endfor %}
+  </div>
   {% if active_category %}
-    <a class="cat-clear small" href="?y={{ month_date.year }}&amp;m={{ month_date.month }}">Clear filter</a>
+    <p class="small" style="margin:.4rem 0 0">
+      Showing <strong>{{ active_category.emoji }} {{ active_category.name }}</strong> —
+      <a href="{{ active_category.get_absolute_url }}">about this club</a> ·
+      <a href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">clear filter</a>
+    </p>
   {% endif %}
 </div>
+
+{% if q %}
+  <div class="flash flash-info" style="margin:0 0 1rem">
+    Showing events matching “{{ q }}”
+    {% if active_category %} in {{ active_category.name }}{% endif %} —
+    <a href="?y={{ month_date.year }}&amp;m={{ month_date.month }}{% if active_category %}&amp;cat={{ active_category.slug }}{% endif %}">clear search</a>
+  </div>
+{% endif %}
 
 <div class="cal-head">
   <h2 style="margin: 0;">{{ month_date|date:"F Y" }}</h2>
   <div class="cal-nav">
     <a class="btn btn-ghost btn-small" href="{{ prev_query }}" aria-label="Previous month">&larr; Prev</a>
-    <a class="btn btn-ghost btn-small" href="{{ today_query|default:'?' }}">Today</a>
+    <a class="btn btn-ghost btn-small" href="{{ today_query }}">Today</a>
     <a class="btn btn-ghost btn-small" href="{{ next_query }}" aria-label="Next month">Next &rarr;</a>
   </div>
 </div>
@@ -49,18 +74,22 @@
     {% for cell in week %}
       <div class="cal-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}">
         <span class="cal-daynum" data-full="{{ cell.date|date:'D j F' }}">{{ cell.date.day }}</span>
-        {% for event in cell.events %}
-          <a class="cal-event" style="background-color: {{ event.category.color }};"
-             href="{% url 'events:detail' event.pk %}"
-             title="{{ event.title }} — {{ event.start|date:'H:i' }}">
-            {% if event.is_official %}<span class="off-star">★</span> {% endif %}{{ event.category.emoji }} {{ event.title }}</a>
+        {% for event in cell.events|slice:":3" %}
+          <a class="cal-event{% if event.is_official %} official{% endif %}"
+             style="--c: {{ event.category.color }};"
+             href="{{ event.get_absolute_url }}"
+             title="{{ event.title }} — {{ event.start|date:'H:i' }}{% if event.location %} · {{ event.location }}{% endif %}">
+            {% if event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}</a>
         {% endfor %}
+        {% if cell.events|length > 3 %}
+          <a class="cal-more" href="{{ cell.events.3.get_absolute_url }}">+{{ cell.events|length|add:"-3" }} more</a>
+        {% endif %}
       </div>
     {% endfor %}
   {% endfor %}
 </div>
 
-<h2>Coming up</h2>
+<h2>{% if q %}Matching events{% else %}Coming up{% endif %}</h2>
 {% if upcoming %}
   <div class="card">
     <ul class="up-list">
@@ -75,7 +104,7 @@
             {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
             {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
             <br>
-            <a class="up-title" href="{% url 'events:detail' event.pk %}">{{ event.title }}</a>
+            <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
             <span class="up-meta">
               {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
             </span>
@@ -85,7 +114,7 @@
             {% if user.is_authenticated %}
               <span class="avatars">
                 {% for rsvp in event.going_list|slice:":6" %}
-                  <span class="avatar-token" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</span>
+                  <a class="avatar-token" href="{% url 'members:profile' rsvp.user.username %}" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</a>
                 {% endfor %}
                 {% if event.extra_going %}<span class="avatar-token more">+{{ event.extra_going }}</span>{% endif %}
               </span>
@@ -97,7 +126,11 @@
   </div>
 {% else %}
   <div class="empty">
-    Nothing on the horizon{% if active_category %} in {{ active_category.name }}{% endif %} just yet.
+    {% if q %}
+      No events match “{{ q }}”{% if active_category %} in {{ active_category.name }}{% endif %}.
+    {% else %}
+      Nothing on the horizon{% if active_category %} in {{ active_category.name }}{% endif %} just yet.
+    {% endif %}
     {% if user.is_authenticated %}<a href="{% url 'events:create' %}">Add the first event.</a>{% endif %}
   </div>
 {% endif %}

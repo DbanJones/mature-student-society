@@ -13,6 +13,17 @@
   </div>
 </div>
 
+{% if site_config.email_tone %}
+  <div class="card" style="margin-bottom:1rem">
+    <h2>Tone of voice</h2>
+    <p class="small muted" style="margin-bottom:.5rem">
+      Set by the super admin — keep every send sounding like the society.
+      AI drafting engine: <strong>{{ site_config.get_email_ai_engine_display }}</strong>{% if not site_config.email_api_key %} (no API key saved yet){% endif %}.
+    </p>
+    <p class="small" style="white-space:pre-line; margin:0">{{ site_config.email_tone }}</p>
+  </div>
+{% endif %}
+
 <div class="card">
   <p class="small muted">
     <strong>{{ event_count }}</strong> event{{ event_count|pluralize }} in the next 14 days

@@ -5,6 +5,20 @@
 .panel-tabs a { text-decoration: none; padding: .35rem .85rem; font-size: .9rem; font-weight: 600; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -2px; }
 .panel-tabs a:hover { color: var(--brick); }
 .panel-tabs a.active { color: var(--pine-900); border-bottom-color: var(--brick); }
+.panel-tabs .tab-super { color: #8a6a20; }
+.panel-tabs .tab-super.active { border-bottom-color: var(--gold); }
+
+/* moderation: removed messages */
+tr.row-removed td { opacity: .6; }
+
+/* contact map editor: indent nodes by depth */
+.map-indent { display: inline-flex; gap: .45rem; align-items: baseline; padding-left: calc(var(--depth, 0) * 1.4rem); }
+
+/* tag owner checkbox list */
+.owner-checkboxes ul { list-style: none; margin: .3rem 0 0; padding: 0; columns: 2; }
+.owner-checkboxes li { break-inside: avoid; font-weight: 400; }
+.owner-checkboxes label { display: inline-flex; gap: .4rem; align-items: center; font-weight: 400; }
+.owner-checkboxes input { width: auto; }
 
 /* inline per-row action buttons/forms in tables */
 .row-actions { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }

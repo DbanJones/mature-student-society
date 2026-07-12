@@ -29,20 +29,22 @@ from django.utils.safestring import mark_safe
 register = template.Library()
 
 # Tags a member is allowed to produce. Everything else is dropped (its text
-# content is kept). No <script>, <style>, <iframe>, <img>, event-handler hosts.
+# content is kept). No <script>, <style>, <iframe>, event-handler hosts.
 ALLOWED_TAGS = {
     "p", "br", "hr",
     "h1", "h2", "h3", "h4", "h5", "h6",
-    "strong", "em", "b", "i", "del", "code", "pre",
+    "strong", "em", "b", "i", "u", "del", "s", "sub", "sup", "mark",
+    "code", "pre",
     "ul", "ol", "li",
     "blockquote",
-    "a",
+    "a", "img",
     "table", "thead", "tbody", "tr", "th", "td",
 }
 
-# Per-tag attribute allow-list. href is validated separately for scheme.
+# Per-tag attribute allow-list. href/src are validated separately for scheme.
 ALLOWED_ATTRS = {
     "a": {"href", "title"},
+    "img": {"src", "alt", "title", "width", "height"},
     "th": {"align"},
     "td": {"align"},
 }
@@ -74,7 +76,7 @@ class _Sanitizer(HTMLParser):
         for name, value in attrs:
             if name not in allowed:
                 continue
-            if name == "href" and not _href_is_safe(value):
+            if name in ("href", "src") and not _href_is_safe(value):
                 continue
             kept.append((name, value))
         rendered = "".join(
@@ -84,8 +86,8 @@ class _Sanitizer(HTMLParser):
         self.out.append(f"<{tag}{rendered}>")
 
     def handle_startendtag(self, tag, attrs):
-        if tag in ALLOWED_TAGS:
-            self.out.append(f"<{tag}>")
+        # Self-closing tags (<img …/>, <br/>) keep their vetted attributes.
+        self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag):
         if tag in ALLOWED_TAGS:
@@ -110,6 +112,25 @@ def sanitize_html(html):
 def markdown_filter(text):
     html = md_lib.markdown(
         escape(text),
+        extensions=["fenced_code", "tables", "sane_lists", "nl2br"],
+        output_format="html",
+    )
+    return mark_safe(sanitize_html(html))
+
+
+@register.filter(name="richtext")
+@stringfilter
+def richtext_filter(text):
+    """Markdown plus basic literal HTML (used by the guide and tag pages).
+
+    Unlike ``markdown``, the source is NOT pre-escaped, so hand-written tags
+    like <b>, <u> or <img> survive — but only those on the allow-list: the
+    sanitizer still rebuilds the output keeping allow-listed tags/attributes
+    only, drops event handlers, and enforces http/https/mailto URLs. Anything
+    else (scripts, styles, iframes…) is stripped.
+    """
+    html = md_lib.markdown(
+        text,
         extensions=["fenced_code", "tables", "sane_lists", "nl2br"],
         output_format="html",
     )

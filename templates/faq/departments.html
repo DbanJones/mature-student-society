@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Department-specific information{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/faq.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'guide:index' %}">← The Guide</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>Department-specific information</h1>
+    <p class="lede">
+      Your Faculty or Department — not your college — controls lectures,
+      labs, handbooks, placements and coursework rules. What that means day
+      to day differs sharply by School: pick yours.
+    </p>
+  </div>
+</div>
+
+<div class="faq-portals dept-grid">
+  {% for entry in entries %}
+    <a class="faq-portal" href="{% url 'faq:department' entry.slug %}">
+      <span class="faq-portal-emoji">{{ entry.emoji }}</span>
+      <strong>{{ entry.name }}</strong>
+      <span class="muted small">{{ entry.examples|truncatechars:100 }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:1.5rem">
+  <h2>Whatever your subject</h2>
+  <ul class="small" style="margin:0; padding-left:1.1rem">
+    <li>The <strong>Faculty administrator</strong> is the operational expert: timetables, forms, submission rules, the current written rule.</li>
+    <li>The <strong>course organiser</strong> is for anything affecting a whole paper, lab or placement group.</li>
+    <li>The <strong>subject librarian</strong> will save you hours — ask for a five-minute route through the catalogue.</li>
+    <li>Ask early: “Is this a University rule, a Faculty rule, or my college's practice?” The answer decides who can fix it.</li>
+  </ul>
+</div>
+{% endblock %}

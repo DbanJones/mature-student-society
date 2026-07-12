@@ -6,8 +6,10 @@ events never leak to anonymous visitors.
 """
 
 from django.db.models import Count, Q
-from django.shortcuts import render
+from django.http import Http404
+from django.shortcuts import get_object_or_404, render
 
+from core.models import SitePage
 from events.models import RSVP, Event
 from guide.models import GuidePage
 from supper.models import Restaurant
@@ -78,10 +80,53 @@ def home(request):
     })
 
 
+def winter_ball(request):
+    """The Winter Ball's own page — the society's flagship night.
+
+    If a Winter Ball event exists on the calendar, the page wires its RSVP
+    button (and capacity counter) to it; otherwise it renders as a save-the-
+    date page.
+    """
+    ball = (
+        Event.objects.visible_to(request.user)
+        .filter(title__icontains="winter ball")
+        .upcoming()
+        .first()
+    )
+    going_count = spots_left = None
+    is_going = False
+    if ball:
+        going_count = ball.going_count
+        if ball.capacity:
+            spots_left = max(0, ball.capacity - going_count)
+        rsvp = ball.user_rsvp(request.user)
+        is_going = bool(rsvp and rsvp.status == RSVP.Status.GOING)
+    return render(request, "core/winter_ball.html", {
+        "nav_active": "ball",
+        "ball": ball,
+        "going_count": going_count,
+        "spots_left": spots_left,
+        "is_going": is_going,
+    })
+
+
 def about(request):
     return render(request, "core/about.html", {
         "nav_active": "about",
         "committee": COMMITTEE,
+    })
+
+
+def site_page(request, slug):
+    """An admin-managed CMS page (see panel → Content)."""
+    page = get_object_or_404(SitePage, slug=slug)
+    if not page.is_published and not (
+        request.user.is_authenticated and request.user.is_portal_admin
+    ):
+        raise Http404("No page found.")
+    return render(request, "core/site_page.html", {
+        "nav_active": f"page-{page.slug}",
+        "page": page,
     })
 
 

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Edit {{ tag.name }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      <a href="{{ tag.get_absolute_url }}">← {{ tag.emoji }} {{ tag.name }}</a>
+    </p>
+    <h1>Edit the {{ tag.name }} page</h1>
+    <p class="lede">
+      This page is what members see at /events/tags/{{ tag.slug }}/ — make it
+      yours. Markdown and basic HTML both work.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      {{ form.description.label_tag }} {{ form.description }}
+      <span class="helptext">{{ form.description.help_text }}</span>
+      {{ form.description.errors }}
+    </p>
+    <p>
+      {{ form.page_content.label_tag }} {{ form.page_content }}
+      <span class="helptext">{{ form.page_content.help_text }}</span>
+      {{ form.page_content.errors }}
+    </p>
+    <p style="margin-top: 1.5rem;">
+      <button type="submit" class="btn btn-accent">Save page</button>
+      <a class="btn btn-ghost" href="{{ tag.get_absolute_url }}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

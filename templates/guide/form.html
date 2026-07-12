@@ -66,7 +66,7 @@
   </form>
 
   <aside class="card cheatsheet">
-    <h3>Markdown cheatsheet</h3>
+    <h3>Formatting cheatsheet</h3>
     <table>
       <tr><td><code>## Heading</code></td><td>a section heading</td></tr>
       <tr><td><code>**bold**</code></td><td><strong>bold</strong></td></tr>
@@ -77,7 +77,9 @@
       <tr><td><code>&gt; quote</code></td><td>a quotation</td></tr>
     </table>
     <p class="muted small" style="margin:.8rem 0 0">
-      Plain paragraphs work fine too — a blank line starts a new one. Use
+      Basic HTML works too: <code>&lt;b&gt;</code>, <code>&lt;u&gt;</code>,
+      <code>&lt;a href&gt;</code>, <code>&lt;img src&gt;</code>, lists and
+      tables. Scripts and styling are stripped for everyone's safety. Use
       “Preview” to check before saving.
     </p>
   </aside>
@@ -86,7 +88,7 @@
 {% if previewing %}
   <h2 id="preview">Preview</h2>
   {% if preview_content %}
-    <div class="card"><div class="prose">{{ preview_content|markdown }}</div></div>
+    <div class="card"><div class="prose">{{ preview_content|richtext }}</div></div>
   {% else %}
     <div class="empty">Nothing to preview yet — write some content first.</div>
   {% endif %}

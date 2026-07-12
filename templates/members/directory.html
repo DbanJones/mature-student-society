@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Members{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/social.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Members</h1>
+    <p class="lede">Put faces to names — every member has a profile, and you can message anyone directly.</p>
+  </div>
+</div>
+
+<form class="dir-search" method="get" action="{% url 'members:directory' %}" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by name, college or course…"
+         aria-label="Search members">
+  <button type="submit" class="btn">Search</button>
+</form>
+
+{% if members %}
+  <div class="member-grid">
+    {% for member in members %}
+      <a class="member-card" href="{% url 'members:profile' member.username %}">
+        <span class="member-photo">
+          {% if member.photo %}
+            <img src="{{ member.photo.url }}" alt="{{ member.get_full_name }}">
+          {% else %}
+            <span class="member-initials">{{ member.initials }}</span>
+          {% endif %}
+        </span>
+        <span class="member-card-body">
+          <strong>{{ member.get_full_name|default:member.username }}</strong>
+          <span class="muted small">
+            {% if member.college %}{{ member.get_college_display }}{% endif %}
+            {% if member.course %}{% if member.college %} · {% endif %}{{ member.course }}{% endif %}
+          </span>
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">No members match “{{ q }}”.</div>
+{% endif %}
+{% endblock %}

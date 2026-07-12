@@ -1,0 +1,65 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if tag %}Edit tag: {{ tag.name }}{% else %}Add a tag{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:superadmin' %}">← Super admin</a></p>
+    <h1>{% if tag %}Edit tag: {{ tag.emoji }} {{ tag.name }}{% else %}Add a tag{% endif %}</h1>
+    <p class="muted">
+      Owners can mark their events as official and edit the tag's public page
+      (at /events/tags/{% if tag %}{{ tag.slug }}{% else %}…{% endif %}/) without being site admins.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid grid-2">
+      <p>
+        {{ form.name.label_tag }} {{ form.name }}
+        {{ form.name.errors }}
+      </p>
+      <p>
+        {{ form.emoji.label_tag }} {{ form.emoji }}
+        {{ form.emoji.errors }}
+      </p>
+    </div>
+    <div class="grid grid-2">
+      <p>
+        {{ form.color.label_tag }} {{ form.color }}
+        <span class="helptext">Used for calendar chips.</span>
+        {{ form.color.errors }}
+      </p>
+      <p>
+        {{ form.sort_order.label_tag }} {{ form.sort_order }}
+        <span class="helptext">Lower numbers list first.</span>
+        {{ form.sort_order.errors }}
+      </p>
+    </div>
+    <p>
+      {{ form.description.label_tag }} {{ form.description }}
+      <span class="helptext">One line shown under the tag name.</span>
+      {{ form.description.errors }}
+    </p>
+    <p class="check-row">
+      {{ form.has_restaurant_ratings }}
+      <label for="{{ form.has_restaurant_ratings.id_for_label }}" style="display:inline">{{ form.has_restaurant_ratings.label }}</label>
+      {{ form.has_restaurant_ratings.errors }}
+    </p>
+    <p>
+      {{ form.owners.label_tag }}
+      <span class="helptext">Tick the members who run this club.</span>
+      <span class="owner-checkboxes">{{ form.owners }}</span>
+      {{ form.owners.errors }}
+    </p>
+    <p style="margin-top: 1.5rem;">
+      <button type="submit" class="btn btn-accent">{% if tag %}Save tag{% else %}Create tag{% endif %}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:superadmin' %}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

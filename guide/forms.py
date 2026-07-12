@@ -16,6 +16,10 @@ class GuidePageForm(forms.ModelForm):
     class Meta:
         model = GuidePage
         fields = ["title", "section", "content"]
+        help_texts = {
+            "content": "Markdown and basic HTML supported — headings, links, "
+                       "lists, images, tables.",
+        }
         widgets = {
             "title": forms.TextInput(
                 attrs={"placeholder": "e.g. Choosing a mature college"}

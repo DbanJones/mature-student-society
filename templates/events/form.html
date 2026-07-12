@@ -14,16 +14,22 @@
 </div>
 
 <div class="card" style="max-width: 46rem;">
-  <form method="post" novalidate>
+  <form method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
     {{ form.non_field_errors }}
 
     <p>
       {{ form.title.label_tag }} {{ form.title }}
       {{ form.title.errors }}
+      {% if event %}
+        <span class="helptext">Page address: /events/{{ event.slug }}/ — set from the title and date when the event was created.</span>
+      {% else %}
+        <span class="helptext">The event's address is generated from the title and date, e.g. /events/winter-ball-12-dec-2026/.</span>
+      {% endif %}
     </p>
     <p>
       {{ form.category.label_tag }} {{ form.category }}
+      <span class="helptext">{{ form.category.help_text }}</span>
       {{ form.category.errors }}
     </p>
 
@@ -47,8 +53,19 @@
       <span class="helptext">{{ form.description.help_text }}</span>
       {{ form.description.errors }}
     </p>
+
+    <p>
+      {{ form.image.label_tag }} {{ form.image }}
+      <span class="helptext">{{ form.image.help_text }}</span>
+      {{ form.image.errors }}
+      {% if event and event.image %}
+        <span class="helptext">Current picture: {{ event.image.name|cut:"events/" }} — choose a new file to replace it.</span>
+      {% endif %}
+    </p>
+
     <p>
       {{ form.location.label_tag }} {{ form.location }}
+      <span class="helptext">A findable address shows a map on the event page, e.g. “The Granta, 14 Newnham Road”.</span>
       {{ form.location.errors }}
     </p>
 
@@ -64,11 +81,32 @@
       </p>
     </div>
 
-    <p>
-      {{ form.capacity.label_tag }} {{ form.capacity }}
-      <span class="helptext">Leave blank for unlimited.</span>
-      {{ form.capacity.errors }}
-    </p>
+    <div class="grid grid-2">
+      <p>
+        {{ form.host.label_tag }} {{ form.host }}
+        <span class="helptext">{{ form.host.help_text }}</span>
+        {{ form.host.errors }}
+      </p>
+      <p>
+        {{ form.capacity.label_tag }} {{ form.capacity }}
+        <span class="helptext">Leave blank for unlimited.</span>
+        {{ form.capacity.errors }}
+      </p>
+    </div>
+
+    <fieldset>
+      <legend>For people who RSVP</legend>
+      <p>
+        {{ form.group_chat_link.label_tag }} {{ form.group_chat_link }}
+        <span class="helptext">{{ form.group_chat_link.help_text }}</span>
+        {{ form.group_chat_link.errors }}
+      </p>
+      <p>
+        {{ form.attendee_info.label_tag }} {{ form.attendee_info }}
+        <span class="helptext">{{ form.attendee_info.help_text }}</span>
+        {{ form.attendee_info.errors }}
+      </p>
+    </fieldset>
 
     <p class="check-row">
       {{ form.members_only }} <label for="{{ form.members_only.id_for_label }}" style="display: inline;">{{ form.members_only.label }}</label>
@@ -79,7 +117,7 @@
     {% if form.is_official %}
       <p class="check-row">
         {{ form.is_official }} <label for="{{ form.is_official.id_for_label }}" style="display: inline;">{{ form.is_official.label }}</label>
-        <span class="helptext">Prioritised in listings and the What's On mailer. Admins only.</span>
+        <span class="helptext">{{ form.is_official.help_text|default:"Prioritised in listings and the What's On mailer." }}</span>
         {{ form.is_official.errors }}
       </p>
     {% endif %}
@@ -94,7 +132,7 @@
 
     <p style="margin-top: 1.5rem;">
       <button type="submit" class="btn btn-accent">{% if event %}Save changes{% else %}Create event{% endif %}</button>
-      <a class="btn btn-ghost" href="{% if event %}{% url 'events:detail' event.pk %}{% else %}{% url 'events:calendar' %}{% endif %}">Back</a>
+      <a class="btn btn-ghost" href="{% if event %}{{ event.get_absolute_url }}{% else %}{% url 'events:calendar' %}{% endif %}">Back</a>
     </p>
   </form>
 </div>

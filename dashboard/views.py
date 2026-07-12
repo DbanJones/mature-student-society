@@ -4,15 +4,21 @@ Login required. Mobile numbers are never shown here — only the member's own
 activity. Admin extras appear only for ``is_portal_admin`` users.
 """
 
+import json
+
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
 from events.models import RSVP, Event
 from guide.models import GuideRevision
 from supper.models import Rating
+
+from .models import KeepyUppyScore
 
 
 @login_required
@@ -93,3 +99,47 @@ def home(request):
         )
 
     return render(request, "dashboard/home.html", context)
+
+
+# --- keepy-uppy: the hidden football (type b-a-l-l on any page) -------------------
+
+MAX_PLAUSIBLE_SCORE = 10000
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def game_scores(request):
+    """GET: leaderboard JSON. POST {"score": n}: record a personal best."""
+    if request.method == "POST":
+        try:
+            score = int(json.loads(request.body or b"{}").get("score", 0))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return JsonResponse({"error": "bad score"}, status=400)
+        score = max(0, min(score, MAX_PLAUSIBLE_SCORE))
+        row, _ = KeepyUppyScore.objects.get_or_create(user=request.user)
+        if score > row.best:
+            row.best = score
+            row.save(update_fields=["best", "updated_at"])
+
+    top = list(
+        KeepyUppyScore.objects.filter(
+            best__gt=0, user__is_banned=False, user__is_shadow_banned=False
+        )
+        .select_related("user")
+        .order_by("-best", "updated_at")[:10]
+    )
+    mine = KeepyUppyScore.objects.filter(user=request.user).first()
+    return JsonResponse({
+        "best": mine.best if mine else 0,
+        "leaderboard": [
+            {
+                "name": (
+                    f"{row.user.first_name} {row.user.last_name[:1]}."
+                    if row.user.first_name else row.user.username
+                ),
+                "score": row.best,
+                "me": row.user_id == request.user.pk,
+            }
+            for row in top
+        ],
+    })

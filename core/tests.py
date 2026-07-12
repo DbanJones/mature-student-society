@@ -117,3 +117,69 @@ class StaticPageTests(TestCase):
         response = self.client.get(reverse("core:policies"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Political neutrality")
+
+
+class TabVisibilityAndPagesTests(TestCase):
+    """Admin-controlled nav tabs and CMS pages."""
+
+    def setUp(self):
+        from core.models import SiteConfig
+        self.config = SiteConfig.get()
+        self.member = User.objects.create_user(
+            username="tv001", password="pw", first_name="Tab", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001",
+        )
+        self.admin = User.objects.create_user(
+            username="tv002", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", is_portal_admin=True,
+        )
+
+    NAV_SUPPER = ">Supper Club</a>"
+    NAV_BALL = ">Winter Ball</a>"
+
+    def test_hidden_tab_disappears_for_members_but_not_admins(self):
+        self.config.tab_visibility = {"supper": "admins"}
+        self.config.save()
+        self.client.force_login(self.member)
+        self.assertNotContains(self.client.get(reverse("core:home")), self.NAV_SUPPER)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("core:home")), self.NAV_SUPPER)
+
+    def test_members_only_tab_hidden_from_public(self):
+        self.config.tab_visibility = {"ball": "members"}
+        self.config.save()
+        response = self.client.get(reverse("core:home"))
+        self.assertNotContains(response, self.NAV_BALL)
+        self.client.force_login(self.member)
+        self.assertContains(self.client.get(reverse("core:home")), self.NAV_BALL)
+
+    def test_site_page_lifecycle(self):
+        from core.models import SitePage
+        page = SitePage.objects.create(
+            title="Sponsors", slug="sponsors", content="Thank <b>you</b>.",
+            nav_label="Sponsors", nav_visibility="public",
+        )
+        response = self.client.get(page.get_absolute_url())
+        self.assertContains(response, "Thank <b>you</b>.")
+        # In the nav for everyone…
+        self.assertContains(self.client.get(reverse("core:home")), ">Sponsors</a>")
+        # …until unpublished: page 404s for the public, stays up for admins.
+        page.is_published = False
+        page.save()
+        self.assertEqual(self.client.get(page.get_absolute_url()).status_code, 404)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(page.get_absolute_url()).status_code, 200)
+
+    def test_admin_page_crud_via_panel(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(reverse("panel:page_create"), {
+            "title": "House rules", "content": "Be kind.",
+            "is_published": "on", "nav_label": "", "nav_visibility": "public",
+            "sort_order": 100,
+        })
+        self.assertEqual(response.status_code, 302)
+        from core.models import SitePage
+        page = SitePage.objects.get(slug="house-rules")
+        response = self.client.post(reverse("panel:page_delete", args=[page.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(SitePage.objects.filter(pk=page.pk).exists())

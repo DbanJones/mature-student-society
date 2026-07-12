@@ -1,13 +1,20 @@
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 
 
 class Category(models.Model):
-    """Event category, e.g. History Club, Supper Club, Reading Club."""
+    """An event tag, e.g. History Club, Supper Club, Coffee Club.
+
+    Presented as a "tag" throughout the UI. Tags can have owners (the people
+    who run that club): owners may mark their events as official and edit the
+    tag's own subpage.
+    """
 
     name = models.CharField(max_length=60, unique=True)
     slug = models.SlugField(max_length=60, unique=True)
@@ -17,6 +24,16 @@ class Category(models.Model):
     )
     emoji = models.CharField(max_length=8, blank=True)
     description = models.CharField(max_length=200, blank=True)
+    page_content = models.TextField(
+        blank=True,
+        help_text="The tag's own page — Markdown and basic HTML supported. "
+                  "Editable by the tag's owners and society admins.",
+    )
+    owners = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="tags_owned",
+        help_text="Members who run this club: they can mark their events as "
+                  "official and edit the tag's page.",
+    )
     has_restaurant_ratings = models.BooleanField(
         default=False,
         help_text="Supper Club: events in this category link to a restaurant "
@@ -26,10 +43,28 @@ class Category(models.Model):
 
     class Meta:
         ordering = ["sort_order", "name"]
-        verbose_name_plural = "categories"
+        verbose_name = "tag"
+        verbose_name_plural = "tags"
 
     def __str__(self):
         return self.name
+
+    def get_absolute_url(self):
+        return reverse("events:tag_page", args=[self.slug])
+
+    def is_owned_by(self, user):
+        return (
+            user is not None
+            and user.is_authenticated
+            and self.owners.filter(pk=user.pk).exists()
+        )
+
+    def can_edit_page(self, user):
+        return (
+            user is not None
+            and user.is_authenticated
+            and (user.is_portal_admin or self.is_owned_by(user))
+        )
 
 
 class EventQuerySet(models.QuerySet):
@@ -38,11 +73,30 @@ class EventQuerySet(models.QuerySet):
 
         ``user`` may be None (treated as anonymous), so this is safe to call
         from aggregation helpers that don't always have a request user.
+
+        Shadow-banned members' events are invisible to everyone except the
+        member themselves and admins — the member sees the site normally.
         """
         qs = self.filter(is_cancelled=False)
-        if user is not None and user.is_authenticated:
+        if user is None or not user.is_authenticated:
+            return qs.filter(members_only=False, created_by__is_shadow_banned=False)
+        if user.is_portal_admin:
             return qs
-        return qs.filter(members_only=False)
+        return qs.filter(
+            Q(created_by__is_shadow_banned=False) | Q(created_by=user)
+        )
+
+    def search(self, q):
+        """Free-text search over title, description, location and tag name."""
+        q = (q or "").strip()
+        if not q:
+            return self
+        return self.filter(
+            Q(title__icontains=q)
+            | Q(description__icontains=q)
+            | Q(location__icontains=q)
+            | Q(category__name__icontains=q)
+        )
 
     def upcoming(self):
         return self.filter(start__gte=timezone.now()).order_by("start")
@@ -56,16 +110,40 @@ class EventQuerySet(models.QuerySet):
 
 class Event(models.Model):
     title = models.CharField(max_length=140)
+    slug = models.SlugField(
+        max_length=180, unique=True, blank=True,
+        help_text="Set automatically from the title and date, e.g. "
+                  "winter-ball-12-dec-2026.",
+    )
     description = models.TextField(
         blank=True, help_text="Markdown supported (links, lists, emphasis)."
     )
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="events")
     location = models.CharField(max_length=200, blank=True)
+    image = models.ImageField(
+        upload_to="events/", blank=True,
+        help_text="Optional picture shown on the event page.",
+    )
     start = models.DateTimeField()
     end = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="events_created"
+    )
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="events_hosted",
+        help_text="Who is running the event. Defaults to whoever created it.",
+    )
+    group_chat_link = models.URLField(
+        blank=True,
+        help_text="Optional WhatsApp group-chat link, shown only to people "
+                  "who have RSVP'd.",
+    )
+    attendee_info = models.TextField(
+        blank=True,
+        help_text="Details for attendees (meeting point, what to bring…) — "
+                  "shown only to people who have RSVP'd. Markdown supported.",
     )
     is_official = models.BooleanField(
         default=False,
@@ -98,8 +176,44 @@ class Event(models.Model):
     def __str__(self):
         return f"{self.title} ({self.start:%d %b %Y})"
 
+    # Slugs that would shadow event URL patterns.
+    RESERVED_SLUGS = {"new", "tags"}
+
+    def build_slug(self):
+        """'Winter Ball' on 12 Dec 2026 → 'winter-ball-12-dec-2026' (de-duped)."""
+        date_part = timezone.localtime(self.start).strftime("%-d-%b-%Y").lower()
+        base = slugify(f"{self.title} {date_part}")[:170] or f"event-{date_part}"
+        slug, n = base, 2
+        while slug in self.RESERVED_SLUGS or (
+            Event.objects.filter(slug=slug).exclude(pk=self.pk).exists()
+        ):
+            slug = f"{base}-{n}"
+            n += 1
+        return slug
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = self.build_slug()
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"slug"}
+        super().save(*args, **kwargs)
+
     def get_absolute_url(self):
-        return reverse("events:detail", args=[self.pk])
+        return reverse("events:detail", args=[self.slug])
+
+    @property
+    def effective_host(self):
+        return self.host or self.created_by
+
+    @property
+    def map_embed_url(self):
+        """Google Maps embed for the location — no API key required."""
+        if not self.location:
+            return ""
+        return "https://www.google.com/maps?" + urlencode(
+            {"q": f"{self.location}, Cambridge, UK", "output": "embed"}
+        )
 
     # --- attendance -----------------------------------------------------------
 
@@ -122,7 +236,7 @@ class Event(models.Model):
 
     def can_edit(self, user):
         return user.is_authenticated and (
-            user == self.created_by or user.is_portal_admin
+            user == self.created_by or user == self.host or user.is_portal_admin
         )
 
     @property

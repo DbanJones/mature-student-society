@@ -286,7 +286,8 @@ def _event_lines(request, event, official):
     lines.append(
         "  RSVP: "
         + _absolute_url(
-            request, "events:detail", args=[event.pk], fallback=f"/events/{event.pk}/"
+            request, "events:detail", args=[event.slug],
+            fallback=f"/events/{event.slug}/",
         )
     )
     lines.append("")

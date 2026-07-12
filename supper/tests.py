@@ -40,11 +40,25 @@ urlpatterns = [
         ["login", "logout", "raven", "profile_setup", "profile", "waitlist",
          "whatsapp", "set_password"],
     )),
-    path("events/", _namespace("events", ["calendar"], pk_names=["detail"])),
+    path("events/", include(([
+        path("", _stub_view, name="calendar"),
+        path("<slug:slug>/", _stub_view, name="detail"),
+    ], "events"))),
     path("guide/", _namespace("guide", ["index"])),
+    path("faq/", _namespace("faq", ["index", "contacts"])),
     path("me/", _namespace("dashboard", ["home"])),
     path("panel/", _namespace("panel", ["home"])),
-    path("", _namespace("core", ["home", "about", "wellbeing", "policies"])),
+    path("members/", include(([
+        path("", _stub_view, name="directory"),
+        path("<str:username>/", _stub_view, name="profile"),
+    ], "members"))),
+    path("messages/", include(([
+        path("", _stub_view, name="inbox"),
+        path("<str:username>/", _stub_view, name="thread"),
+        path("<str:username>/block/", _stub_view, name="block_toggle"),
+    ], "inbox"))),
+    path("", _namespace("core", ["home", "about", "wellbeing", "policies",
+                                 "winter_ball"])),
 ]
 
 VALID_SCORES = {

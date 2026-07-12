@@ -8,6 +8,7 @@ Also seeds the event categories, which ARE wanted in production — run
 
 import datetime
 
+from django.core.management import call_command
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
@@ -34,29 +35,86 @@ CATEGORIES = [
      "Traditional Cambridge dining — formals and formal-swaps across colleges."),
     ("College Lunches & Tours", "college-lunches", "#4d6141", "🏫", False, 70,
      "Get to know the University's 31 colleges."),
-    ("Wellbeing & Coffee", "wellbeing-coffee", "#3e7d8d", "☕", False, 80,
+    ("Wellbeing & Coffee", "wellbeing-coffee", "#3e7d8d", "🫖", False, 80,
      "Tea/coffee/cake meets and the weekly Talking Group."),
+    ("Coffee Club", "coffee-club", "#7c5a33", "☕", False, 85,
+     "Weekly coffee mornings — drop in, no sign-up, all welcome."),
     ("Sports, Walks & Runs", "sports-walks", "#3e7d4f", "🥾", False, 90,
      "The sports hub: walks, runs, punting and days out."),
     ("Networking & Flashtalks", "networking", "#46628a", "🎤", False, 100,
      "Research flashtalks, networking potlucks, careers."),
     ("Family & Partners", "family-partners", "#c2703d", "🧸", False, 110,
      "Events for members with children and partners — prams welcome."),
+    ("Partners Club", "partners-club", "#a34d7c", "💞", False, 115,
+     "Run by and for partners of mature students — meet-ups, tips and mutual support."),
     ("Study Sessions", "study-sessions", "#4a5d78", "🎯", False, 120,
      "Shared study and co-working sessions."),
 ]
 
 DEMO_USERS = [
-    # (username/crsid, first, last, college, admin)
-    ("dbj25", "Dennis", "Bailey-Jones", "hughes-hall", True),
-    ("amk67", "Amara", "Kensington", "wolfson", True),
-    ("rt489", "Robert", "Tanaka", "st-edmunds", False),
-    ("efw22", "Elena", "Fitzwilliam-Wright", "lucy-cavendish", False),
-    ("jm901", "James", "MacAllister", "hughes-hall", False),
-    ("pn315", "Priya", "Natarajan", "wolfson", False),
-    ("sc777", "Sofia", "Castellanos", "darwin", False),
-    ("hb244", "Henry", "Blackwood", "st-edmunds", False),
+    # (username/crsid, first, last, college, admin, course, bio)
+    ("dbj25", "Dennis", "Bailey-Jones", "hughes-hall", True,
+     "PhD Computer Science",
+     "Webmaster and committee member. Came back to academia after a decade "
+     "in industry — ask me about the portal, or about good coffee."),
+    ("amk67", "Amara", "Kensington", "wolfson", True,
+     "MBA",
+     "I run the Supper Club — always hunting for Cambridge's best cheap "
+     "eats. Suggestions welcome."),
+    ("rt489", "Robert", "Tanaka", "st-edmunds", False,
+     "MPhil Early Modern History",
+     "History Club convenor. Former secondary school teacher; will talk "
+     "about the Civil War at the slightest provocation."),
+    ("efw22", "Elena", "Fitzwilliam-Wright", "lucy-cavendish", False,
+     "BA English (mature)",
+     "Book Club host. Reader, rower (badly), mother of two."),
+    ("jm901", "James", "MacAllister", "hughes-hall", False,
+     "PGCE",
+     "Ex-army, now training to teach physics. Pub night regular."),
+    ("pn315", "Priya", "Natarajan", "wolfson", False,
+     "PhD Plant Sciences",
+     "Family & Partners events — usually found on Jesus Green with a "
+     "toddler and a picnic blanket."),
+    ("sc777", "Sofia", "Castellanos", "darwin", False,
+     "MPhil Development Studies",
+     "Coffee Club host. Bilingual chatter, strong flat whites."),
+    ("hb244", "Henry", "Blackwood", "st-edmunds", False,
+     "BTh",
+     "Second-career ordinand. Happy to talk theology or cricket."),
 ]
+
+
+# Profile colour for the demo members: conversation starters, background and
+# interests, keyed by username.
+EXTRA_PROFILE = {
+    "dbj25": ("the portal, single-origin coffee, coming back to code after management",
+              "A decade in software, latterly engineering management",
+              "espresso, bouldering, mechanical keyboards"),
+    "amk67": ("Cambridge's best cheap eats — fight me",
+              "Ex-restaurant manager turned MBA",
+              "food markets, supper clubs, salsa"),
+    "rt489": ("the Civil War at the slightest provocation",
+              "Former secondary-school history teacher",
+              "archives, battlefield walks, real ale"),
+    "efw22": ("whatever the Book Club is reading, rowing badly",
+              "Raised two kids, ran the school library, now reading English",
+              "novels, rivers, second-hand bookshops"),
+    "jm901": ("physics teaching, army stories, pub quizzes",
+              "Twelve years in the Royal Engineers",
+              "rugby, quizzes, DIY"),
+    "pn315": ("plant science, toddler logistics, picnic spots",
+              "Research assistant before the PhD",
+              "gardening, picnics, wild swimming"),
+    "sc777": ("flat whites, development economics, café recommendations",
+              "NGO field work in three countries",
+              "coffee, languages, photography"),
+    "hb244": ("theology or cricket — ideally both",
+              "Twenty years as a parish administrator",
+              "cricket, choral music, walking"),
+    "marta.tanaka@example.com": ("moving to Cambridge as a partner, Japanese cooking",
+                                 "Graphic designer, freelancing from home",
+                                 "illustration, cooking, park runs"),
+}
 
 
 class Command(BaseCommand):
@@ -74,8 +132,11 @@ class Command(BaseCommand):
         self.seed_site_config()
         users = self.seed_users()
         self.seed_events(users)
+        self.seed_tag_pages()
         self.seed_guide(users)
+        call_command("seed_guide")  # the Master Report pages
         self.seed_waitlist()
+        self.seed_messages(users)
         self.stdout.write(self.style.SUCCESS(
             "Demo data seeded. Dev logins: any demo user via the dev login page "
             "(RAVEN_ENABLED=false), or password 'demo-password' for all of them."
@@ -115,14 +176,16 @@ class Command(BaseCommand):
 
     def seed_users(self):
         users = {}
-        for crsid, first, last, college, is_admin in DEMO_USERS:
+        for crsid, first, last, college, is_admin, course, bio in DEMO_USERS:
             user, created = User.objects.get_or_create(
                 username=crsid,
                 defaults=dict(
                     crsid=crsid, first_name=first, last_name=last,
                     college=college, account_type=User.AccountType.RAVEN,
                     email=f"{crsid}@cam.ac.uk", mobile="+44 7700 900123",
-                    is_portal_admin=is_admin,
+                    is_portal_admin=is_admin, course=course, bio=bio,
+                    # The webmaster is the super admin.
+                    is_super_admin=(crsid == "dbj25"),
                 ),
             )
             if created:
@@ -137,12 +200,35 @@ class Command(BaseCommand):
                 email="marta.tanaka@example.com",
                 account_type=User.AccountType.ASSOCIATE,
                 college="other", mobile="+44 7700 900456",
+                course="Partner member",
+                bio="Partner of Robert (St Edmund's). I help run the Partners "
+                    "Club — say hello at a coffee morning!",
             ),
         )
         if created:
             assoc.set_password("demo-password")
             assoc.save()
         users["associate"] = assoc
+
+        # Conversation starters / work / interests (idempotent backfill: only
+        # fills profiles that haven't set their own).
+        for username, (talk, work, interests) in EXTRA_PROFILE.items():
+            User.objects.filter(
+                username=username, talk_to_me_about="", work="", interests="",
+            ).update(talk_to_me_about=talk, work=work, interests=interests)
+
+        # Tag owners: the members who run each club.
+        owner_plan = {
+            "supper-club": ["amk67"],
+            "history-club": ["rt489"],
+            "book-club": ["efw22"],
+            "coffee-club": ["sc777"],
+            "partners-club": ["associate", "pn315"],
+        }
+        for slug, ids in owner_plan.items():
+            tag = Category.objects.filter(slug=slug).first()
+            if tag:
+                tag.owners.add(*[users[uid] for uid in ids])
         return users
 
     def seed_events(self, users):
@@ -189,6 +275,10 @@ class Command(BaseCommand):
              "The Free Press, 7 Prospect Row", None, None),
             ("Punting & picnic day", "sports-walks", 21, 12, True, False, "amk67",
              "Mill Lane punt station", 20, None),
+            ("Coffee Club at Hot Numbers", "coffee-club", 5, 10, False, False, "sc777",
+             "Hot Numbers, Gwydir Street", None, None),
+            ("Partners Club brunch", "partners-club", 9, 11, False, False, "pn315",
+             "Stir Bakery, Chesterton Road", 12, None),
             # Past events for stats/ratings.
             ("Supper Club at The Tiffin Truck", "supper-club", -12, 19, True, False, "amk67",
              "The Tiffin Truck, 22 Regent Street", 14, tiffin),
@@ -211,12 +301,59 @@ class Command(BaseCommand):
                 start=at(days, hour, minute),
                 end=at(days, hour + 2, minute),
                 created_by=users[creator],
+                host=users[creator],
                 is_official=official,
                 members_only=members_only,
                 capacity=capacity,
                 restaurant=restaurant,
             )
             events[title] = event
+
+        # Attendee-only extras on one upcoming event, to demo the post-RSVP card.
+        vedanta_supper = events["Supper Club at Vedanta"]
+        vedanta_supper.group_chat_link = "https://chat.whatsapp.com/DEMO-VEDANTA-GROUP"
+        vedanta_supper.attendee_info = (
+            "We've got the long table at the back — ask for the MSS booking.\n\n"
+            "- Arrive from **18:45**; we order at 19:15 sharp.\n"
+            "- Set menu is £24pp, pay the organiser on the night (card OK).\n"
+            "- Running late? Message Amara in the group chat."
+        )
+        vedanta_supper.save()
+
+        # The Winter Ball — the society's flagship night (12 December).
+        ball_start = timezone.make_aware(
+            datetime.datetime(now.year, 12, 12, 19, 30)
+        )
+        if ball_start < now:
+            ball_start = ball_start.replace(year=now.year + 1)
+        ball = Event.objects.create(
+            title=f"MSS Winter Ball {ball_start.year}",
+            description=(
+                "**The Mature Student Society Winter Ball** — our flagship "
+                "black-tie evening of dinner, dancing and midwinter sparkle, "
+                "open to members and their partners.\n\n"
+                "See the [Winter Ball page](/winter-ball/) for the full "
+                "programme, dress code and FAQs."
+            ),
+            category=categories["society-wide"],
+            location="The Old Hall, Queens' College, Silver Street",
+            start=ball_start,
+            end=ball_start + datetime.timedelta(hours=5, minutes=30),
+            created_by=users["dbj25"],
+            host=users["dbj25"],
+            is_official=True,
+            capacity=150,
+            attendee_info=(
+                "Doors from **19:00**, carriages at **01:00**.\n\n"
+                "- Dietary requirements: fill in the form emailed a fortnight "
+                "before the night.\n"
+                "- Cloakroom available; bring your ticket QR code."
+            ),
+        )
+        events[ball.title] = ball
+        for uid in ["dbj25", "amk67", "efw22", "pn315", "sc777", "jm901"]:
+            RSVP.objects.get_or_create(event=ball, user=users[uid])
+        RSVP.objects.get_or_create(event=ball, user=users["associate"])
 
         member_ids = ["dbj25", "amk67", "rt489", "efw22", "jm901", "pn315", "sc777", "hb244"]
         rsvp_plan = {
@@ -258,6 +395,73 @@ class Command(BaseCommand):
                     defaults=dict(food=food, service=service, atmosphere=atmosphere,
                                   value=value, comment=comment),
                 )
+
+    def seed_tag_pages(self):
+        """Starter page content for the club tags (owners can edit these)."""
+        pages = {
+            "supper-club": (
+                "## How Supper Club works\n\n"
+                "One restaurant a month, always somewhere **cheap, cheerful and "
+                "international**. RSVP on the event page — numbers matter for "
+                "bookings — and rate the restaurant afterwards.\n\n"
+                "- We order to share where the menu allows it.\n"
+                "- Budget: roughly £15–25 a head including a drink.\n"
+                "- Partners always welcome.\n\n"
+                "Check the ratings board on the Supper Club page to see where "
+                "we've been and what we thought."
+            ),
+            "history-club": (
+                "## MSS History Club\n\n"
+                "Talks, walks and pub-room history for the historically "
+                "curious — no prior knowledge needed, strong opinions optional "
+                "but traditional.\n\n"
+                "We meet roughly fortnightly in term. Suggestions for talks and "
+                "walking routes are always welcome."
+            ),
+            "coffee-club": (
+                "## Coffee Club\n\n"
+                "The lowest-commitment club in the society: **turn up, drink "
+                "coffee, talk to people**. No sign-up, no agenda, prams and "
+                "laptops equally welcome.\n\n"
+                "We rotate around Cambridge's independent cafés — see the "
+                "upcoming events below for the next one."
+            ),
+            "partners-club": (
+                "## Partners Club\n\n"
+                "Run **by partners, for partners** of mature students. Moving "
+                "to a new city where your other half promptly disappears into "
+                "a library is hard — this club is the antidote.\n\n"
+                "- Regular brunches and playground meet-ups.\n"
+                "- A friendly WhatsApp group (ask at any event).\n"
+                "- Practical help: schools, GP registration, work visas."
+            ),
+        }
+        for slug, content in pages.items():
+            Category.objects.filter(slug=slug, page_content="").update(
+                page_content=content
+            )
+
+    def seed_messages(self, users):
+        from inbox.models import DirectMessage
+
+        if DirectMessage.objects.exists():
+            return
+        script = [
+            ("amk67", "dbj25",
+             "Dennis — can you make the Vedanta supper official when you get a "
+             "sec? Table's confirmed for 16."),
+            ("dbj25", "amk67",
+             "Done, and pinned it to the What's On mailer. Looking forward to it!"),
+            ("rt489", "dbj25",
+             "Thinking of a Civil War walking tour for week 5 — too niche?"),
+            ("dbj25", "rt489",
+             "Not at all, the last one filled up in a day. Put it on the "
+             "calendar and I'll share it to the group."),
+        ]
+        for sender, recipient, body in script:
+            DirectMessage.objects.create(
+                sender=users[sender], recipient=users[recipient], body=body
+            )
 
     def seed_guide(self, users):
         if GuidePage.objects.exists():

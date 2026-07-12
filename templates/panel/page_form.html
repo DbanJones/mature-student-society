@@ -1,0 +1,56 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if page %}Edit page: {{ page.title }}{% else %}Add a page{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:content' %}">← Site content</a></p>
+    <h1>{% if page %}Edit “{{ page.title }}”{% else %}Add a page{% endif %}</h1>
+    {% if page %}<p class="muted">Served at /pages/{{ page.slug }}/ (fixed once created).</p>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      {{ form.title.label_tag }} {{ form.title }}
+      {{ form.title.errors }}
+    </p>
+    <p>
+      {{ form.content.label_tag }} {{ form.content }}
+      <span class="helptext">{{ form.content.help_text }}</span>
+      {{ form.content.errors }}
+    </p>
+    <p class="check-row">
+      {{ form.is_published }}
+      <label for="{{ form.is_published.id_for_label }}" style="display:inline">Published</label>
+      <span class="helptext">{{ form.is_published.help_text }}</span>
+    </p>
+    <fieldset>
+      <legend>Navigation</legend>
+      <div class="grid grid-2">
+        <p>
+          {{ form.nav_label.label_tag }} {{ form.nav_label }}
+          <span class="helptext">{{ form.nav_label.help_text }}</span>
+          {{ form.nav_label.errors }}
+        </p>
+        <p>
+          {{ form.sort_order.label_tag }} {{ form.sort_order }}
+          <span class="helptext">{{ form.sort_order.help_text }}</span>
+        </p>
+      </div>
+      <p>
+        {{ form.nav_visibility.label_tag }} {{ form.nav_visibility }}
+        <span class="helptext">{{ form.nav_visibility.help_text }}</span>
+      </p>
+    </fieldset>
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">{% if page %}Save page{% else %}Create page{% endif %}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:content' %}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

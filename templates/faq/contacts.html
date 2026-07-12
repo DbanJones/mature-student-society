@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Who to contact{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/faq.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'guide:index' %}">← The Guide</a></p>
+
+<div class="page-head">
+  <div>
+    <h1>Who do I contact?</h1>
+    <p class="lede">
+      Cambridge is a federation — a timetable problem, a rent problem and a
+      health problem are three different doors. Answer the questions and the
+      map hands you the right person, what to say, what to keep, and a
+      ready-to-fill email.
+    </p>
+  </div>
+  {% if can_edit %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:contact_map' %}">✏️ Edit this map</a>
+    </div>
+  {% endif %}
+</div>
+
+{% if not tree %}
+  <div class="empty">The contact map is empty — an admin can rebuild it from the panel.</div>
+{% else %}
+<div class="contact-layout">
+  <div class="stack">
+    {# --- interactive decision flow --- #}
+    <div class="card flow-card" id="flow">
+      <div class="flow-crumbs" id="flow-crumbs" aria-live="polite"></div>
+      <div id="flow-body"></div>
+      <p class="flow-controls">
+        <button type="button" class="btn btn-ghost btn-small" id="flow-back" hidden>← Back</button>
+        <button type="button" class="btn btn-ghost btn-small" id="flow-restart" hidden>Start again</button>
+      </p>
+    </div>
+
+    {# --- the full hierarchy diagram --- #}
+    <div class="card">
+      <h2 style="margin-bottom:.3rem">The whole map</h2>
+      <p class="small muted" style="margin-bottom:.4rem">
+        Scroll sideways for the full hierarchy — or use the flow above for
+        the details behind each box.
+      </p>
+      <div class="org-scroll">
+        <div class="org-tree">
+          <ul>
+            <li>{% include "faq/_map_node.html" with node=tree %}</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <h2>Cast of characters</h2>
+      <ul class="role-list">
+        {% for name, what, opener in roles %}
+          <li>
+            <strong>{{ name }}</strong>
+            <span class="small">{{ what }}</span>
+            <em class="small muted">{{ opener }}</em>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card">
+      <h2>Confidentiality: ask, don't guess</h2>
+      <p class="small" style="margin:0">
+        Tutors, nurses, counsellors, porters and reps have different duties.
+        Before disclosing something sensitive, ask: <em>“What will you record?
+        Who can see it? What would require you to share it?”</em> In
+        immediate-risk situations, safety overrides normal confidentiality.
+      </p>
+    </div>
+  </div>
+</div>
+
+{{ tree|json_script:"contact-tree" }}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if tree %}
+<script>
+(function () {
+  var root = JSON.parse(document.getElementById("contact-tree").textContent);
+  var body = document.getElementById("flow-body");
+  var crumbs = document.getElementById("flow-crumbs");
+  var backBtn = document.getElementById("flow-back");
+  var restartBtn = document.getElementById("flow-restart");
+  var stack = [];   // visited question nodes
+
+  function render(node) {
+    body.innerHTML = "";
+    crumbs.innerHTML = stack.slice(1).concat(node === root ? [] : [node])
+      .map(function (n) { return '<span class="crumb">' + esc(n.label) + "</span>"; })
+      .join('<span class="crumb-sep">→</span>');
+    backBtn.hidden = restartBtn.hidden = stack.length === 0;
+
+    if (node.result) {
+      var r = node.result;
+      var box = el("div", "flow-result",
+        '<p class="flow-result-who">☎️ ' + esc(r.who) + "</p>" +
+        "<p><strong>What to do:</strong> " + esc(r.do) + "</p>" +
+        "<p><strong>Escalate:</strong> " + esc(r.escalate) + "</p>" +
+        '<p class="small muted"><strong>Keep:</strong> ' + esc(r.keep) + "</p>");
+      body.appendChild(box);
+      if (r.email) {
+        var wrap = el("div", "flow-email",
+          '<p class="small" style="margin:.9rem 0 .3rem"><strong>✉️ Your first useful email</strong> ' +
+          '<span class="muted">— tailored to this problem; fill in the [brackets]</span></p>' +
+          '<pre class="email-template">' + esc(r.email) + "</pre>" +
+          '<button type="button" class="btn btn-small" id="email-copy">Copy email</button>');
+        body.appendChild(wrap);
+        document.getElementById("email-copy").addEventListener("click", function () {
+          var btn = this;
+          (navigator.clipboard && navigator.clipboard.writeText
+            ? navigator.clipboard.writeText(r.email)
+            : Promise.reject()
+          ).then(function () {
+            btn.textContent = "Copied!";
+            setTimeout(function () { btn.textContent = "Copy email"; }, 2000);
+          }).catch(function () {});
+        });
+      }
+      return;
+    }
+    body.appendChild(el("p", "flow-question", esc(node.q)));
+    var wrap = el("div", "flow-options", "");
+    (node.children || []).forEach(function (child) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "flow-option";
+      btn.textContent = child.label;
+      btn.addEventListener("click", function () {
+        stack.push(node);
+        render(child);
+      });
+      wrap.appendChild(btn);
+    });
+    body.appendChild(wrap);
+  }
+
+  function el(tag, cls, html) {
+    var node = document.createElement(tag);
+    node.className = cls;
+    node.innerHTML = html;
+    return node;
+  }
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s == null ? "" : String(s);
+    return d.innerHTML;
+  }
+
+  backBtn.addEventListener("click", function () { render(stack.pop() || root); });
+  restartBtn.addEventListener("click", function () { stack = []; render(root); });
+  render(root);
+})();
+</script>
+{% endif %}
+{% endblock %}

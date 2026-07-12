@@ -34,10 +34,22 @@ urlpatterns = [
         "login", "logout", "raven", "profile_setup", "profile",
         "waitlist", "whatsapp", "set_password",
     ]))),
-    path("", include(_stub_patterns("core", ["home", "about", "wellbeing", "policies"]))),
+    path("", include(_stub_patterns("core", [
+        "home", "about", "wellbeing", "policies", "winter_ball",
+    ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
+    path("faq/", include(_stub_patterns("faq", ["index", "contacts"]))),
     path("me/", include(_stub_patterns("dashboard", ["home"]))),
     path("admin/", include(_stub_patterns("panel", ["home"]))),
+    path("members/", include(([
+        path("", _stub, name="directory"),
+        path("<str:username>/", _stub, name="profile"),
+    ], "members"))),
+    path("messages/", include(([
+        path("", _stub, name="inbox"),
+        path("<str:username>/", _stub, name="thread"),
+        path("<str:username>/block/", _stub, name="block_toggle"),
+    ], "inbox"))),
     path("supper-club/", include(([
         path("", _stub, name="index"),
         path("restaurant/<int:pk>/", _stub, name="restaurant"),
@@ -130,16 +142,16 @@ class VisibilityTests(EventTestCase):
         self.assertContains(response, "avatar-token")
 
     def test_anonymous_members_only_detail_404(self):
-        response = self.client.get(reverse("events:detail", args=[self.members_event.pk]))
+        response = self.client.get(reverse("events:detail", args=[self.members_event.slug]))
         self.assertEqual(response.status_code, 404)
 
     def test_member_members_only_detail_ok(self):
         self.client.force_login(self.member)
-        response = self.client.get(reverse("events:detail", args=[self.members_event.pk]))
+        response = self.client.get(reverse("events:detail", args=[self.members_event.slug]))
         self.assertEqual(response.status_code, 200)
 
     def test_anonymous_detail_no_attendee_names(self):
-        response = self.client.get(reverse("events:detail", args=[self.public_event.pk]))
+        response = self.client.get(reverse("events:detail", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, "avatar-token")
 
@@ -147,50 +159,50 @@ class VisibilityTests(EventTestCase):
 class PermissionTests(EventTestCase):
     def test_edit_forbidden_for_non_creator(self):
         self.client.force_login(self.other)
-        response = self.client.get(reverse("events:edit", args=[self.public_event.pk]))
+        response = self.client.get(reverse("events:edit", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 403)
 
     def test_edit_allowed_for_creator_and_admin(self):
         self.client.force_login(self.creator)
         self.assertEqual(
-            self.client.get(reverse("events:edit", args=[self.public_event.pk])).status_code, 200
+            self.client.get(reverse("events:edit", args=[self.public_event.slug])).status_code, 200
         )
         self.client.force_login(self.admin)
         self.assertEqual(
-            self.client.get(reverse("events:edit", args=[self.public_event.pk])).status_code, 200
+            self.client.get(reverse("events:edit", args=[self.public_event.slug])).status_code, 200
         )
 
     def test_cancel_forbidden_for_non_creator(self):
         self.client.force_login(self.other)
-        response = self.client.post(reverse("events:cancel", args=[self.public_event.pk]))
+        response = self.client.post(reverse("events:cancel", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 403)
         self.public_event.refresh_from_db()
         self.assertFalse(self.public_event.is_cancelled)
 
     def test_export_forbidden_for_non_creator(self):
         self.client.force_login(self.other)
-        response = self.client.get(reverse("events:export", args=[self.public_event.pk]))
+        response = self.client.get(reverse("events:export", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 403)
 
     def test_export_requires_login(self):
-        response = self.client.get(reverse("events:export", args=[self.public_event.pk]))
+        response = self.client.get(reverse("events:export", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 302)
 
     def test_export_ok_for_creator_and_admin(self):
         self.client.force_login(self.creator)
-        response = self.client.get(reverse("events:export", args=[self.public_event.pk]))
+        response = self.client.get(reverse("events:export", args=[self.public_event.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.member.mobile)
         self.client.force_login(self.admin)
         self.assertEqual(
-            self.client.get(reverse("events:export", args=[self.public_event.pk])).status_code,
+            self.client.get(reverse("events:export", args=[self.public_event.slug])).status_code,
             200,
         )
 
     def test_export_csv(self):
         self.client.force_login(self.creator)
         response = self.client.get(
-            reverse("events:export", args=[self.public_event.pk]), {"format": "csv"}
+            reverse("events:export", args=[self.public_event.slug]), {"format": "csv"}
         )
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/csv", response["Content-Type"])
@@ -202,7 +214,7 @@ class PermissionTests(EventTestCase):
 
 class RSVPTests(EventTestCase):
     def rsvp_url(self, event):
-        return reverse("events:rsvp", args=[event.pk])
+        return reverse("events:rsvp", args=[event.slug])
 
     def test_rsvp_toggles_without_deleting(self):
         self.client.force_login(self.other)
@@ -303,7 +315,7 @@ class OfficialFlagTests(EventTestCase):
         )
         self.client.force_login(self.creator)
         response = self.client.post(
-            reverse("events:edit", args=[official.pk]),
+            reverse("events:edit", args=[official.slug]),
             self.form_data(title="Big official night (edited)", is_official=""),
         )
         self.assertEqual(response.status_code, 302)

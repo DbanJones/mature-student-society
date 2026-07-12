@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Messages · {{ member.get_full_name|default:member.username }}{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/social.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{% url 'inbox:inbox' %}">← All messages</a></p>
+
+<div class="thread-head card">
+  <span class="member-photo">
+    {% if member.photo %}
+      <img src="{{ member.photo.url }}" alt="">
+    {% else %}
+      <span class="member-initials">{{ member.initials }}</span>
+    {% endif %}
+  </span>
+  <div style="flex:1">
+    <h1 style="margin:0; font-size:1.3rem">
+      <a href="{% url 'members:profile' member.username %}">{{ member.get_full_name|default:member.username }}</a>
+    </h1>
+    <p class="muted small" style="margin:0">
+      {% if member.college %}{{ member.get_college_display }}{% endif %}
+      {% if member.course %}{% if member.college %} · {% endif %}{{ member.course }}{% endif %}
+    </p>
+  </div>
+  <form method="post" action="{% url 'inbox:block_toggle' member.username %}"
+        {% if not is_blocked %}onsubmit="return confirm('Block {{ member.get_full_name|default:member.username|escapejs }}? Neither of you will be able to message the other.');"{% endif %}>
+    {% csrf_token %}
+    <button type="submit" class="btn btn-ghost btn-small">
+      {% if is_blocked %}Unblock{% else %}Block{% endif %}
+    </button>
+  </form>
+</div>
+
+<div class="thread card">
+  {% if thread_messages %}
+    {% for message in thread_messages %}
+      <div class="bubble-row {% if message.sender == user %}mine{% else %}theirs{% endif %}">
+        <div class="bubble">
+          {% if message.is_removed %}
+            <em class="muted small">Message removed by an admin.</em>
+          {% else %}
+            {{ message.body|linebreaksbr }}
+          {% endif %}
+          <span class="bubble-meta">{{ message.created_at|date:"j M, H:i" }}{% if message.sender == user and message.read_at %} · read{% endif %}</span>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted" style="text-align:center; padding:1.5rem 0">
+      No messages yet — say hello.
+    </p>
+  {% endif %}
+</div>
+
+{% if send_denied %}
+  <div class="flash flash-warning">{{ send_denied }}</div>
+{% else %}
+  <form method="post" class="thread-compose card">
+    {% csrf_token %}
+    <textarea name="body" rows="3" maxlength="{{ max_length }}" required
+              placeholder="Write a message to {{ member.first_name|default:member.username }}…"
+              aria-label="Message"></textarea>
+    <div class="thread-compose-foot">
+      <span class="muted small">Messages may be reviewed by admins to keep the community safe.</span>
+      <button type="submit" class="btn btn-accent">Send</button>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

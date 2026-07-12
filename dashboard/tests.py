@@ -86,3 +86,51 @@ class DashboardTests(TestCase):
         response = self.client.get(reverse("dashboard:home"))
         self.assertNotIn("pending_approvals", response.context)
         self.assertNotContains(response, "Open the admin panel")
+
+
+class KeepyUppyTests(TestCase):
+    """The hidden football: score submission and leaderboard rules."""
+
+    def setUp(self):
+        self.member = make_member("ku001")
+        self.rival = make_member("ku002", first_name="Riva", last_name="Larsen")
+        self.url = reverse("dashboard:game_scores")
+
+    def submit(self, score):
+        return self.client.post(
+            self.url, {"score": score}, content_type="application/json"
+        )
+
+    def test_requires_login(self):
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+
+    def test_submit_keeps_personal_best_only(self):
+        self.client.force_login(self.member)
+        self.assertEqual(self.submit(7).json()["best"], 7)
+        self.assertEqual(self.submit(3).json()["best"], 7)   # lower: kept
+        self.assertEqual(self.submit(12).json()["best"], 12)  # higher: replaces
+
+    def test_leaderboard_orders_and_flags_me(self):
+        self.client.force_login(self.rival)
+        self.submit(20)
+        self.client.force_login(self.member)
+        data = self.submit(5).json()
+        self.assertEqual([row["score"] for row in data["leaderboard"]], [20, 5])
+        self.assertEqual([row["me"] for row in data["leaderboard"]], [False, True])
+
+    def test_shadow_banned_scores_hidden(self):
+        self.client.force_login(self.rival)
+        self.submit(50)
+        self.rival.is_shadow_banned = True
+        self.rival.save(update_fields=["is_shadow_banned"])
+        self.client.force_login(self.member)
+        data = self.client.get(self.url).json()
+        self.assertEqual(data["leaderboard"], [])
+
+    def test_garbage_rejected_and_scores_capped(self):
+        self.client.force_login(self.member)
+        response = self.client.post(
+            self.url, "not json", content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.submit(999999).json()["best"], 10000)  # capped

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Messages{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/social.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Messages</h1>
+    <p class="lede">Direct messages between members. Find someone via the
+      <a href="{% url 'members:directory' %}">members directory</a> to start a
+      conversation.</p>
+  </div>
+</div>
+
+{% if conversations %}
+  <div class="card" style="padding:.4rem .6rem">
+    <ul class="convo-list">
+      {% for convo in conversations %}
+        <li>
+          <a class="convo-row{% if convo.unread %} unread{% endif %}"
+             href="{% url 'inbox:thread' convo.member.username %}">
+            <span class="member-photo">
+              {% if convo.member.photo %}
+                <img src="{{ convo.member.photo.url }}" alt="">
+              {% else %}
+                <span class="member-initials">{{ convo.member.initials }}</span>
+              {% endif %}
+            </span>
+            <span class="convo-main">
+              <strong>{{ convo.member.get_full_name|default:convo.member.username }}</strong>
+              <span class="convo-preview">
+                {% if convo.last.is_removed %}
+                  <em class="muted">message removed by an admin</em>
+                {% else %}
+                  {% if convo.last.sender == user %}You: {% endif %}{{ convo.last.body|truncatechars:80 }}
+                {% endif %}
+              </span>
+            </span>
+            <span class="convo-side">
+              <span class="muted small">{{ convo.last.created_at|date:"j M, H:i" }}</span>
+              {% if convo.unread %}<span class="nav-badge">{{ convo.unread }}</span>{% endif %}
+            </span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <div class="empty">
+    No conversations yet. Head to the
+    <a href="{% url 'members:directory' %}">members directory</a>, open a
+    profile and press “Message”.
+  </div>
+{% endif %}
+
+<p class="muted small" style="margin-top:1rem">
+  To keep everyone safe, messages may be reviewed by the committee's admins,
+  and you can block any member from their profile thread. Be kind.
+</p>
+{% endblock %}

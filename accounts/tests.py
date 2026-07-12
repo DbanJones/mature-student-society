@@ -354,3 +354,55 @@ class AssociateInviteTests(TestCase):
         )
         assoc.refresh_from_db()
         self.assertTrue(assoc.check_password("orange-bicycle-42"))
+
+
+class ProfileDetailTests(TestCase):
+    """The talk-to-me-about / work / interests profile fields."""
+
+    def _member(self, username, **extra):
+        return User.objects.create_user(
+            username=username, password="pw", first_name="Test",
+            last_name="Member", college="wolfson", mobile="+44 7700 900001",
+            email=f"{username}@cam.ac.uk", **extra,
+        )
+
+    def test_profile_page_shows_detail_fields(self):
+        member = self._member(
+            "pd001",
+            talk_to_me_about="sourdough and the Civil War",
+            work="15 years in logistics",
+            interests="hill walking, chess",
+        )
+        viewer = self._member("pd002")
+        self.client.force_login(viewer)
+        response = self.client.get(
+            reverse("members:profile", args=[member.username])
+        )
+        self.assertContains(response, "Talk to me about")
+        self.assertContains(response, "sourdough and the Civil War")
+        self.assertContains(response, "15 years in logistics")
+        self.assertContains(response, "hill walking, chess")
+
+    def test_directory_searches_work_and_interests(self):
+        self._member("pd003", interests="amateur radio, chess")
+        viewer = self._member("pd004", work="ex-barrister")
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("members:directory"), {"q": "amateur radio"})
+        self.assertContains(response, "pd003")
+        response = self.client.get(reverse("members:directory"), {"q": "barrister"})
+        self.assertContains(response, "pd004")
+
+    def test_own_profile_form_saves_new_fields(self):
+        member = self._member("pd005")
+        self.client.force_login(member)
+        response = self.client.post(reverse("accounts:profile"), {
+            "first_name": "Test", "last_name": "Member", "college": "wolfson",
+            "course": "MBA", "bio": "", "talk_to_me_about": "supply chains",
+            "work": "Procurement", "interests": "salsa",
+            "mobile": "+44 7700 900001", "email": "pd005@cam.ac.uk",
+        })
+        self.assertEqual(response.status_code, 302)
+        member.refresh_from_db()
+        self.assertEqual(member.talk_to_me_about, "supply chains")
+        self.assertEqual(member.work, "Procurement")
+        self.assertEqual(member.interests, "salsa")

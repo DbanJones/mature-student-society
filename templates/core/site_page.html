@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load md %}
+
+{% block title %}{{ page.title }}{% endblock %}
+
+{% block content %}
+{% if not page.is_published %}
+  <div class="flash flash-warning" style="margin:0 0 1.5rem">
+    This page is unpublished — only admins can see it.
+  </div>
+{% endif %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ page.title }}</h1>
+  </div>
+  {% if user.is_portal_admin %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Edit page</a>
+    </div>
+  {% endif %}
+</div>
+
+<div class="card"><div class="prose">{{ page.content|richtext }}</div></div>
+
+<p class="muted small" style="margin-top:1rem">
+  Last updated {{ page.updated_at|date:"j F Y" }}{% if page.updated_by %}
+  by {{ page.updated_by.get_full_name|default:page.updated_by.username }}{% endif %}.
+</p>
+{% endblock %}

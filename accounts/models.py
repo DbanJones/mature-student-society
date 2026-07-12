@@ -61,6 +61,29 @@ class User(AbstractUser):
         help_text="Cambridge CRSid, e.g. dbj25. Set automatically by Raven login.",
     )
     college = models.CharField(max_length=32, choices=COLLEGES, blank=True)
+    course = models.CharField(
+        max_length=120, blank=True,
+        help_text="What you're studying (or your role), e.g. 'MPhil History of Science'.",
+    )
+    bio = models.TextField(
+        blank=True, max_length=1500,
+        help_text="A short 'about me' shown on your member profile.",
+    )
+    talk_to_me_about = models.CharField(
+        max_length=200, blank=True,
+        help_text="Conversation starters, e.g. 'the Civil War, sourdough, "
+                  "returning to study at 40'.",
+    )
+    work = models.CharField(
+        max_length=200, blank=True,
+        help_text="What you do or did before Cambridge, e.g. '15 years in "
+                  "supply-chain logistics'.",
+    )
+    interests = models.CharField(
+        max_length=250, blank=True,
+        help_text="Hobbies and interests, e.g. 'hill walking, chess, "
+                  "amateur radio'.",
+    )
     mobile = models.CharField(
         max_length=24, blank=True,
         help_text="Used for WhatsApp group adds and event organiser contact. "
@@ -72,7 +95,22 @@ class User(AbstractUser):
         default=False,
         help_text="Society admin: can approve members, manage events, send mailers.",
     )
+    is_super_admin = models.BooleanField(
+        default=False,
+        help_text="Super admin: can appoint/remove admins, manage tags and "
+                  "site-wide email settings. Normally just the webmaster.",
+    )
     is_banned = models.BooleanField(default=False)
+    is_shadow_banned = models.BooleanField(
+        default=False,
+        help_text="Shadow ban: the member can use the site normally, but their "
+                  "events and messages are invisible to everyone else.",
+    )
+    shadow_banned_at = models.DateTimeField(null=True, blank=True)
+    can_send_messages = models.BooleanField(
+        default=True,
+        help_text="Untick to mute this member: they can read messages but not send.",
+    )
     banned_at = models.DateTimeField(null=True, blank=True)
     banned_by = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL,
@@ -109,6 +147,16 @@ class User(AbstractUser):
     def mark_whatsapp_link_viewed(self):
         self.whatsapp_link_viewed_at = timezone.now()
         self.save(update_fields=["whatsapp_link_viewed_at"])
+
+    def shadow_ban(self):
+        self.is_shadow_banned = True
+        self.shadow_banned_at = timezone.now()
+        self.save(update_fields=["is_shadow_banned", "shadow_banned_at"])
+
+    def shadow_unban(self):
+        self.is_shadow_banned = False
+        self.shadow_banned_at = None
+        self.save(update_fields=["is_shadow_banned", "shadow_banned_at"])
 
     def ban(self, by_admin):
         self.is_banned = True

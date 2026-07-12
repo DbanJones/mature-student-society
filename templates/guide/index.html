@@ -2,7 +2,10 @@
 {% load static %}
 
 {% block title %}The Mature Students Guide{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/guide.css' %}">
+  <link rel="stylesheet" href="{% static 'css/faq.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="page-head">
@@ -28,6 +31,29 @@
   <button type="submit" class="btn">Search</button>
 </form>
 
+{% if not q %}
+  <div class="faq-portals">
+    <a class="faq-portal" href="{% url 'faq:contacts' %}">
+      <span class="faq-portal-emoji">🧭</span>
+      <strong>Who to contact</strong>
+      <span class="muted small">A decision map: the right person, what to
+        say, and a ready-to-fill email for any problem.</span>
+    </a>
+    <a class="faq-portal" href="{% url 'faq:colleges' %}">
+      <span class="faq-portal-emoji">🏰</span>
+      <strong>College-specific info</strong>
+      <span class="muted small">All 31 colleges: character, what to verify,
+        formal hall rhythm, mature-student notes.</span>
+    </a>
+    <a class="faq-portal" href="{% url 'faq:departments' %}">
+      <span class="faq-portal-emoji">🔬</span>
+      <strong>Department-specific info</strong>
+      <span class="muted small">Workload, contacts and pitfalls by School —
+        labs, essays, placements, group projects.</span>
+    </a>
+  </div>
+{% endif %}
+
 {% if not user.is_authenticated %}
   <p class="muted small">
     Spotted something missing or out of date?
@@ -39,14 +65,16 @@
 {% if q %}
   <h2>Results for “{{ q }}”</h2>
   {% if results %}
+    <p class="muted small">{{ results|length }} page{{ results|length|pluralize }} found, best match first.</p>
     <div class="stack">
-      {% for p in results %}
-        <div class="card">
-          <h3><a href="{{ p.get_absolute_url }}">{{ p.title }}</a></h3>
-          <p class="muted small">
-            <span class="badge">{{ p.get_section_display }}</span>
-            &nbsp;Updated {{ p.updated_at|date:"j M Y" }}{% if p.updated_by %}
-            by {{ p.updated_by.get_full_name|default:p.updated_by.username }}{% endif %}
+      {% for r in results %}
+        <div class="card search-hit">
+          <h3><a href="{{ r.page.get_absolute_url }}">{{ r.title_html }}</a></h3>
+          <p class="search-snippet">{{ r.snippet }}</p>
+          <p class="muted small" style="margin:0">
+            <span class="badge">{{ r.page.get_section_display }}</span>
+            &nbsp;Updated {{ r.page.updated_at|date:"j M Y" }}{% if r.page.updated_by %}
+            by {{ r.page.updated_by.get_full_name|default:r.page.updated_by.username }}{% endif %}
           </p>
         </div>
       {% endfor %}

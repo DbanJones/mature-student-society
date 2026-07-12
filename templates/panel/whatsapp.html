@@ -10,6 +10,26 @@
   </div>
 </div>
 
+<div class="card" style="margin-bottom:1.25rem">
+  <h2>Group settings & one-time invite</h2>
+  <p class="small muted">
+    Each member may view the invite link once ({{ used_count }} member{{ used_count|pluralize }}
+    have used theirs). Reset an individual from the Members tab; if WhatsApp
+    made you rotate the invite link, update it here and reset everyone in one
+    go.
+  </p>
+  <form method="post" action="{% url 'panel:whatsapp_settings' %}" class="filter-bar">
+    {% csrf_token %}
+    {{ settings_form.whatsapp_group_link }}
+    <button type="submit" class="btn btn-small">Save link</button>
+    <button type="submit" name="reset_all" value="1" class="btn btn-small btn-ghost"
+            onclick="return confirm('Reset the one-time invite for every member? All {{ used_count }} used links become viewable again.');">
+      Save &amp; reset for everyone
+    </button>
+  </form>
+  <span class="helptext">{{ settings_form.whatsapp_group_link.help_text }}</span>
+</div>
+
 {% if open_requests %}
   <div class="table-scroll">
     <table class="data">

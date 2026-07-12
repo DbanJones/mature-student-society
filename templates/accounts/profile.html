@@ -13,6 +13,9 @@
     <h1>My profile</h1>
     <p class="muted">What other members (and event organisers) see.</p>
   </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="{% url 'members:profile' user.username %}">View my public profile</a>
+  </div>
 </div>
 
 <div class="grid grid-2">
