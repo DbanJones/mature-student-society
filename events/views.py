@@ -78,9 +78,26 @@ def calendar_view(request):
     if q:
         visible = visible.search(q)
 
+    # Deliberately a plain datetime range, not start__date__gte/lte: the
+    # __date lookup asks the database to convert start (stored in UTC) into
+    # Europe/London before comparing, which on MySQL compiles to
+    # DATE(CONVERT_TZ(start, 'UTC', 'Europe/London')). CONVERT_TZ silently
+    # returns NULL — matching nothing — unless the server's mysql.time_zone*
+    # tables have been loaded, which shared hosts (e.g. SRCF) typically don't
+    # grant permission for. Comparing against aware datetime bounds instead
+    # needs no timezone conversion in the database at all.
+    grid_start_dt = timezone.make_aware(
+        datetime.datetime.combine(grid_start, datetime.time.min)
+    )
+    grid_end_dt = timezone.make_aware(
+        datetime.datetime.combine(
+            grid_end + datetime.timedelta(days=1), datetime.time.min
+        )
+    )
+
     # Official events lead each day's cell, then the rest chronologically.
     month_events = visible.filter(
-        start__date__gte=grid_start, start__date__lte=grid_end
+        start__gte=grid_start_dt, start__lt=grid_end_dt
     ).order_by("-is_official", "start")
     by_day = {}
     for event in month_events:
