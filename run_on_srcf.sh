@@ -19,7 +19,7 @@ set -a; source .env; set +a
 # Make sure the database exists and has demo data (safe to run repeatedly).
 .venv/bin/python manage.py migrate --noinput
 if [ ! -s "db.sqlite3" ]; then
-  .venv/bin/python manage.py seed_demo
+  .venv/bin/python manage.py seed_demo --categories-only
 fi
 
 echo ""
