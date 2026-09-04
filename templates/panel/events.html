@@ -51,7 +51,8 @@
             <td class="small">{{ event.created_by.get_full_name|default:event.created_by.username }}</td>
             <td>{{ event.going_count_agg }}</td>
             <td>
-              {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+              {% if event.is_super %}<span class="badge badge-super">Super</span>{% endif %}
+              {% if event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
               {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
               {% if event.is_cancelled %}<span class="badge badge-danger">Cancelled</span>{% endif %}
               {% if event.created_by.is_shadow_banned %}<span class="badge badge-danger">Creator shadow-banned</span>{% endif %}
@@ -66,6 +67,16 @@
                     {% if event.is_official %}Unmark official{% else %}Mark official{% endif %}
                   </button>
                 </form>
+                {% if user.is_super_admin %}
+                  <form method="post" action="{% url 'panel:event_action' event.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="hidden" name="action" value="toggle_super">
+                    <button type="submit" class="btn btn-small btn-ghost">
+                      {% if event.is_super %}Demote from super{% else %}🌟 Make super{% endif %}
+                    </button>
+                  </form>
+                {% endif %}
                 {% if event.is_cancelled %}
                   <form method="post" action="{% url 'panel:event_action' event.pk %}">
                     {% csrf_token %}

@@ -122,6 +122,14 @@
       </p>
     {% endif %}
 
+    {% if form.is_super %}
+      <p class="check-row">
+        {{ form.is_super }} <label for="{{ form.is_super.id_for_label }}" style="display: inline;">{{ form.is_super.label }}</label>
+        <span class="helptext">{{ form.is_super.help_text }}</span>
+        {{ form.is_super.errors }}
+      </p>
+    {% endif %}
+
     {% if form.allow_past %}
       <p class="check-row muted">
         {{ form.allow_past }} <label for="{{ form.allow_past.id_for_label }}" style="display: inline;">{{ form.allow_past.label }}</label>

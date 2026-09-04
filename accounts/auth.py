@@ -16,9 +16,10 @@ Three modes, selected by the RAVEN_MODE environment variable (see settings):
 
 - ``oidc``   (SRCF "Track B", first-party): OpenID Connect against the
   University's Microsoft Entra tenant via a UIS Toolkit app registration.
-  Wire-up documented in DEPLOYMENT_SRCF.md; uses mozilla-django-oidc with a
-  claim mapping that derives the CRSid from the ``upn``/``preferred_username``
-  claim only when the domain is exactly ``cam.ac.uk``.
+  NOT YET IMPLEMENTED — selecting this mode currently does nothing; the wire-up
+  (mozilla-django-oidc, a ``/oidc/callback/`` route, and a claim mapping that
+  derives the CRSid from ``upn``/``preferred_username`` only when the domain is
+  exactly ``cam.ac.uk``) still has to be written. See DEPLOYMENT_SRCF.md §8.
 """
 
 from django.contrib.auth.backends import RemoteUserBackend

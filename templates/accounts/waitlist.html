@@ -39,6 +39,16 @@
       <span class="helptext">{{ form.connection.help_text }}</span>
       {{ form.connection.errors }}
     </p>
+    {% if form.accept_terms %}
+      <p>
+        <label>
+          {{ form.accept_terms }}
+          I have read and agree to the
+          <a href="{% url 'core:terms' %}" target="_blank" rel="noopener">terms and conditions</a>.
+        </label>
+        {{ form.accept_terms.errors }}
+      </p>
+    {% endif %}
     <p class="hp-field" aria-hidden="true">
       <label for="{{ form.website.id_for_label }}">Website</label>
       <input type="text" name="{{ form.website.html_name }}"

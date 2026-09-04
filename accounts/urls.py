@@ -9,6 +9,7 @@ urlpatterns = [
     path("login/dev/", views.dev_login, name="dev_login"),
     path("logout/", views.LogoutView.as_view(), name="logout"),
     path("raven/", views.raven, name="raven"),
+    path("terms/", views.terms, name="terms"),
     path("profile/setup/", views.profile_setup, name="profile_setup"),
     path("profile/", views.profile, name="profile"),
     path("profile/password/", views.PasswordChangeView.as_view(), name="password_change"),

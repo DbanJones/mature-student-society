@@ -31,8 +31,9 @@ class Category(models.Model):
     )
     owners = models.ManyToManyField(
         settings.AUTH_USER_MODEL, blank=True, related_name="tags_owned",
-        help_text="Members who run this club: they can mark their events as "
-                  "official and edit the tag's page.",
+        help_text="Members who run this club: they manage the tag's events "
+                  "from the panel (promoting them to tagged events), and "
+                  "edit the tag's page. Every tag should have at least one.",
     )
     has_restaurant_ratings = models.BooleanField(
         default=False,
@@ -101,11 +102,16 @@ class EventQuerySet(models.QuerySet):
     def upcoming(self):
         return self.filter(start__gte=timezone.now()).order_by("start")
 
+    def by_promotion(self):
+        """The site-wide listing order: super events, then tagged (official)
+        events, then everything else — each group soonest-first."""
+        return self.order_by("-is_super", "-is_official", "start")
+
     def in_next_days(self, days=14):
         now = timezone.now()
         return self.filter(
             start__gte=now, start__lte=now + timezone.timedelta(days=days)
-        ).order_by("-is_official", "start")
+        ).by_promotion()
 
 
 class Event(models.Model):
@@ -145,10 +151,17 @@ class Event(models.Model):
         help_text="Details for attendees (meeting point, what to bring…) — "
                   "shown only to people who have RSVP'd. Markdown supported.",
     )
+    is_super = models.BooleanField(
+        default=False,
+        help_text="Super event: a society headline. Shown larger on the "
+                  "calendar, pinned to every member's dashboard, and listed "
+                  "first everywhere. Only super admins can set this.",
+    )
     is_official = models.BooleanField(
         default=False,
-        help_text="Official society events are prioritised in listings and the mailer. "
-                  "Only admins can set this.",
+        help_text="Tagged event: promoted by the owners of its tag (or a "
+                  "society admin), e.g. an official Supper Club outing. "
+                  "Ranks above ordinary member events, below super events.",
     )
     members_only = models.BooleanField(
         default=False,
@@ -181,7 +194,10 @@ class Event(models.Model):
 
     def build_slug(self):
         """'Winter Ball' on 12 Dec 2026 → 'winter-ball-12-dec-2026' (de-duped)."""
-        date_part = timezone.localtime(self.start).strftime("%-d-%b-%Y").lower()
+        # Format the day without a leading zero portably: the strftime "%-d"
+        # flag is glibc-only and raises on Windows, so build it from .day.
+        local_start = timezone.localtime(self.start)
+        date_part = f"{local_start.day}-{local_start:%b-%Y}".lower()
         base = slugify(f"{self.title} {date_part}")[:170] or f"event-{date_part}"
         slug, n = base, 2
         while slug in self.RESERVED_SLUGS or (
@@ -235,8 +251,24 @@ class Event(models.Model):
         return self.rsvps.filter(user=user).first()
 
     def can_edit(self, user):
+        """Creator, host, society admins — and the owners of the event's tag,
+        who manage all their tag's events from the panel."""
         return user.is_authenticated and (
-            user == self.created_by or user == self.host or user.is_portal_admin
+            user == self.created_by
+            or user == self.host
+            or user.is_portal_admin
+            or self.category.is_owned_by(user)
+        )
+
+    def can_promote(self, user):
+        """May ``user`` toggle this event's tagged (official) status?
+
+        Society admins may promote anything; a tag's owners may promote the
+        events that carry their tag. Super status is NOT covered here — that
+        is checked against ``is_super_admin`` alone.
+        """
+        return user.is_authenticated and (
+            user.is_portal_admin or self.category.is_owned_by(user)
         )
 
     @property
@@ -257,8 +289,10 @@ class Event(models.Model):
         ]
         if self.location:
             bits.append(f"📍 {self.location}")
-        if self.is_official:
-            bits.insert(0, "⭐ Official MatureSoc event")
+        if self.is_super:
+            bits.insert(0, "🌟 MSS super event")
+        elif self.is_official:
+            bits.insert(0, f"⭐ Official {self.category.name} event")
         if absolute_url:
             bits.append(absolute_url)
         return "\n".join(bits)

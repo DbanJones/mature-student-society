@@ -26,6 +26,7 @@
           <th>Name</th>
           <th>Contact</th>
           <th>Connection to the society</th>
+          <th>Terms</th>
           {% if status == 'pending' %}
             <th>Waiting</th>
             <th>Decision</th>
@@ -45,6 +46,14 @@
               <span class="small muted">{{ req.mobile|default:"no mobile given" }}</span>
             </td>
             <td class="small">{{ req.connection }}</td>
+            <td class="small">
+              {% if req.terms_accepted_at %}
+                <span class="badge">✅ v{{ req.terms_version }}</span><br>
+                <span class="muted">{{ req.terms_accepted_at|date:"j M Y, H:i" }}</span>
+              {% else %}
+                <span class="badge badge-danger">Not accepted</span>
+              {% endif %}
+            </td>
             {% if status == 'pending' %}
               <td class="small muted">{{ req.created_at|timesince }} ago</td>
               <td>

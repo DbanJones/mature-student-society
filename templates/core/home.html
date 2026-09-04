@@ -51,7 +51,7 @@
             </div>
             <div class="event-row-body">
               <span class="cat-chip" style="background: {{ event.category.color }}">{{ event.category.emoji }} {{ event.category.name }}</span>
-              {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+              {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
               {% if event.members_only %}<span class="badge badge-members">Members only</span>{% endif %}
               <h3><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></h3>
               <p class="small muted">

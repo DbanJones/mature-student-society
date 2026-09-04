@@ -76,11 +76,11 @@
       <div class="cal-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}">
         <span class="cal-daynum" data-full="{{ cell.date|date:'D j F' }}">{{ cell.date.day }}</span>
         {% for event in cell.events|slice:":3" %}
-          <a class="cal-event{% if event.is_official %} official{% endif %}"
+          <a class="cal-event{% if event.is_super %} super{% elif event.is_official %} official{% endif %}"
              style="--c: {{ event.category.color }};"
              href="{{ event.get_absolute_url }}"
              title="{{ event.title }} — {{ event.start|date:'H:i' }}{% if event.location %} · {{ event.location }}{% endif %}">
-            {% if event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}</a>
+            {% if event.is_super %}<span class="off-star">🌟</span> {% elif event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}</a>
         {% endfor %}
         {% if cell.events|length > 3 %}
           <a class="cal-more" href="{{ cell.events.3.get_absolute_url }}">+{{ cell.events|length|add:"-3" }} more</a>
@@ -102,7 +102,8 @@
           </span>
           <span class="up-main">
             <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
-            {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+            {% if event.is_super %}<span class="badge badge-super">Super event</span>
+            {% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
             {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
             <br>
             <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>

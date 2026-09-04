@@ -1,0 +1,88 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if version %}Edit terms v{{ version.number }}{% else %}Add a terms version{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:terms' %}">← Terms and conditions</a></p>
+    <h1>{% if version %}Edit version {{ version.number }}{% else %}Add a terms version{% endif %}</h1>
+    {% if version %}
+      <p class="muted">
+        Last changed {{ version.updated_at|date:"j M Y, H:i" }}{% if version.updated_by %}
+        by {{ version.updated_by.get_full_name|default:version.updated_by.username }}{% endif %}.
+      </p>
+    {% endif %}
+  </div>
+</div>
+
+{% if version and acceptance_count %}
+  <div class="flash flash-warning" style="margin-bottom:1.5rem">
+    <strong>{{ acceptance_count }} member{{ acceptance_count|pluralize }}</strong>
+    already accepted this version. Editing the text changes what the portal
+    shows but not what they agreed to — for a substantive change, add a new
+    version instead so everyone is asked again.
+  </div>
+{% endif %}
+
+<div class="card" style="max-width: 52rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <div class="grid grid-2">
+      <p>
+        {{ form.title.label_tag }} {{ form.title }}
+        {{ form.title.errors }}
+      </p>
+      <p>
+        {{ form.number.label_tag }} {{ form.number }}
+        <span class="helptext">{{ form.number.help_text }}</span>
+        {{ form.number.errors }}
+      </p>
+    </div>
+    <p>
+      {{ form.content.label_tag }} {{ form.content }}
+      <span class="helptext">{{ form.content.help_text }}</span>
+      {{ form.content.errors }}
+    </p>
+    <p>
+      {{ form.change_note.label_tag }} {{ form.change_note }}
+      <span class="helptext">{{ form.change_note.help_text }}</span>
+      {{ form.change_note.errors }}
+    </p>
+    <p class="check-row">
+      {{ form.is_published }}
+      <label for="{{ form.is_published.id_for_label }}" style="display:inline">Published</label>
+      <span class="helptext">{{ form.is_published.help_text }}</span>
+    </p>
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">{% if version %}Save version{% else %}Create version{% endif %}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:terms' %}">Cancel</a>
+    </p>
+  </form>
+</div>
+
+{% if version and version.revisions.exists %}
+  <div class="card" style="margin-top:1rem; max-width: 52rem;">
+    <h2>Change history for this version</h2>
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>When</th><th>Change</th><th>Admin</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for revision in version.revisions.all %}
+            <tr>
+              <td class="small muted">{{ revision.created_at|date:"j M Y, H:i" }}</td>
+              <td class="small">{{ revision.get_action_display }}</td>
+              <td class="small">
+                {% if revision.editor %}{{ revision.editor.get_full_name|default:revision.editor.username }}
+                {% else %}<span class="muted">(removed)</span>{% endif %}
+              </td>
+              <td class="small muted">{{ revision.change_note|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

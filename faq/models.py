@@ -69,7 +69,7 @@ class ContactNode(models.Model):
     def _default_email(self):
         issue = (self.option_label or "the problem").strip()
         # Strip any leading emoji from the branch label.
-        issue = issue.lstrip("🚨📚💙💷🏠👨‍👩‍👧🛂⚖️🦁✉️☎️ ").strip() or "the problem"
+        issue = issue.lstrip("🚨📚💙💷🏠👨‍👩‍👧🛂⚖️🦁✉️☎️🏛️⚠️ ").strip() or "the problem"
         who = self.who.split("—")[0].split("+")[0].strip().rstrip(",;")
         # "Your Director of Studies" → "Dear Director of Studies,"
         for prefix in ("your ", "the ", "Your ", "The "):

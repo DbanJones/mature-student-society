@@ -14,9 +14,11 @@ class EventForm(forms.ModelForm):
     """Shared create/edit form.
 
     Permission-sensitive behaviour is enforced server-side here:
-    - ``is_official`` is admins-only: the field is removed for everyone else,
-      so a forged POST value is ignored by the ModelForm. Official events are
-      prioritised on the calendar and in the mailer.
+    - ``is_super`` exists only for super admins; the field is removed for
+      everyone else, so a forged POST value is ignored by the ModelForm.
+    - ``is_official`` (a tagged event) exists for society admins and for tag
+      owners; owners are additionally validated in clean() so they can only
+      promote events carrying a tag they own.
     - ``allow_past`` (the "this event already happened" override) only exists
       on create; edits never re-validate the start against the clock.
     """
@@ -36,14 +38,15 @@ class EventForm(forms.ModelForm):
         fields = [
             "title", "category", "description", "image", "location",
             "start", "end", "host", "capacity", "members_only", "is_official",
-            "group_chat_link", "attendee_info", "restaurant",
+            "is_super", "group_chat_link", "attendee_info", "restaurant",
         ]
         labels = {
             "category": "Tag",
             "image": "Event picture (optional)",
             "host": "Who's running it",
             "members_only": "Hide from the public calendar",
-            "is_official": "Official society event",
+            "is_official": "Tagged event (official for its tag)",
+            "is_super": "Super event",
             "group_chat_link": "WhatsApp group link (optional)",
             "attendee_info": "Details for attendees (optional)",
             "restaurant": "Restaurant",
@@ -85,12 +88,27 @@ class EventForm(forms.ModelForm):
         if is_create and user is not None:
             self.fields["host"].initial = user.pk
 
-        if user is None or not user.is_portal_admin:
+        is_admin = user is not None and user.is_portal_admin
+        owns_tags = (
+            user is not None
+            and user.is_authenticated
+            and user.tags_owned.exists()
+        )
+        if not (is_admin or owns_tags):
             del self.fields["is_official"]
         else:
             self.fields["is_official"].help_text = (
-                "Admins only. Official events lead the calendar day, the "
-                "'coming up' list and the What's On mailer."
+                "Promotes this event to its tag's official listing — it "
+                "ranks above ordinary member events. Admins may promote any "
+                "event; tag owners only events carrying their tag."
+            )
+        if user is None or not user.is_super_admin:
+            del self.fields["is_super"]
+        else:
+            self.fields["is_super"].help_text = (
+                "Super admins only. Super events lead every listing, appear "
+                "larger on the calendar, and are pinned to every member's "
+                "dashboard."
             )
         if not is_create:
             del self.fields["allow_past"]
@@ -125,6 +143,24 @@ class EventForm(forms.ModelForm):
                 "happened” below if that's deliberate.",
             )
         category = cleaned.get("category")
+        already_official_here = bool(
+            self.instance.pk
+            and self.instance.is_official
+            and category == self.instance.category
+        )
+        if (
+            cleaned.get("is_official")
+            and category is not None
+            and not already_official_here
+            and self.user is not None
+            and not self.user.is_portal_admin
+            and not category.is_owned_by(self.user)
+        ):
+            self.add_error(
+                "is_official",
+                f"You can only promote events carrying a tag you own — "
+                f"you don't own “{category.name}”.",
+            )
         if category and not category.has_restaurant_ratings:
             cleaned["restaurant"] = None
             cleaned["new_restaurant"] = ""

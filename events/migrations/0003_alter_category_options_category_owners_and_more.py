@@ -15,7 +15,9 @@ def backfill_event_slugs(apps, schema_editor):
     Event = apps.get_model("events", "Event")
     taken = set(RESERVED_SLUGS)
     for event in Event.objects.order_by("pk"):
-        date_part = timezone.localtime(event.start).strftime("%-d-%b-%Y").lower()
+        # "%-d" is glibc-only (raises on Windows); build the day portably.
+        local_start = timezone.localtime(event.start)
+        date_part = f"{local_start.day}-{local_start:%b-%Y}".lower()
         base = slugify(f"{event.title} {date_part}")[:170] or f"event-{date_part}"
         slug, n = base, 2
         while slug in taken:

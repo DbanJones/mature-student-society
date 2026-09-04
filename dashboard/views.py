@@ -64,6 +64,18 @@ def home(request):
         .order_by("-start")
     )
 
+    # Super events: society headliners, pinned to everyone's dashboard
+    # whether or not they've RSVP'd yet.
+    super_events = list(
+        Event.objects.visible_to(user)
+        .filter(is_super=True, start__gte=now)
+        .select_related("category")
+        .order_by("start")[:5]
+    )
+    going_ids = {e.pk for e in going_events}
+    for event in super_events:
+        event.already_going = event.pk in going_ids
+
     guide_edit_count = GuideRevision.objects.filter(editor=user).count()
 
     stats = {
@@ -81,6 +93,8 @@ def home(request):
     context = {
         "nav_active": "dashboard",
         "next_up": next_up,
+        "super_events": super_events,
+        "owned_tags": user.tags_owned.all(),
         "going_events": going_events,
         "running_events": running_events,
         "unrated_visits": unrated_visits,

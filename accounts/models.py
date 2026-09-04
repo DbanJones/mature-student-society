@@ -117,6 +117,15 @@ class User(AbstractUser):
         related_name="bans_issued",
     )
 
+    # Terms and conditions. The authoritative log is core.TermsAcceptance;
+    # these two fields are a denormalised copy of the latest acceptance so
+    # TermsAcceptanceMiddleware can check every request without a join.
+    terms_accepted_version = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Highest version of the terms this member has accepted.",
+    )
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+
     # One-time WhatsApp invite (requirement: approval grants a single view of
     # the group link; afterwards access must be re-requested from an admin).
     whatsapp_link_viewed_at = models.DateTimeField(null=True, blank=True)
@@ -139,6 +148,44 @@ class User(AbstractUser):
     @property
     def profile_complete(self):
         return bool(self.first_name and self.last_name and self.college and self.mobile)
+
+    def has_accepted_terms(self, current_number):
+        """Has this member accepted version ``current_number`` (or later)?
+
+        ``None`` means no terms are published, so there is nothing to accept.
+        """
+        if current_number is None:
+            return True
+        return (
+            self.terms_accepted_version is not None
+            and self.terms_accepted_version >= current_number
+        )
+
+    def record_terms_acceptance(self, terms, source, ip=None, user_agent="",
+                                accepted_at=None):
+        """Write the acceptance log row and update the denormalised fields.
+
+        Idempotent: a member who has already accepted this version keeps their
+        original timestamp rather than gaining a second row.
+        """
+        from core.models import TermsAcceptance
+
+        acceptance, _ = TermsAcceptance.objects.get_or_create(
+            user=self, version_number=terms.number,
+            defaults={
+                "terms": terms,
+                "terms_title": terms.title,
+                "source": source,
+                "ip_address": ip,
+                "user_agent": (user_agent or "")[:300],
+                "accepted_at": accepted_at or timezone.now(),
+            },
+        )
+        if (self.terms_accepted_version or 0) < terms.number:
+            self.terms_accepted_version = terms.number
+            self.terms_accepted_at = acceptance.accepted_at
+            self.save(update_fields=["terms_accepted_version", "terms_accepted_at"])
+        return acceptance
 
     @property
     def can_view_whatsapp_link(self):
@@ -192,6 +239,11 @@ class WaitlistRequest(models.Model):
         help_text="Their connection to the society, e.g. 'Partner of Jane Smith (Wolfson)'."
     )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    # Which terms the applicant ticked on the public form, and when. Shown to
+    # the reviewing admin, and carried onto the account when it is approved so
+    # a new associate isn't asked to accept the same version twice.
+    terms_version = models.PositiveIntegerField(null=True, blank=True)
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,

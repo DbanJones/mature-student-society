@@ -7,6 +7,7 @@ action writes an ``AuditLog`` row via ``AuditLog.record``.
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.core.mail import EmailMessage
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -16,14 +17,24 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import portal_admin_required, super_admin_required
+from accounts.decorators import (
+    portal_admin_required,
+    super_admin_required,
+    tag_owner_or_admin_required,
+)
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
-from core.models import SiteConfig, SitePage
+from core.models import (
+    SiteConfig,
+    SitePage,
+    TermsAcceptance,
+    TermsRevision,
+    TermsVersion,
+)
 from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
-from . import services
+from . import ai, services
 from .forms import (
     ContactNodeForm,
     DepartmentContactForm,
@@ -32,6 +43,7 @@ from .forms import (
     MemberEditForm,
     SitePageForm,
     TabVisibilityForm,
+    TermsVersionForm,
     TagAdminForm,
     WhatsAppSettingsForm,
 )
@@ -55,8 +67,12 @@ def _redirect_back(request, fallback="panel:members"):
 
 # --- dashboard -----------------------------------------------------------------
 
-@portal_admin_required
+@tag_owner_or_admin_required
 def home(request):
+    # Tag owners who aren't society admins get exactly one page of the
+    # panel — their tagged-events workspace — so /admin/ takes them there.
+    if not request.user.is_portal_admin:
+        return redirect("panel:tagged_events")
     return render(request, "panel/home.html", {
         "nav_active": "panel",
         "panel_tab": "home",
@@ -170,6 +186,7 @@ def _approve_waitlist_request(request, wreq, note):
         user.set_unusable_password()
         user.save()
         wreq.created_user = user
+        _carry_over_terms_acceptance(wreq, user)
         try:
             send_associate_invite(user, request)
             messages.success(
@@ -193,6 +210,27 @@ def _approve_waitlist_request(request, wreq, note):
     wreq.reviewed_at = timezone.now()
     wreq.review_note = note
     wreq.save()
+
+
+def _carry_over_terms_acceptance(wreq, user):
+    """Copy the applicant's waitlist acceptance onto their new account.
+
+    They ticked the box on the public form, so asking them to accept the same
+    version again at first login would be noise. The original timestamp is
+    preserved — that is the moment they actually agreed. If the terms have
+    moved on since they applied, nothing is carried over and the middleware
+    asks them to accept the current version instead.
+    """
+    if wreq.terms_version is None:
+        return
+    terms = TermsVersion.objects.filter(number=wreq.terms_version).first()
+    if terms is None:
+        return
+    user.record_terms_acceptance(
+        terms,
+        source="waitlist",
+        accepted_at=wreq.terms_accepted_at,
+    )
 
 
 # --- member management --------------------------------------------------------------
@@ -349,6 +387,9 @@ def member_toggle_mute(request, pk):
     if member == request.user:
         messages.error(request, "You cannot mute yourself.")
         return _redirect_back(request, fallback="panel:messages")
+    if member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be muted — demote them first.")
+        return _redirect_back(request, fallback="panel:messages")
     member.can_send_messages = not member.can_send_messages
     member.save(update_fields=["can_send_messages"])
     action = "unmute_messages" if member.can_send_messages else "mute_messages"
@@ -369,6 +410,8 @@ def member_ban(request, pk):
     member = get_object_or_404(User, pk=pk)
     if member == request.user:
         messages.error(request, "You cannot ban yourself.")
+    elif member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be banned — demote them first.")
     elif member.is_banned:
         messages.info(request, f"{_display_name(member)} is already banned.")
     else:
@@ -401,6 +444,9 @@ def member_delete(request, pk):
     member = get_object_or_404(User, pk=pk)
     if member == request.user:
         messages.error(request, "You cannot delete your own account from the panel.")
+        return redirect("panel:members")
+    if member.is_portal_admin or member.is_super_admin:
+        messages.error(request, "Admins can't be deleted — demote them first.")
         return redirect("panel:members")
 
     # Deleting a member cascades through the events they created: every RSVP
@@ -624,7 +670,22 @@ def event_action(request, pk):
         messages.success(
             request,
             f"“{event.title}” is {'now' if event.is_official else 'no longer'} "
-            "an official society event.",
+            f"an official {event.category.name} event.",
+        )
+    elif action == "toggle_super":
+        if not request.user.is_super_admin:
+            raise PermissionDenied("Only super admins can promote super events.")
+        event.is_super = not event.is_super
+        event.save(update_fields=["is_super", "updated_at"])
+        AuditLog.record(
+            request.user,
+            "mark_super" if event.is_super else "unmark_super",
+            target=event.title,
+        )
+        messages.success(
+            request,
+            f"“{event.title}” is {'now' if event.is_super else 'no longer'} "
+            "a super event.",
         )
     elif action == "delete":
         title = event.title
@@ -1027,6 +1088,281 @@ def tag_delete(request, pk):
     return redirect("panel:superadmin")
 
 
+# --- tagged events: the tag owners' workspace -------------------------------------------
+
+def _managed_tags(user):
+    """The tags this user runs. Society admins manage every tag."""
+    qs = Category.objects.prefetch_related("owners")
+    if user.is_portal_admin:
+        return qs
+    return qs.filter(owners=user)
+
+
+@tag_owner_or_admin_required
+def tagged_events(request):
+    """The tag owners' workspace: every event carrying one of their tags,
+    with promote/demote controls, plus a picker to adopt an existing event
+    into the tag (e.g. turning a member's dinner into a Supper Club event).
+    """
+    tags = list(_managed_tags(request.user))
+    now = timezone.now()
+
+    going = Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
+    for tag in tags:
+        events = (
+            tag.events.filter(is_cancelled=False)
+            .select_related("created_by", "host")
+            .annotate(going_count_agg=going)
+        )
+        tag.upcoming_events = list(
+            events.filter(start__gte=now).by_promotion()
+        )
+        tag.past_events = list(events.filter(start__lt=now).order_by("-start")[:8])
+
+    # The adopt picker: search upcoming events that don't yet carry the
+    # chosen tag. Only run when a tag owner has actually asked.
+    adopt_q = request.GET.get("adopt_q", "").strip()
+    adopt_results = []
+    if adopt_q and tags:
+        adopt_results = list(
+            Event.objects.filter(is_cancelled=False, start__gte=now)
+            .exclude(category__in=tags, is_official=True)
+            .search(adopt_q)
+            .select_related("category", "created_by")
+            .order_by("start")[:12]
+        )
+
+    return render(request, "panel/tagged_events.html", {
+        "nav_active": "panel",
+        "panel_tab": "tagged",
+        "tags": tags,
+        "adopt_q": adopt_q,
+        "adopt_results": adopt_results,
+    })
+
+
+@tag_owner_or_admin_required
+@require_POST
+def tagged_event_action(request, pk):
+    """Promote/demote an event within a managed tag, or adopt an event into
+    one. Every path re-checks ownership server-side; society admins may act
+    on any tag."""
+    event = get_object_or_404(Event.objects.select_related("category"), pk=pk)
+    action = request.POST.get("action")
+
+    def owns(tag):
+        return request.user.is_portal_admin or tag.is_owned_by(request.user)
+
+    if action in ("promote", "demote"):
+        if not owns(event.category):
+            raise PermissionDenied(
+                f"You don't own the “{event.category.name}” tag."
+            )
+        event.is_official = action == "promote"
+        event.save(update_fields=["is_official", "updated_at"])
+        AuditLog.record(
+            request.user,
+            "mark_official" if event.is_official else "unmark_official",
+            target=event.title,
+            detail=f"tag: {event.category.name}",
+        )
+        if event.is_official:
+            messages.success(
+                request,
+                f"“{event.title}” is now an official {event.category.name} "
+                "event — it ranks above ordinary member events.",
+            )
+        else:
+            messages.success(
+                request,
+                f"“{event.title}” is back to an ordinary member event.",
+            )
+    elif action == "adopt":
+        tag = get_object_or_404(Category, pk=request.POST.get("tag"))
+        if not owns(tag):
+            raise PermissionDenied(f"You don't own the “{tag.name}” tag.")
+        old_tag = event.category
+        event.category = tag
+        event.is_official = True
+        if not tag.has_restaurant_ratings:
+            event.restaurant = None
+        event.save(
+            update_fields=["category", "is_official", "restaurant", "updated_at"]
+        )
+        AuditLog.record(
+            request.user, "adopt_event", target=event.title,
+            detail=f"{old_tag.name} → {tag.name}, promoted",
+        )
+        messages.success(
+            request,
+            f"Adopted “{event.title}” into {tag.name} and promoted it — "
+            f"its creator ({event.created_by.get_full_name() or event.created_by.username}) "
+            "can still edit it.",
+        )
+    else:
+        messages.error(request, "Unknown action — nothing was changed.")
+    return redirect("panel:tagged_events")
+
+
+# --- terms and conditions --------------------------------------------------------------
+
+@portal_admin_required
+def terms(request):
+    """List every version of the terms, with who last touched each one.
+
+    Any society admin may add, change and delete terms; every one of those
+    actions writes both a TermsRevision (the full text as it then stood) and
+    an AuditLog entry, so "who changed what, when" is answerable afterwards.
+    """
+    versions = (
+        TermsVersion.objects.select_related("created_by", "updated_by")
+        .annotate(acceptance_count=Count("acceptances"))
+    )
+    current = TermsVersion.current()
+    members = User.objects.filter(is_banned=False).count()
+    accepted_current = (
+        TermsAcceptance.objects.filter(version_number=current.number).count()
+        if current else 0
+    )
+    return render(request, "panel/terms.html", {
+        "nav_active": "panel",
+        "panel_tab": "terms",
+        "versions": versions,
+        "current": current,
+        "member_count": members,
+        "accepted_current": accepted_current,
+        "outstanding": max(0, members - accepted_current) if current else 0,
+        "recent_changes": TermsRevision.objects.select_related("editor")[:15],
+    })
+
+
+@portal_admin_required
+def terms_create(request):
+    form = TermsVersionForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        version = form.save(commit=False)
+        version.created_by = request.user
+        version.updated_by = request.user
+        if version.is_published:
+            version.published_at = timezone.now()
+        version.save()
+        version.save_revision(request.user, TermsRevision.Action.CREATED)
+        AuditLog.record(
+            request.user, "create_terms", target=f"v{version.number}",
+            detail=version.change_note[:300],
+        )
+        if version.is_published:
+            version.save_revision(request.user, TermsRevision.Action.PUBLISHED)
+            AuditLog.record(
+                request.user, "publish_terms", target=f"v{version.number}"
+            )
+            messages.success(
+                request,
+                f"Published version {version.number}. Every member will be "
+                "asked to accept it the next time they load a page.",
+            )
+        else:
+            messages.success(
+                request, f"Saved version {version.number} as a draft."
+            )
+        return redirect("panel:terms")
+    return render(request, "panel/terms_form.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "form": form, "version": None,
+    })
+
+
+@portal_admin_required
+def terms_edit(request, pk):
+    version = get_object_or_404(TermsVersion, pk=pk)
+    was_published = version.is_published
+    form = TermsVersionForm(request.POST or None, instance=version)
+    if request.method == "POST" and form.is_valid():
+        version = form.save(commit=False)
+        version.updated_by = request.user
+        newly_published = version.is_published and not was_published
+        if newly_published:
+            version.published_at = timezone.now()
+        version.save()
+
+        if newly_published:
+            action = TermsRevision.Action.PUBLISHED
+        elif was_published and not version.is_published:
+            action = TermsRevision.Action.UNPUBLISHED
+        else:
+            action = TermsRevision.Action.EDITED
+        version.save_revision(request.user, action)
+        AuditLog.record(
+            request.user, f"{action}_terms", target=f"v{version.number}",
+            detail=version.change_note[:300],
+        )
+
+        if newly_published:
+            messages.success(
+                request,
+                f"Published version {version.number}. Every member will be "
+                "asked to accept it the next time they load a page.",
+            )
+        elif action == TermsRevision.Action.UNPUBLISHED:
+            messages.warning(
+                request,
+                f"Unpublished version {version.number}. Members are no longer "
+                "asked to accept it.",
+            )
+        else:
+            messages.success(request, f"Saved version {version.number}.")
+        return redirect("panel:terms")
+    return render(request, "panel/terms_form.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "form": form, "version": version,
+        "acceptance_count": version.acceptances.count(),
+    })
+
+
+@portal_admin_required
+@require_POST
+def terms_delete(request, pk):
+    """Delete a version.
+
+    The acceptance rows are deliberately NOT deleted with it: they carry their
+    own copy of the version number and title, so the record of who agreed to
+    what survives. The same goes for the revision history.
+    """
+    version = get_object_or_404(TermsVersion, pk=pk)
+    number, accepted = version.number, version.acceptances.count()
+    version.save_revision(request.user, TermsRevision.Action.DELETED)
+    version.delete()
+    AuditLog.record(
+        request.user, "delete_terms", target=f"v{number}",
+        detail=f"{accepted} acceptance(s) kept in the log",
+    )
+    messages.success(
+        request,
+        f"Deleted version {number}. The {accepted} recorded acceptance(s) "
+        "have been kept.",
+    )
+    return redirect("panel:terms")
+
+
+@portal_admin_required
+def terms_acceptances(request, pk):
+    """Who has accepted one version of the terms, and when."""
+    version = get_object_or_404(TermsVersion, pk=pk)
+    return render(request, "panel/terms_acceptances.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "version": version,
+        "acceptances": (
+            TermsAcceptance.objects.filter(version_number=version.number)
+            .select_related("user")
+        ),
+        "outstanding": (
+            User.objects.filter(is_banned=False)
+            .exclude(terms_accepted_version__gte=version.number)
+            .order_by("first_name", "last_name")
+        ),
+    })
+
+
 # --- statistics ----------------------------------------------------------------------
 
 @portal_admin_required
@@ -1051,7 +1387,36 @@ def mailer(request):
 
     if request.method == "POST":
         form = MailerForm(request.POST)
-        if form.is_valid():
+        if form.is_valid() and request.POST.get("action") == "ai_draft":
+            # Rewrite the current draft with AI and re-render for review — do
+            # NOT send. Keeps whatever the admin has edited into recipient/
+            # subject, and only replaces the body.
+            if not config.email_api_key:
+                messages.error(
+                    request, "Add an AI API key on the Super admin tab first."
+                )
+            else:
+                try:
+                    new_body = services.ai_draft_mailer(
+                        config, form.cleaned_data["subject"], form.cleaned_data["body"]
+                    )
+                except ai.AIDraftError as exc:
+                    messages.error(request, f"AI drafting failed: {exc}")
+                else:
+                    AuditLog.record(
+                        request.user, "ai_draft_mailer",
+                        detail=f"engine={config.email_ai_engine}",
+                    )
+                    messages.success(
+                        request, "Draft rewritten by AI — review it before sending."
+                    )
+                    form = MailerForm(initial={
+                        "recipient": form.cleaned_data["recipient"],
+                        "subject": form.cleaned_data["subject"],
+                        "body": new_body,
+                    })
+            # fall through to render with the (re-drafted or unchanged) form
+        elif form.is_valid():
             recipient = form.cleaned_data["recipient"]
             subject = form.cleaned_data["subject"][:200]
             body = form.cleaned_data["body"]

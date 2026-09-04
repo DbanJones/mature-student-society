@@ -93,7 +93,8 @@
     <p class="small muted">
       Tags are the clubs and event types. Owners can mark their events
       “official” and edit the tag's public page — they don't need to be site
-      admins.
+      admins. Every tag needs at least one owner: they manage its events from
+      panel → Tagged events.
     </p>
     <p><a class="btn btn-small btn-accent" href="{% url 'panel:tag_create' %}">Add a tag</a></p>
     <table class="data">
@@ -109,7 +110,8 @@
               {% for owner in tag.owners.all %}
                 {{ owner.get_full_name|default:owner.username }}{% if not forloop.last %}, {% endif %}
               {% empty %}
-                <span class="muted">—</span>
+                <span class="badge badge-danger">No owner</span>
+                <span class="muted">— every tag needs one</span>
               {% endfor %}
             </td>
             <td>{{ tag.event_count }}</td>

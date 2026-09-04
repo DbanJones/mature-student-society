@@ -35,6 +35,12 @@
     <div class="stat-num">{{ counts.rsvps_14d }}</div>
     <div class="stat-label">RSVPs (14 days)</div>
   </div>
+  {% if counts.terms_current %}
+    <div class="stat-tile">
+      <div class="stat-num">{{ counts.terms_outstanding }}</div>
+      <div class="stat-label">Not accepted terms v{{ counts.terms_current }}</div>
+    </div>
+  {% endif %}
 </div>
 
 <h2>Needs attention</h2>
@@ -49,6 +55,14 @@
       <a class="btn btn-ghost btn-small" href="{% url 'panel:waitlist' %}">Open queue</a>
     {% endif %}
   </div>
+  {% if counts.terms_current and counts.terms_outstanding %}
+    <div class="card">
+      <h3>Terms acceptance</h3>
+      <p>{{ counts.terms_outstanding }} member{{ counts.terms_outstanding|pluralize }} yet
+         to accept terms v{{ counts.terms_current }} — they'll be asked on their next visit.</p>
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:terms' %}">See who</a>
+    </div>
+  {% endif %}
   <div class="card">
     <h3>WhatsApp re-grants</h3>
     {% if counts.open_whatsapp %}

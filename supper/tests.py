@@ -58,7 +58,7 @@ urlpatterns = [
         path("<str:username>/block/", _stub_view, name="block_toggle"),
     ], "inbox"))),
     path("", _namespace("core", ["home", "about", "wellbeing", "policies",
-                                 "winter_ball"])),
+                                 "terms", "winter_ball"])),
 ]
 
 VALID_SCORES = {

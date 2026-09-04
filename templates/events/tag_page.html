@@ -17,7 +17,10 @@
     </p>
   {% endif %}
   {% if can_edit %}
-    <p style="margin:.6rem 0 0"><a class="btn btn-small" href="{% url 'events:tag_edit' tag.slug %}">Edit this page</a></p>
+    <p style="margin:.6rem 0 0">
+      <a class="btn btn-small" href="{% url 'events:tag_edit' tag.slug %}">Edit this page</a>
+      <a class="btn btn-small btn-ghost" href="{% url 'panel:tagged_events' %}">Manage events</a>
+    </p>
   {% endif %}
 </div>
 
@@ -65,7 +68,7 @@
                 <span class="up-mon">{{ event.start|date:"M" }}</span>
               </span>
               <span class="up-main">
-                {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+                {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
                 <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
                 <span class="up-meta">
                   {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}

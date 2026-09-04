@@ -1,0 +1,62 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Acceptances of terms v{{ version.number }}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:terms' %}">← Terms and conditions</a></p>
+    <h1>Who accepted version {{ version.number }}</h1>
+    <p class="muted">{{ version.title }}{% if version.published_at %} — published {{ version.published_at|date:"j F Y" }}{% endif %}.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Accepted ({{ acceptances|length }})</h2>
+  {% if acceptances %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>Member</th><th>Accepted at</th><th>How</th><th>IP</th></tr></thead>
+        <tbody>
+          {% for acceptance in acceptances %}
+            <tr>
+              <td>
+                <strong>{{ acceptance.user.get_full_name|default:acceptance.user.username }}</strong>
+                {% if acceptance.user.crsid %}<span class="small muted"> ({{ acceptance.user.crsid }})</span>{% endif %}
+              </td>
+              <td class="small">{{ acceptance.accepted_at|date:"j M Y, H:i" }}</td>
+              <td class="small muted">{{ acceptance.get_source_display }}</td>
+              <td class="small muted">{{ acceptance.ip_address|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Nobody has accepted this version yet.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h2>Not yet accepted ({{ outstanding|length }})</h2>
+  <p class="small muted">
+    Members who have not accepted this version or a later one. They are asked
+    to on their next page load, so this list clears itself as people log in.
+  </p>
+  {% if outstanding %}
+    <ul class="small">
+      {% for member in outstanding %}
+        <li>{{ member.get_full_name|default:member.username }}
+          {% if member.terms_accepted_version %}
+            <span class="muted">— last accepted v{{ member.terms_accepted_version }}</span>
+          {% else %}
+            <span class="muted">— never accepted any version</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Everyone is up to date.</p>
+  {% endif %}
+</div>
+{% endblock %}

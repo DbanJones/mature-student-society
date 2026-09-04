@@ -1,5 +1,7 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.db import models
+from django.utils import timezone
 
 # Visibility levels for nav tabs and CMS pages.
 VISIBILITY_CHOICES = [
@@ -149,3 +151,192 @@ class SitePage(models.Model):
     def get_absolute_url(self):
         from django.urls import reverse
         return reverse("core:site_page", args=[self.slug])
+
+
+class TermsVersion(models.Model):
+    """A version of the terms and conditions every member must accept.
+
+    Versions are numbered. The *current* terms are the published version with
+    the highest number; publishing a new one asks every member to accept again
+    the next time they load a page. Editing is deliberately non-destructive —
+    every save writes a TermsRevision — because the society needs to be able to
+    show what a member actually agreed to on a given date.
+    """
+
+    number = models.PositiveIntegerField(
+        unique=True,
+        help_text="Version number. The highest published version is the one "
+                  "members must accept.",
+    )
+    title = models.CharField(max_length=140, default="Terms and Conditions")
+    content = models.TextField(
+        help_text="Markdown supported: headings, links, lists, emphasis.",
+    )
+    change_note = models.CharField(
+        max_length=250, blank=True,
+        help_text="What changed in this version, for the committee's own "
+                  "records, e.g. 'Added photography consent clause'.",
+    )
+    is_published = models.BooleanField(
+        default=False,
+        help_text="Unpublished drafts are visible to admins only and are "
+                  "never shown to members for acceptance.",
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="terms_created",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="terms_edited",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-number"]
+        verbose_name = "terms version"
+        verbose_name_plural = "terms versions"
+
+    def __str__(self):
+        state = "published" if self.is_published else "draft"
+        return f"{self.title} v{self.number} ({state})"
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+        return reverse("core:terms")
+
+    @classmethod
+    def current(cls):
+        """The terms members must accept, or None if none are published."""
+        return cls.objects.filter(is_published=True).order_by("-number").first()
+
+    # TermsAcceptanceMiddleware asks for the current number on every
+    # authenticated request, so it is cached briefly. 0 is cached to mean
+    # "nothing published" (a plain None would look like a cache miss).
+    # Saves and deletes invalidate; with several gunicorn workers each holds
+    # its own LocMemCache, so the short TTL is what guarantees every worker
+    # notices a publish within a minute.
+    CURRENT_CACHE_KEY = "terms:current-number"
+    CURRENT_CACHE_TTL = 60
+
+    @classmethod
+    def current_number(cls):
+        """Version number of the current terms, or None if none published."""
+        cached = cache.get(cls.CURRENT_CACHE_KEY)
+        if cached is None:
+            current = cls.current()
+            cached = current.number if current else 0
+            cache.set(cls.CURRENT_CACHE_KEY, cached, cls.CURRENT_CACHE_TTL)
+        return cached or None
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        cache.delete(self.CURRENT_CACHE_KEY)
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        cache.delete(self.CURRENT_CACHE_KEY)
+        return result
+
+    @classmethod
+    def next_number(cls):
+        """The number a newly-created version should take."""
+        highest = cls.objects.order_by("-number").values_list(
+            "number", flat=True
+        ).first()
+        return (highest or 0) + 1
+
+    def save_revision(self, editor, action):
+        """Snapshot this version's text so edits are reviewable afterwards."""
+        return TermsRevision.objects.create(
+            terms=self, version_number=self.number, title=self.title,
+            content=self.content, change_note=self.change_note,
+            action=action, editor=editor,
+        )
+
+
+class TermsRevision(models.Model):
+    """A snapshot of the terms taken every time an admin changes them.
+
+    Answers "who changed what, and when": the editor, the timestamp, the kind
+    of change, and the full text as it stood after that save. Kept even if the
+    version itself is later deleted.
+    """
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        EDITED = "edited", "Edited"
+        PUBLISHED = "published", "Published"
+        UNPUBLISHED = "unpublished", "Unpublished"
+        DELETED = "deleted", "Deleted"
+
+    terms = models.ForeignKey(
+        TermsVersion, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="revisions",
+    )
+    version_number = models.PositiveIntegerField()
+    title = models.CharField(max_length=140)
+    content = models.TextField(blank=True)
+    change_note = models.CharField(max_length=250, blank=True)
+    action = models.CharField(
+        max_length=12, choices=Action.choices, default=Action.EDITED
+    )
+    editor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="terms_revisions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"v{self.version_number} {self.get_action_display().lower()} by "
+            f"{self.editor} @ {self.created_at:%Y-%m-%d %H:%M}"
+        )
+
+
+class TermsAcceptance(models.Model):
+    """One member's acceptance of one version of the terms.
+
+    Rows are written once and never updated — this is the evidence that a
+    given member agreed to a given text at a given moment. ``version_number``
+    and ``terms_title`` are copied in so the record still means something if
+    the version row is later deleted.
+    """
+
+    class Source(models.TextChoices):
+        PORTAL = "portal", "Accepted in the portal"
+        WAITLIST = "waitlist", "Accepted on the waitlist form"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="terms_acceptances",
+    )
+    terms = models.ForeignKey(
+        TermsVersion, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="acceptances",
+    )
+    version_number = models.PositiveIntegerField()
+    terms_title = models.CharField(max_length=140, blank=True)
+    source = models.CharField(
+        max_length=10, choices=Source.choices, default=Source.PORTAL
+    )
+    accepted_at = models.DateTimeField(default=timezone.now)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["-accepted_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "version_number"],
+                name="unique_terms_acceptance_per_user_version",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} accepted v{self.version_number} @ {self.accepted_at:%Y-%m-%d %H:%M}"

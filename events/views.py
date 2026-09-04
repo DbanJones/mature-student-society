@@ -98,7 +98,7 @@ def calendar_view(request):
     # Official events lead each day's cell, then the rest chronologically.
     month_events = visible.filter(
         start__gte=grid_start_dt, start__lt=grid_end_dt
-    ).order_by("-is_official", "start")
+    ).by_promotion()
     by_day = {}
     for event in month_events:
         by_day.setdefault(timezone.localtime(event.start).date(), []).append(event)
@@ -118,7 +118,7 @@ def calendar_view(request):
 
     upcoming = list(
         visible.filter(start__gte=timezone.now())
-        .order_by("-is_official", "start")
+        .by_promotion()
         .prefetch_related(_going_prefetch(request.user))[:UPCOMING_LIMIT]
     )
     for event in upcoming:
@@ -409,7 +409,7 @@ def tag_page(request, slug):
         .filter(category=tag, start__gte=timezone.now())
         .select_related("category")
         .prefetch_related(_going_prefetch(request.user))
-        .order_by("start")[:UPCOMING_LIMIT]
+        .by_promotion()[:UPCOMING_LIMIT]
     )
     for event in upcoming:
         event.extra_going = max(0, len(event.going_list) - UPCOMING_TOKENS)
