@@ -44,7 +44,7 @@ IS_PRODUCTION_AUTH = RAVEN_MODE != "dev"
 
 ALLOWED_HOSTS = [
     h.strip()
-    for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "mss.soc.srcf.net,localhost,127.0.0.1").split(",")
     if h.strip()
 ]
 
