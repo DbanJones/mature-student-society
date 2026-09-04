@@ -11,11 +11,18 @@ PROFILE_EXEMPT_PREFIXES = (
     "/dj-admin/",
 )
 
-# Paths reachable before the terms have been accepted: the accept page itself
-# and logout (both under /accounts/), the public read-only copy of the terms,
-# and static assets.
+# Paths reachable before the terms have been accepted. Deliberately NARROWER
+# than the profile exemptions: only the auth flow itself (log in, log out,
+# accept, the public copy of the terms) and assets. Everything else in the
+# members' area — the profile, the one-time WhatsApp reveal, password
+# changes — sits behind the gate.
 TERMS_EXEMPT_PREFIXES = (
-    "/accounts/",
+    "/accounts/terms/",
+    "/accounts/login/",         # includes the dev impersonation card
+    "/accounts/logout/",
+    "/accounts/raven/",
+    "/accounts/waitlist/",      # public request form + thanks page
+    "/accounts/set-password/",  # invite links must work pre-acceptance
     "/static/",
     "/media/",
     "/dj-admin/",

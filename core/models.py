@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.db import models
 from django.utils import timezone
 
@@ -211,11 +212,33 @@ class TermsVersion(models.Model):
         """The terms members must accept, or None if none are published."""
         return cls.objects.filter(is_published=True).order_by("-number").first()
 
+    # TermsAcceptanceMiddleware asks for the current number on every
+    # authenticated request, so it is cached briefly. 0 is cached to mean
+    # "nothing published" (a plain None would look like a cache miss).
+    # Saves and deletes invalidate; with several gunicorn workers each holds
+    # its own LocMemCache, so the short TTL is what guarantees every worker
+    # notices a publish within a minute.
+    CURRENT_CACHE_KEY = "terms:current-number"
+    CURRENT_CACHE_TTL = 60
+
     @classmethod
     def current_number(cls):
         """Version number of the current terms, or None if none published."""
-        current = cls.current()
-        return current.number if current else None
+        cached = cache.get(cls.CURRENT_CACHE_KEY)
+        if cached is None:
+            current = cls.current()
+            cached = current.number if current else 0
+            cache.set(cls.CURRENT_CACHE_KEY, cached, cls.CURRENT_CACHE_TTL)
+        return cached or None
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        cache.delete(self.CURRENT_CACHE_KEY)
+
+    def delete(self, *args, **kwargs):
+        result = super().delete(*args, **kwargs)
+        cache.delete(self.CURRENT_CACHE_KEY)
+        return result
 
     @classmethod
     def next_number(cls):

@@ -38,7 +38,7 @@
     </div>
     <div>
       <p class="small muted" style="margin-bottom: .2rem;">Next up for you</p>
-      <h2 style="margin: 0 0 .25rem;"><a href="{% url 'events:detail' next_up.pk %}">{{ next_up.title }}</a></h2>
+      <h2 style="margin: 0 0 .25rem;"><a href="{{ next_up.get_absolute_url }}">{{ next_up.title }}</a></h2>
       <p style="margin: 0;">
         <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
         {{ next_up.start|date:"D j M, H:i" }}

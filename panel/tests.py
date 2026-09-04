@@ -550,6 +550,16 @@ class TermsAdminTests(PanelTestCase):
     """Panel → Terms: any admin can add, change and delete versions, and every
     change leaves a who/what/when trail."""
 
+    @staticmethod
+    def _clear_terms_cache():
+        # The current-version cache outlives each test's DB rollback; clear
+        # it so a published version can't phantom-gate later tests.
+        from django.core.cache import cache
+
+        from core.models import TermsVersion
+
+        cache.delete(TermsVersion.CURRENT_CACHE_KEY)
+
     def _version(self, number=1, published=False):
         from core.models import TermsVersion
 
@@ -565,6 +575,7 @@ class TermsAdminTests(PanelTestCase):
         from core.models import TermsVersion
 
         TermsVersion.objects.all().delete()
+        self.addCleanup(self._clear_terms_cache)
         # A regular (non-super) admin: terms management is open to all admins.
         self.regular_admin = User.objects.create_user(
             username="adm3", password="pw", email="adm3@cam.ac.uk", crsid="adm3",

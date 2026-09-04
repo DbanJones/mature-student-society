@@ -342,6 +342,7 @@ class Command(BaseCommand):
             created_by=users["dbj25"],
             host=users["dbj25"],
             is_official=True,
+            is_super=True,  # the flagship: demonstrates the super-event tier
             capacity=150,
             attendee_info=(
                 "Doors from **19:00**, carriages at **01:00**.\n\n"

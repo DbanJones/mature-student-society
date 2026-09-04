@@ -412,6 +412,15 @@ class TermsAcceptanceTests(TestCase):
     """The terms gate: who is stopped, what is recorded, and when the gate
     re-arms."""
 
+    def tearDown(self):
+        # The current-version cache outlives this test's DB rollback; clear
+        # it so a published version can't phantom-gate later tests.
+        from django.core.cache import cache
+
+        from core.models import TermsVersion
+
+        cache.delete(TermsVersion.CURRENT_CACHE_KEY)
+
     def _publish(self, number=1, content="Be kind."):
         from django.utils import timezone
 
@@ -471,6 +480,16 @@ class TermsAcceptanceTests(TestCase):
         # Accepting again does not mint a second row.
         self.client.post(reverse("accounts:terms"), {"accept": "yes"})
         self.assertEqual(TermsAcceptance.objects.filter(user=member).count(), 1)
+
+    def test_gate_covers_the_whatsapp_reveal_and_profile(self):
+        # The exemptions cover only the auth flow: the rest of /accounts/ —
+        # including the one-time WhatsApp reveal — sits behind the gate.
+        self._publish(number=2)
+        member = make_member()
+        self.client.force_login(member)
+        for name in ("accounts:whatsapp", "accounts:profile"):
+            response = self.client.get(reverse(name))
+            self.assertRedirects(response, reverse("accounts:terms"), msg_prefix=name)
 
     def test_new_version_regates_everyone(self):
         self._publish(number=2)

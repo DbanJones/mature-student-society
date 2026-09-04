@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
-from core.models import SiteConfig
+from core.models import SiteConfig, TermsVersion
 from events.models import RSVP, Category, Event
 from guide.models import GuidePage
 from supper.models import RATING_DIMENSIONS, Restaurant
@@ -69,7 +69,20 @@ def home_counts():
     """Counts for the admin dashboard tiles and action-needed cards."""
     now = timezone.now()
     horizon = now + datetime.timedelta(days=14)
+    # Terms roll-out: how many members still need to accept the current
+    # version. terms_current is None while nothing is published, which the
+    # overview uses to hide the tile entirely.
+    terms_current = TermsVersion.current_number()
+    terms_outstanding = 0
+    if terms_current is not None:
+        terms_outstanding = (
+            User.objects.filter(is_banned=False)
+            .exclude(terms_accepted_version__gte=terms_current)
+            .count()
+        )
     return {
+        "terms_current": terms_current,
+        "terms_outstanding": terms_outstanding,
         "pending_waitlist": WaitlistRequest.objects.filter(
             status=WaitlistRequest.Status.PENDING
         ).count(),
@@ -281,7 +294,7 @@ def build_whats_on_email(request):
     if super_events:
         lines += ["🌟 SUPER EVENTS", "---------------", ""]
         for event in super_events:
-            lines += _event_lines(request, event, official=True)
+            lines += _event_lines(request, event, official=True, super_=True)
     if official:
         lines += ["⭐ OFFICIAL EVENTS", "-----------------", ""]
         for event in official:
@@ -328,10 +341,15 @@ def ai_draft_mailer(config, subject, body):
     return ai.draft_email(config.email_ai_engine, config.email_api_key, system_prompt, user_prompt)
 
 
-def _event_lines(request, event, official):
+def _event_lines(request, event, official, super_=False):
     start = timezone.localtime(event.start)
     tag = f"{event.category.emoji} {event.category.name}".strip()
-    title = f"★ [OFFICIAL] {event.title}" if official else f"• {event.title}"
+    if super_:
+        title = f"🌟 [SUPER] {event.title}"
+    elif official:
+        title = f"★ [OFFICIAL] {event.title}"
+    else:
+        title = f"• {event.title}"
     lines = [title, f"  {tag} — {date_format(start, 'D j M, H:i')}"]
     if event.location:
         lines.append(f"  📍 {event.location}")

@@ -17,7 +17,10 @@
     </p>
   {% endif %}
   {% if can_edit %}
-    <p style="margin:.6rem 0 0"><a class="btn btn-small" href="{% url 'events:tag_edit' tag.slug %}">Edit this page</a></p>
+    <p style="margin:.6rem 0 0">
+      <a class="btn btn-small" href="{% url 'events:tag_edit' tag.slug %}">Edit this page</a>
+      <a class="btn btn-small btn-ghost" href="{% url 'panel:tagged_events' %}">Manage events</a>
+    </p>
   {% endif %}
 </div>
 
