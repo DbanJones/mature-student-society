@@ -1,0 +1,158 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Tagged events{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Tagged events</h1>
+    <p class="muted">
+      {% if user.is_portal_admin %}
+        Every tag's events. Promoting makes an event the tag's official
+        listing — it ranks above ordinary member events (super events rank
+        above both).
+      {% else %}
+        The events carrying your tag{{ tags|length|pluralize }}. Promote an
+        event to make it your club's official listing — it ranks above
+        ordinary member events.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if not tags %}
+  <div class="empty">You don't own any tags. The super admin appoints tag owners.</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.5rem">
+  <h2>Adopt an existing event</h2>
+  <p class="small muted">
+    Pull a member's event into your tag and promote it in one go — e.g. turn
+    someone's restaurant meet-up into an official Supper Club event. Its
+    creator keeps editing rights.
+  </p>
+  <form method="get" class="row-actions" style="margin-bottom:.6rem">
+    <input type="search" name="adopt_q" value="{{ adopt_q }}" placeholder="Search upcoming events…"
+           aria-label="Search events to adopt">
+    <button type="submit" class="btn btn-small btn-accent">Search</button>
+    {% if adopt_q %}<a class="btn btn-small btn-ghost" href="{% url 'panel:tagged_events' %}">Clear</a>{% endif %}
+  </form>
+  {% if adopt_q %}
+    {% if adopt_results %}
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th>Event</th><th>Current tag</th><th>Adopt into…</th></tr></thead>
+          <tbody>
+            {% for event in adopt_results %}
+              <tr>
+                <td>
+                  <strong><a href="{{ event.get_absolute_url }}">{{ event.title }}</a></strong>
+                  <br><span class="small muted">{{ event.start|date:"D j M Y, H:i" }} ·
+                    by {{ event.created_by.get_full_name|default:event.created_by.username }}</span>
+                </td>
+                <td class="small">
+                  <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
+                </td>
+                <td>
+                  <div class="row-actions">
+                    {% for tag in tags %}
+                      {% if tag != event.category or not event.is_official %}
+                        <form method="post" action="{% url 'panel:tagged_event_action' event.pk %}">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="adopt">
+                          <input type="hidden" name="tag" value="{{ tag.pk }}">
+                          <button type="submit" class="btn btn-small btn-ghost">{{ tag.emoji }} {{ tag.name }}</button>
+                        </form>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No upcoming events match “{{ adopt_q }}”.</p>
+    {% endif %}
+  {% endif %}
+</div>
+
+{% for tag in tags %}
+  <div class="card" style="margin-bottom:1rem">
+    <div class="page-head" style="margin-bottom:.6rem">
+      <div>
+        <h2 style="margin-bottom:.15rem">
+          <span class="cat-chip" style="background-color: {{ tag.color }};">{{ tag.emoji }} {{ tag.name }}</span>
+        </h2>
+        <p class="small muted" style="margin:0">
+          Owners:
+          {% for owner in tag.owners.all %}{{ owner.get_full_name|default:owner.username }}{% if not forloop.last %}, {% endif %}{% empty %}<strong>none — ask the super admin to appoint one</strong>{% endfor %}
+        </p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-ghost btn-small" href="{{ tag.get_absolute_url }}">View tag page</a>
+        <a class="btn btn-ghost btn-small" href="{% url 'events:tag_edit' tag.slug %}">✏️ Edit tag page</a>
+      </div>
+    </div>
+
+    <h3>Upcoming</h3>
+    {% if tag.upcoming_events %}
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th>Event</th><th>When</th><th>Going</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for event in tag.upcoming_events %}
+              <tr>
+                <td>
+                  <strong><a href="{{ event.get_absolute_url }}">{{ event.title }}</a></strong>
+                  <br><span class="small muted">by {{ event.created_by.get_full_name|default:event.created_by.username }}</span>
+                </td>
+                <td class="small">{{ event.start|date:"D j M, H:i" }}</td>
+                <td class="small muted">{{ event.going_count_agg }}</td>
+                <td class="small">
+                  {% if event.is_super %}<span class="badge badge-super">Super</span>
+                  {% elif event.is_official %}<span class="badge badge-official">{{ tag.name }}</span>
+                  {% else %}<span class="muted">member event</span>{% endif %}
+                </td>
+                <td>
+                  <div class="row-actions">
+                    {% if not event.is_super %}
+                      <form method="post" action="{% url 'panel:tagged_event_action' event.pk %}">
+                        {% csrf_token %}
+                        {% if event.is_official %}
+                          <input type="hidden" name="action" value="demote">
+                          <button type="submit" class="btn btn-small btn-ghost">Demote</button>
+                        {% else %}
+                          <input type="hidden" name="action" value="promote">
+                          <button type="submit" class="btn btn-small btn-accent">Promote</button>
+                        {% endif %}
+                      </form>
+                    {% endif %}
+                    <a class="btn btn-small btn-ghost" href="{% url 'events:edit' event.slug %}">Edit</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted small">Nothing coming up under this tag.</p>
+    {% endif %}
+
+    {% if tag.past_events %}
+      <h3 style="margin-top:1rem">Recently past</h3>
+      <ul class="small">
+        {% for event in tag.past_events %}
+          <li>
+            <a href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+            <span class="muted">— {{ event.start|date:"j M Y" }},
+              {{ event.going_count_agg }} went{% if event.is_official %} · official{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

@@ -322,6 +322,44 @@ class OfficialFlagTests(EventTestCase):
         official.refresh_from_db()
         self.assertTrue(official.is_official)  # flag untouched by non-admin edit
 
+    def test_tag_owner_can_promote_within_own_tag_only(self):
+        self.supper_category.owners.add(self.member)
+        self.client.force_login(self.member)
+        # Their own tag: promotion sticks.
+        response = self.client.post(
+            reverse("events:create"),
+            self.form_data(
+                title="Supper night", category=str(self.supper_category.pk),
+                is_official="on",
+            ),
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Event.objects.get(title="Supper night").is_official)
+        # A tag they don't own: the form refuses.
+        response = self.client.post(
+            reverse("events:create"),
+            self.form_data(title="Pub takeover", is_official="on"),
+        )
+        self.assertEqual(response.status_code, 200)  # re-rendered with error
+        self.assertFalse(Event.objects.filter(title="Pub takeover").exists())
+
+    def test_only_super_admin_can_set_super(self):
+        # Portal admin (not super): the field doesn't exist, value ignored.
+        self.client.force_login(self.admin)
+        self.client.post(
+            reverse("events:create"),
+            self.form_data(title="Wannabe super", is_super="on"),
+        )
+        self.assertFalse(Event.objects.get(title="Wannabe super").is_super)
+        # Super admin: it sticks.
+        self.admin.is_super_admin = True
+        self.admin.save(update_fields=["is_super_admin"])
+        self.client.post(
+            reverse("events:create"),
+            self.form_data(title="True super", is_super="on"),
+        )
+        self.assertTrue(Event.objects.get(title="True super").is_super)
+
     def test_past_start_requires_override_on_create(self):
         self.client.force_login(self.member)
         start = timezone.now() - datetime.timedelta(days=2)

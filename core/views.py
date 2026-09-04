@@ -60,7 +60,7 @@ def home(request):
         .annotate(
             num_going=Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
         )
-        .order_by("-is_official", "start")[:4]
+        .by_promotion()[:4]
     )
 
     guide_pages = (

@@ -262,8 +262,9 @@ def build_whats_on_email(request):
     )
 
     events = list(whats_on_events())
-    official = [e for e in events if e.is_official]
-    other = [e for e in events if not e.is_official]
+    super_events = [e for e in events if e.is_super]
+    official = [e for e in events if e.is_official and not e.is_super]
+    other = [e for e in events if not e.is_official and not e.is_super]
 
     lines = [
         "Hello all,",
@@ -277,6 +278,10 @@ def build_whats_on_email(request):
             "something yourself!",
             "",
         ]
+    if super_events:
+        lines += ["🌟 SUPER EVENTS", "---------------", ""]
+        for event in super_events:
+            lines += _event_lines(request, event, official=True)
     if official:
         lines += ["⭐ OFFICIAL EVENTS", "-----------------", ""]
         for event in official:

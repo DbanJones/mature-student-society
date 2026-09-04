@@ -7,6 +7,7 @@ action writes an ``AuditLog`` row via ``AuditLog.record``.
 
 from django.conf import settings
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.core.mail import EmailMessage
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -16,7 +17,11 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from accounts.decorators import portal_admin_required, super_admin_required
+from accounts.decorators import (
+    portal_admin_required,
+    super_admin_required,
+    tag_owner_or_admin_required,
+)
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
 from core.models import (
     SiteConfig,
@@ -62,8 +67,12 @@ def _redirect_back(request, fallback="panel:members"):
 
 # --- dashboard -----------------------------------------------------------------
 
-@portal_admin_required
+@tag_owner_or_admin_required
 def home(request):
+    # Tag owners who aren't society admins get exactly one page of the
+    # panel — their tagged-events workspace — so /admin/ takes them there.
+    if not request.user.is_portal_admin:
+        return redirect("panel:tagged_events")
     return render(request, "panel/home.html", {
         "nav_active": "panel",
         "panel_tab": "home",
@@ -661,7 +670,22 @@ def event_action(request, pk):
         messages.success(
             request,
             f"“{event.title}” is {'now' if event.is_official else 'no longer'} "
-            "an official society event.",
+            f"an official {event.category.name} event.",
+        )
+    elif action == "toggle_super":
+        if not request.user.is_super_admin:
+            raise PermissionDenied("Only super admins can promote super events.")
+        event.is_super = not event.is_super
+        event.save(update_fields=["is_super", "updated_at"])
+        AuditLog.record(
+            request.user,
+            "mark_super" if event.is_super else "unmark_super",
+            target=event.title,
+        )
+        messages.success(
+            request,
+            f"“{event.title}” is {'now' if event.is_super else 'no longer'} "
+            "a super event.",
         )
     elif action == "delete":
         title = event.title
@@ -1062,6 +1086,122 @@ def tag_delete(request, pk):
         AuditLog.record(request.user, "delete_tag", target=name)
         messages.success(request, f"Deleted the “{name}” tag.")
     return redirect("panel:superadmin")
+
+
+# --- tagged events: the tag owners' workspace -------------------------------------------
+
+def _managed_tags(user):
+    """The tags this user runs. Society admins manage every tag."""
+    qs = Category.objects.prefetch_related("owners")
+    if user.is_portal_admin:
+        return qs
+    return qs.filter(owners=user)
+
+
+@tag_owner_or_admin_required
+def tagged_events(request):
+    """The tag owners' workspace: every event carrying one of their tags,
+    with promote/demote controls, plus a picker to adopt an existing event
+    into the tag (e.g. turning a member's dinner into a Supper Club event).
+    """
+    tags = list(_managed_tags(request.user))
+    now = timezone.now()
+
+    going = Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
+    for tag in tags:
+        events = (
+            tag.events.filter(is_cancelled=False)
+            .select_related("created_by", "host")
+            .annotate(going_count_agg=going)
+        )
+        tag.upcoming_events = list(
+            events.filter(start__gte=now).by_promotion()
+        )
+        tag.past_events = list(events.filter(start__lt=now).order_by("-start")[:8])
+
+    # The adopt picker: search upcoming events that don't yet carry the
+    # chosen tag. Only run when a tag owner has actually asked.
+    adopt_q = request.GET.get("adopt_q", "").strip()
+    adopt_results = []
+    if adopt_q and tags:
+        adopt_results = list(
+            Event.objects.filter(is_cancelled=False, start__gte=now)
+            .exclude(category__in=tags, is_official=True)
+            .search(adopt_q)
+            .select_related("category", "created_by")
+            .order_by("start")[:12]
+        )
+
+    return render(request, "panel/tagged_events.html", {
+        "nav_active": "panel",
+        "panel_tab": "tagged",
+        "tags": tags,
+        "adopt_q": adopt_q,
+        "adopt_results": adopt_results,
+    })
+
+
+@tag_owner_or_admin_required
+@require_POST
+def tagged_event_action(request, pk):
+    """Promote/demote an event within a managed tag, or adopt an event into
+    one. Every path re-checks ownership server-side; society admins may act
+    on any tag."""
+    event = get_object_or_404(Event.objects.select_related("category"), pk=pk)
+    action = request.POST.get("action")
+
+    def owns(tag):
+        return request.user.is_portal_admin or tag.is_owned_by(request.user)
+
+    if action in ("promote", "demote"):
+        if not owns(event.category):
+            raise PermissionDenied(
+                f"You don't own the “{event.category.name}” tag."
+            )
+        event.is_official = action == "promote"
+        event.save(update_fields=["is_official", "updated_at"])
+        AuditLog.record(
+            request.user,
+            "mark_official" if event.is_official else "unmark_official",
+            target=event.title,
+            detail=f"tag: {event.category.name}",
+        )
+        if event.is_official:
+            messages.success(
+                request,
+                f"“{event.title}” is now an official {event.category.name} "
+                "event — it ranks above ordinary member events.",
+            )
+        else:
+            messages.success(
+                request,
+                f"“{event.title}” is back to an ordinary member event.",
+            )
+    elif action == "adopt":
+        tag = get_object_or_404(Category, pk=request.POST.get("tag"))
+        if not owns(tag):
+            raise PermissionDenied(f"You don't own the “{tag.name}” tag.")
+        old_tag = event.category
+        event.category = tag
+        event.is_official = True
+        if not tag.has_restaurant_ratings:
+            event.restaurant = None
+        event.save(
+            update_fields=["category", "is_official", "restaurant", "updated_at"]
+        )
+        AuditLog.record(
+            request.user, "adopt_event", target=event.title,
+            detail=f"{old_tag.name} → {tag.name}, promoted",
+        )
+        messages.success(
+            request,
+            f"Adopted “{event.title}” into {tag.name} and promoted it — "
+            f"its creator ({event.created_by.get_full_name() or event.created_by.username}) "
+            "can still edit it.",
+        )
+    else:
+        messages.error(request, "Unknown action — nothing was changed.")
+    return redirect("panel:tagged_events")
 
 
 # --- terms and conditions --------------------------------------------------------------

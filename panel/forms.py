@@ -61,7 +61,12 @@ class TagAdminForm(forms.ModelForm):
         self.fields["owners"].queryset = User.objects.filter(
             is_banned=False
         ).order_by("first_name", "last_name")
-        self.fields["owners"].required = False
+        # Every tag needs someone responsible for its events.
+        self.fields["owners"].required = True
+        self.fields["owners"].error_messages["required"] = (
+            "Pick at least one owner — every tag needs a member responsible "
+            "for its events."
+        )
 
     def save(self, commit=True):
         tag = super().save(commit=False)

@@ -53,6 +53,25 @@
   </div>
 {% endif %}
 
+{% if super_events %}
+  <div class="card" style="margin-top: 1.5rem;">
+    <h3>🌟 Super events</h3>
+    <p class="small muted" style="margin-top:-.3rem">The society's headline events — don't miss these.</p>
+    <div class="stack">
+      {% for event in super_events %}
+        <p style="margin:0">
+          <span class="badge badge-super">Super event</span>
+          <a href="{{ event.get_absolute_url }}"><strong>{{ event.title }}</strong></a>
+          <span class="small muted">
+            — {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
+            {% if event.already_going %} · you're going ✅{% endif %}
+          </span>
+        </p>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
 <div class="grid grid-2" style="margin-top: 1.5rem;">
   <div class="card">
     <h3>You're going to</h3>
@@ -151,6 +170,18 @@
       </p>
     {% endif %}
   </div>
+
+  {% if owned_tags and not user.is_portal_admin %}
+    <div class="card">
+      <h3>Your tag{{ owned_tags|length|pluralize }}</h3>
+      <p class="small">
+        You run
+        {% for tag in owned_tags %}<span class="cat-chip" style="background-color: {{ tag.color }};">{{ tag.emoji }} {{ tag.name }}</span>{% if not forloop.last %} {% endif %}{% endfor %}
+        — manage its events and promote the official ones.
+      </p>
+      <a class="btn btn-small" href="{% url 'panel:tagged_events' %}">Manage tagged events</a>
+    </div>
+  {% endif %}
 
   {% if user.is_portal_admin %}
     <div class="card">

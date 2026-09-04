@@ -18,7 +18,7 @@
       <a class="cat-chip" style="background-color: {{ event.category.color }};"
          href="{{ event.category.get_absolute_url }}"
          title="About {{ event.category.name }}">{{ event.category.emoji }} {{ event.category.name }}</a>
-      {% if event.is_official %}<span class="badge badge-official">Official</span>{% endif %}
+      {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
       {% if event.members_only %}<span class="badge badge-members">Members only</span>{% endif %}
     </p>
     <h1>{{ event.title }}</h1>

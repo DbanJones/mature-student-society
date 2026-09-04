@@ -70,6 +70,7 @@ urlpatterns = [
         ("tags/<slug:slug>/", "tag_page"),
         ("tags/<slug:slug>/edit/", "tag_edit"),
         ("<slug:slug>/", "detail"),
+        ("<slug:slug>/edit/", "edit"),
     ])),
     path("guide/", _ns("guide", [("", "index")])),
     path("faq/", _ns("faq", [("", "index"), ("who-to-contact/", "contacts"),
@@ -701,3 +702,124 @@ class StatsTimezoneSafetyTests(PanelTestCase):
         counts = services.home_counts()
         # Both fixture members were created "now", inside the current term.
         self.assertEqual(counts["members_this_term"], 2)
+
+
+class TaggedEventsTests(PanelTestCase):
+    """The tag owners' workspace: who gets in, what they may promote, and the
+    super-event tier above them."""
+
+    def setUp(self):
+        self.tag = Category.objects.create(name="Supper Club", slug="supper-club")
+        self.other_tag = Category.objects.create(name="History Club", slug="history-club")
+        self.owner = User.objects.create_user(
+            username="own1", password="pw", email="own1@cam.ac.uk", crsid="own1",
+            first_name="Olive", last_name="Owner", college="wolfson",
+            mobile="+44 7700 900005",
+        )
+        self.tag.owners.add(self.owner)
+        self.tag.owners.add(self.member)  # tags need an owner; member owns none relevant
+        self.tag.owners.remove(self.member)
+        start = timezone.now() + datetime.timedelta(days=3)
+        self.event = Event.objects.create(
+            title="Dinner", category=self.tag, start=start,
+            created_by=self.member,
+        )
+        self.other_event = Event.objects.create(
+            title="Battlefield walk", category=self.other_tag,
+            start=start + datetime.timedelta(days=1), created_by=self.member,
+        )
+
+    def test_access(self):
+        url = reverse("panel:tagged_events")
+        # A plain member has no business here.
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(url).status_code, 403)
+        # A tag owner does — and /admin/ takes them straight there.
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        self.assertRedirects(self.client.get(reverse("panel:home")), url)
+        # Owners see their tags only; admins see all.
+        self.assertNotContains(self.client.get(url), "History Club")
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(url), "History Club")
+
+    def _action(self, event, **data):
+        return self.client.post(
+            reverse("panel:tagged_event_action", args=[event.pk]), data
+        )
+
+    def test_owner_promotes_and_demotes_within_own_tag(self):
+        self.client.force_login(self.owner)
+        self._action(self.event, action="promote")
+        self.event.refresh_from_db()
+        self.assertTrue(self.event.is_official)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.owner, action="mark_official", target="Dinner"
+            ).exists()
+        )
+        self._action(self.event, action="demote")
+        self.event.refresh_from_db()
+        self.assertFalse(self.event.is_official)
+
+    def test_owner_cannot_touch_another_tag(self):
+        self.client.force_login(self.owner)
+        response = self._action(self.other_event, action="promote")
+        self.assertEqual(response.status_code, 403)
+        self.other_event.refresh_from_db()
+        self.assertFalse(self.other_event.is_official)
+        # Nor adopt INTO a tag they don't own.
+        response = self._action(
+            self.event, action="adopt", tag=self.other_tag.pk
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_owner_adopts_an_event_into_their_tag(self):
+        self.client.force_login(self.owner)
+        response = self._action(
+            self.other_event, action="adopt", tag=self.tag.pk
+        )
+        self.assertEqual(response.status_code, 302)
+        self.other_event.refresh_from_db()
+        self.assertEqual(self.other_event.category, self.tag)
+        self.assertTrue(self.other_event.is_official)
+        # The creator keeps editing rights, and the owner gains them.
+        self.assertTrue(self.other_event.can_edit(self.member))
+        self.assertTrue(self.other_event.can_edit(self.owner))
+
+    def test_super_toggle_is_super_admin_only(self):
+        regular = User.objects.create_user(
+            username="adm9", password="pw", email="adm9@cam.ac.uk", crsid="adm9",
+            first_name="Reg", last_name="Admin", college="darwin",
+            mobile="+44 7700 900006", is_portal_admin=True,
+        )
+        url = reverse("panel:event_action", args=[self.event.pk])
+        self.client.force_login(regular)
+        self.assertEqual(
+            self.client.post(url, {"action": "toggle_super"}).status_code, 403
+        )
+        self.event.refresh_from_db()
+        self.assertFalse(self.event.is_super)
+        self.client.force_login(self.admin)  # fixture admin IS super admin
+        self.client.post(url, {"action": "toggle_super"})
+        self.event.refresh_from_db()
+        self.assertTrue(self.event.is_super)
+        self.assertTrue(
+            AuditLog.objects.filter(action="mark_super", target="Dinner").exists()
+        )
+
+    def test_promotion_ordering(self):
+        self.event.is_super = True
+        self.event.save()
+        early_plain = Event.objects.create(
+            title="Early coffee", category=self.tag,
+            start=timezone.now() + datetime.timedelta(hours=2),
+            created_by=self.member,
+        )
+        self.other_event.is_official = True
+        self.other_event.save()
+        ordered = list(Event.objects.filter(is_cancelled=False).by_promotion())
+        self.assertEqual(
+            [e.pk for e in ordered],
+            [self.event.pk, self.other_event.pk, early_plain.pk],
+        )
