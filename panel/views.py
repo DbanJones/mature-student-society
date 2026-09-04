@@ -18,7 +18,13 @@ from django.views.decorators.http import require_POST
 
 from accounts.decorators import portal_admin_required, super_admin_required
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
-from core.models import SiteConfig, SitePage
+from core.models import (
+    SiteConfig,
+    SitePage,
+    TermsAcceptance,
+    TermsRevision,
+    TermsVersion,
+)
 from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
@@ -32,6 +38,7 @@ from .forms import (
     MemberEditForm,
     SitePageForm,
     TabVisibilityForm,
+    TermsVersionForm,
     TagAdminForm,
     WhatsAppSettingsForm,
 )
@@ -170,6 +177,7 @@ def _approve_waitlist_request(request, wreq, note):
         user.set_unusable_password()
         user.save()
         wreq.created_user = user
+        _carry_over_terms_acceptance(wreq, user)
         try:
             send_associate_invite(user, request)
             messages.success(
@@ -193,6 +201,27 @@ def _approve_waitlist_request(request, wreq, note):
     wreq.reviewed_at = timezone.now()
     wreq.review_note = note
     wreq.save()
+
+
+def _carry_over_terms_acceptance(wreq, user):
+    """Copy the applicant's waitlist acceptance onto their new account.
+
+    They ticked the box on the public form, so asking them to accept the same
+    version again at first login would be noise. The original timestamp is
+    preserved — that is the moment they actually agreed. If the terms have
+    moved on since they applied, nothing is carried over and the middleware
+    asks them to accept the current version instead.
+    """
+    if wreq.terms_version is None:
+        return
+    terms = TermsVersion.objects.filter(number=wreq.terms_version).first()
+    if terms is None:
+        return
+    user.record_terms_acceptance(
+        terms,
+        source="waitlist",
+        accepted_at=wreq.terms_accepted_at,
+    )
 
 
 # --- member management --------------------------------------------------------------
@@ -1033,6 +1062,165 @@ def tag_delete(request, pk):
         AuditLog.record(request.user, "delete_tag", target=name)
         messages.success(request, f"Deleted the “{name}” tag.")
     return redirect("panel:superadmin")
+
+
+# --- terms and conditions --------------------------------------------------------------
+
+@portal_admin_required
+def terms(request):
+    """List every version of the terms, with who last touched each one.
+
+    Any society admin may add, change and delete terms; every one of those
+    actions writes both a TermsRevision (the full text as it then stood) and
+    an AuditLog entry, so "who changed what, when" is answerable afterwards.
+    """
+    versions = (
+        TermsVersion.objects.select_related("created_by", "updated_by")
+        .annotate(acceptance_count=Count("acceptances"))
+    )
+    current = TermsVersion.current()
+    members = User.objects.filter(is_banned=False).count()
+    accepted_current = (
+        TermsAcceptance.objects.filter(version_number=current.number).count()
+        if current else 0
+    )
+    return render(request, "panel/terms.html", {
+        "nav_active": "panel",
+        "panel_tab": "terms",
+        "versions": versions,
+        "current": current,
+        "member_count": members,
+        "accepted_current": accepted_current,
+        "outstanding": max(0, members - accepted_current) if current else 0,
+        "recent_changes": TermsRevision.objects.select_related("editor")[:15],
+    })
+
+
+@portal_admin_required
+def terms_create(request):
+    form = TermsVersionForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        version = form.save(commit=False)
+        version.created_by = request.user
+        version.updated_by = request.user
+        if version.is_published:
+            version.published_at = timezone.now()
+        version.save()
+        version.save_revision(request.user, TermsRevision.Action.CREATED)
+        AuditLog.record(
+            request.user, "create_terms", target=f"v{version.number}",
+            detail=version.change_note[:300],
+        )
+        if version.is_published:
+            version.save_revision(request.user, TermsRevision.Action.PUBLISHED)
+            AuditLog.record(
+                request.user, "publish_terms", target=f"v{version.number}"
+            )
+            messages.success(
+                request,
+                f"Published version {version.number}. Every member will be "
+                "asked to accept it the next time they load a page.",
+            )
+        else:
+            messages.success(
+                request, f"Saved version {version.number} as a draft."
+            )
+        return redirect("panel:terms")
+    return render(request, "panel/terms_form.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "form": form, "version": None,
+    })
+
+
+@portal_admin_required
+def terms_edit(request, pk):
+    version = get_object_or_404(TermsVersion, pk=pk)
+    was_published = version.is_published
+    form = TermsVersionForm(request.POST or None, instance=version)
+    if request.method == "POST" and form.is_valid():
+        version = form.save(commit=False)
+        version.updated_by = request.user
+        newly_published = version.is_published and not was_published
+        if newly_published:
+            version.published_at = timezone.now()
+        version.save()
+
+        if newly_published:
+            action = TermsRevision.Action.PUBLISHED
+        elif was_published and not version.is_published:
+            action = TermsRevision.Action.UNPUBLISHED
+        else:
+            action = TermsRevision.Action.EDITED
+        version.save_revision(request.user, action)
+        AuditLog.record(
+            request.user, f"{action}_terms", target=f"v{version.number}",
+            detail=version.change_note[:300],
+        )
+
+        if newly_published:
+            messages.success(
+                request,
+                f"Published version {version.number}. Every member will be "
+                "asked to accept it the next time they load a page.",
+            )
+        elif action == TermsRevision.Action.UNPUBLISHED:
+            messages.warning(
+                request,
+                f"Unpublished version {version.number}. Members are no longer "
+                "asked to accept it.",
+            )
+        else:
+            messages.success(request, f"Saved version {version.number}.")
+        return redirect("panel:terms")
+    return render(request, "panel/terms_form.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "form": form, "version": version,
+        "acceptance_count": version.acceptances.count(),
+    })
+
+
+@portal_admin_required
+@require_POST
+def terms_delete(request, pk):
+    """Delete a version.
+
+    The acceptance rows are deliberately NOT deleted with it: they carry their
+    own copy of the version number and title, so the record of who agreed to
+    what survives. The same goes for the revision history.
+    """
+    version = get_object_or_404(TermsVersion, pk=pk)
+    number, accepted = version.number, version.acceptances.count()
+    version.save_revision(request.user, TermsRevision.Action.DELETED)
+    version.delete()
+    AuditLog.record(
+        request.user, "delete_terms", target=f"v{number}",
+        detail=f"{accepted} acceptance(s) kept in the log",
+    )
+    messages.success(
+        request,
+        f"Deleted version {number}. The {accepted} recorded acceptance(s) "
+        "have been kept.",
+    )
+    return redirect("panel:terms")
+
+
+@portal_admin_required
+def terms_acceptances(request, pk):
+    """Who has accepted one version of the terms, and when."""
+    version = get_object_or_404(TermsVersion, pk=pk)
+    return render(request, "panel/terms_acceptances.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "version": version,
+        "acceptances": (
+            TermsAcceptance.objects.filter(version_number=version.number)
+            .select_related("user")
+        ),
+        "outstanding": (
+            User.objects.filter(is_banned=False)
+            .exclude(terms_accepted_version__gte=version.number)
+            .order_by("first_name", "last_name")
+        ),
+    })
 
 
 # --- statistics ----------------------------------------------------------------------

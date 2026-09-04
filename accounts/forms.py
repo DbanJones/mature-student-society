@@ -6,6 +6,7 @@ import re
 from django import forms
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
+from django.utils import timezone
 
 from .models import User, WaitlistRequest, WhatsAppAccessRequest
 
@@ -129,6 +130,10 @@ class WaitlistForm(forms.ModelForm):
 
     ``website`` is a honeypot: hidden from humans by CSS, so anything that
     fills it in is a bot and the view quietly pretends to succeed.
+
+    ``accept_terms`` is only added when terms are actually published; the
+    version ticked is stamped onto the request so the reviewing admin can see
+    what the applicant agreed to, and when.
     """
 
     website = forms.CharField(required=False, label="Website")
@@ -149,6 +154,21 @@ class WaitlistForm(forms.ModelForm):
             "connection": forms.Textarea(attrs={"rows": 4}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from core.models import TermsVersion
+
+        self.terms = TermsVersion.current()
+        if self.terms is not None:
+            self.fields["accept_terms"] = forms.BooleanField(
+                required=True,
+                label=f"I have read and agree to the {self.terms.title}",
+                error_messages={
+                    "required": "Please read and accept the terms and "
+                                "conditions to request an account.",
+                },
+            )
+
     def clean_mobile(self):
         raw = self.cleaned_data.get("mobile", "")
         if not raw.strip():
@@ -167,6 +187,16 @@ class WaitlistForm(forms.ModelForm):
                 "Raven, no waitlist needed. Head to the members' login."
             )
         return email
+
+    def save(self, commit=True):
+        """Record which version of the terms was ticked, and when."""
+        instance = super().save(commit=False)
+        if self.terms is not None and self.cleaned_data.get("accept_terms"):
+            instance.terms_version = self.terms.number
+            instance.terms_accepted_at = timezone.now()
+        if commit:
+            instance.save()
+        return instance
 
     def validate_unique(self):
         """Skip the unique check on ``email``: the view greets repeat

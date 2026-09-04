@@ -406,3 +406,109 @@ class ProfileDetailTests(TestCase):
         self.assertEqual(member.talk_to_me_about, "supply chains")
         self.assertEqual(member.work, "Procurement")
         self.assertEqual(member.interests, "salsa")
+
+
+class TermsAcceptanceTests(TestCase):
+    """The terms gate: who is stopped, what is recorded, and when the gate
+    re-arms."""
+
+    def _publish(self, number=1, content="Be kind."):
+        from django.utils import timezone
+
+        from core.models import TermsVersion
+
+        return TermsVersion.objects.create(
+            number=number, title="Terms and Conditions", content=content,
+            is_published=True, published_at=timezone.now(),
+        )
+
+    def test_no_gate_while_nothing_is_published(self):
+        # The seeded v1 is an unpublished draft, so members roam freely.
+        member = make_member()
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(reverse("dashboard:home")).status_code, 200)
+
+    def test_member_is_gated_until_they_accept(self):
+        self._publish(number=2)
+        member = make_member()
+        self.client.force_login(member)
+
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertRedirects(response, reverse("accounts:terms"))
+        # The public copy and the accept page itself stay reachable.
+        self.assertEqual(self.client.get(reverse("core:terms")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("accounts:terms")).status_code, 200)
+
+        # No tick, no acceptance.
+        self.client.post(reverse("accounts:terms"), {})
+        member.refresh_from_db()
+        self.assertIsNone(member.terms_accepted_version)
+
+        response = self.client.post(reverse("accounts:terms"), {"accept": "yes"})
+        self.assertRedirects(response, reverse("dashboard:home"))
+        member.refresh_from_db()
+        self.assertEqual(member.terms_accepted_version, 2)
+        self.assertIsNotNone(member.terms_accepted_at)
+        self.assertEqual(self.client.get(reverse("dashboard:home")).status_code, 200)
+
+    def test_acceptance_row_records_the_evidence(self):
+        from core.models import TermsAcceptance
+
+        self._publish(number=2)
+        member = make_member()
+        self.client.force_login(member)
+        self.client.post(
+            reverse("accounts:terms"), {"accept": "yes"},
+            HTTP_USER_AGENT="TestBrowser/1.0",
+            HTTP_X_FORWARDED_FOR="203.0.113.7, 10.0.0.1",
+        )
+        acceptance = TermsAcceptance.objects.get(user=member)
+        self.assertEqual(acceptance.version_number, 2)
+        self.assertEqual(acceptance.ip_address, "203.0.113.7")
+        self.assertEqual(acceptance.user_agent, "TestBrowser/1.0")
+        self.assertEqual(acceptance.source, TermsAcceptance.Source.PORTAL)
+
+        # Accepting again does not mint a second row.
+        self.client.post(reverse("accounts:terms"), {"accept": "yes"})
+        self.assertEqual(TermsAcceptance.objects.filter(user=member).count(), 1)
+
+    def test_new_version_regates_everyone(self):
+        self._publish(number=2)
+        member = make_member()
+        self.client.force_login(member)
+        self.client.post(reverse("accounts:terms"), {"accept": "yes"})
+        self.assertEqual(self.client.get(reverse("dashboard:home")).status_code, 200)
+
+        self._publish(number=3, content="Be kinder.")
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertRedirects(response, reverse("accounts:terms"))
+
+    def test_waitlist_requires_the_tick_and_stamps_the_version(self):
+        self._publish(number=2)
+        data = {
+            "first_name": "Pat", "last_name": "Partner",
+            "email": "pat@example.com", "mobile": "",
+            "connection": "Partner of Test User (Wolfson).", "website": "",
+        }
+        # Without the tick the form re-renders with an error.
+        response = self.client.post(reverse("accounts:waitlist"), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(WaitlistRequest.objects.filter(email="pat@example.com").exists())
+
+        data["accept_terms"] = "on"
+        response = self.client.post(reverse("accounts:waitlist"), data)
+        self.assertRedirects(response, reverse("accounts:waitlist_done"))
+        request = WaitlistRequest.objects.get(email="pat@example.com")
+        self.assertEqual(request.terms_version, 2)
+        self.assertIsNotNone(request.terms_accepted_at)
+
+    def test_waitlist_needs_no_tick_when_nothing_is_published(self):
+        data = {
+            "first_name": "Pat", "last_name": "Partner",
+            "email": "pat2@example.com", "mobile": "",
+            "connection": "Partner of Test User (Wolfson).", "website": "",
+        }
+        response = self.client.post(reverse("accounts:waitlist"), data)
+        self.assertRedirects(response, reverse("accounts:waitlist_done"))
+        request = WaitlistRequest.objects.get(email="pat2@example.com")
+        self.assertIsNone(request.terms_version)

@@ -12,6 +12,7 @@
     <a href="{% url 'panel:messages' %}" {% if panel_tab == 'messages' %}class="active"{% endif %}>Messages</a>
     <a href="{% url 'panel:whatsapp_requests' %}" {% if panel_tab == 'whatsapp' %}class="active"{% endif %}>WhatsApp</a>
     <a href="{% url 'panel:content' %}" {% if panel_tab == 'content' %}class="active"{% endif %}>Content</a>
+    <a href="{% url 'panel:terms' %}" {% if panel_tab == 'terms' %}class="active"{% endif %}>Terms</a>
     <a href="{% url 'panel:stats' %}" {% if panel_tab == 'stats' %}class="active"{% endif %}>Statistics</a>
     <a href="{% url 'panel:mailer' %}" {% if panel_tab == 'mailer' %}class="active"{% endif %}>Mailer</a>
     <a href="{% url 'panel:audit' %}" {% if panel_tab == 'audit' %}class="active"{% endif %}>Audit log</a>

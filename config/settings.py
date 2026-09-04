@@ -121,6 +121,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "accounts.middleware.BannedUserMiddleware",
+    "accounts.middleware.TermsAcceptanceMiddleware",
     "accounts.middleware.ProfileCompletionMiddleware",
 ]
 

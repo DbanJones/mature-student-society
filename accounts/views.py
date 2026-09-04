@@ -14,7 +14,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
-from core.models import SiteConfig
+from core.models import SiteConfig, TermsVersion
 
 from .forms import (
     CRSID_RE,
@@ -153,6 +153,63 @@ class LogoutView(auth_views.LogoutView):
     """POST-only logout, back to the public homepage."""
 
     next_page = reverse_lazy("core:home")
+
+
+# --- Terms and conditions ------------------------------------------------------
+
+
+def client_ip(request):
+    """Best-effort client IP, honouring the reverse proxy in front of us.
+
+    On the SRCF the app sits behind Apache, so REMOTE_ADDR is the proxy and the
+    real address is the first entry of X-Forwarded-For.
+    """
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or None
+    return request.META.get("REMOTE_ADDR") or None
+
+
+@login_required
+def terms(request):
+    """Accept the current terms — the gate TermsAcceptanceMiddleware sends
+    members to until they have agreed to the published version.
+
+    Acceptance is recorded against the exact version number, with a timestamp,
+    the source and the client IP, so the society can evidence what a member
+    agreed to and when.
+    """
+    current = TermsVersion.current()
+    if current is None:
+        # Nothing published: there is nothing to accept, so don't strand
+        # anyone behind an empty gate.
+        messages.info(request, "There are no terms to accept at the moment.")
+        return redirect("dashboard:home")
+
+    already = request.user.has_accepted_terms(current.number)
+
+    if request.method == "POST" and not already:
+        if request.POST.get("accept") != "yes":
+            messages.error(
+                request,
+                "You need to tick the box to accept the terms before "
+                "continuing.",
+            )
+        else:
+            request.user.record_terms_acceptance(
+                current,
+                source="portal",
+                ip=client_ip(request),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+            messages.success(request, "Thanks — terms accepted.")
+            return redirect(_safe_next(request) or "dashboard:home")
+
+    return render(request, "accounts/terms.html", {
+        "terms": current,
+        "already_accepted": already,
+        "next": _safe_next(request) or "",
+    })
 
 
 # --- Profile ------------------------------------------------------------------

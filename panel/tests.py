@@ -57,11 +57,13 @@ urlpatterns = [
     path("", _ns("core", [
         ("", "home"), ("about/", "about"),
         ("wellbeing/", "wellbeing"), ("policies/", "policies"),
+        ("terms/", "terms"), ("pages/<slug:slug>/", "site_page"),
         ("winter-ball/", "winter_ball"),
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
         ("profile-setup/", "profile_setup"), ("profile/", "profile"),
+        ("terms/", "terms"),
     ])),
     path("events/", _ns("events", [
         ("", "calendar"),
@@ -140,8 +142,8 @@ class PermissionTests(PanelTestCase):
     def test_admin_can_load_every_page(self):
         self.client.force_login(self.admin)
         for name in ["home", "waitlist", "members", "events", "messages",
-                     "whatsapp_requests", "content", "contact_map", "stats",
-                     "mailer", "audit", "superadmin"]:
+                     "whatsapp_requests", "content", "contact_map", "terms",
+                     "stats", "mailer", "audit", "superadmin"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -541,3 +543,161 @@ class AIDispatchTests(TestCase):
         with mock.patch("urllib.request.urlopen", return_value=self._fake_urlopen({"nope": 1})):
             with self.assertRaises(ai.AIDraftError):
                 ai.draft_email("openai", "sk", "system", "user")
+
+
+class TermsAdminTests(PanelTestCase):
+    """Panel → Terms: any admin can add, change and delete versions, and every
+    change leaves a who/what/when trail."""
+
+    def _version(self, number=1, published=False):
+        from core.models import TermsVersion
+
+        return TermsVersion.objects.create(
+            number=number, title="Terms and Conditions",
+            content=f"Version {number} text.", is_published=published,
+            published_at=timezone.now() if published else None,
+        )
+
+    def setUp(self):
+        # Start from a clean slate: a data migration seeds a v1 draft, which
+        # would collide with the numbers these tests mint.
+        from core.models import TermsVersion
+
+        TermsVersion.objects.all().delete()
+        # A regular (non-super) admin: terms management is open to all admins.
+        self.regular_admin = User.objects.create_user(
+            username="adm3", password="pw", email="adm3@cam.ac.uk", crsid="adm3",
+            first_name="Reg", last_name="Ular", college="darwin",
+            mobile="+44 7700 900004", is_portal_admin=True,
+        )
+        self.client.force_login(self.regular_admin)
+
+    def test_non_admin_is_kept_out(self):
+        from core.models import TermsVersion
+
+        self.client.force_login(self.member)
+        version = self._version()
+        for url in [
+            reverse("panel:terms"),
+            reverse("panel:terms_create"),
+            reverse("panel:terms_edit", args=[version.pk]),
+            reverse("panel:terms_acceptances", args=[version.pk]),
+        ]:
+            self.assertEqual(self.client.get(url).status_code, 403, url)
+        self.assertEqual(
+            self.client.post(
+                reverse("panel:terms_delete", args=[version.pk])
+            ).status_code,
+            403,
+        )
+        self.assertTrue(TermsVersion.objects.filter(pk=version.pk).exists())
+
+    def test_create_logs_who_and_what(self):
+        from core.models import TermsRevision, TermsVersion
+
+        response = self.client.post(reverse("panel:terms_create"), {
+            "title": "Terms and Conditions", "number": 1,
+            "content": "Fresh terms.", "change_note": "First version",
+        })
+        self.assertRedirects(response, reverse("panel:terms"))
+        version = TermsVersion.objects.get(number=1)
+        self.assertEqual(version.created_by, self.regular_admin)
+        self.assertFalse(version.is_published)
+
+        revision = TermsRevision.objects.get(terms=version)
+        self.assertEqual(revision.action, TermsRevision.Action.CREATED)
+        self.assertEqual(revision.editor, self.regular_admin)
+        self.assertEqual(revision.content, "Fresh terms.")
+        self.assertTrue(
+            AuditLog.objects.filter(
+                actor=self.regular_admin, action="create_terms", target="v1"
+            ).exists()
+        )
+
+    def test_edit_and_publish_are_both_recorded(self):
+        from core.models import TermsRevision
+
+        version = self._version(number=1)
+        response = self.client.post(
+            reverse("panel:terms_edit", args=[version.pk]),
+            {"title": "Terms and Conditions", "number": 1,
+             "content": "Edited text.", "change_note": "Tightened wording",
+             "is_published": "on"},
+        )
+        # Publishing re-gates everyone — including the admin who pressed the
+        # button — so only check the redirect target, without following it.
+        self.assertRedirects(
+            response, reverse("panel:terms"), fetch_redirect_response=False
+        )
+        version.refresh_from_db()
+        self.assertTrue(version.is_published)
+        self.assertIsNotNone(version.published_at)
+        self.assertEqual(version.updated_by, self.regular_admin)
+        revision = version.revisions.first()
+        self.assertEqual(revision.action, TermsRevision.Action.PUBLISHED)
+        self.assertEqual(revision.content, "Edited text.")
+
+    def test_delete_keeps_the_acceptance_log(self):
+        from core.models import TermsAcceptance, TermsRevision, TermsVersion
+
+        version = self._version(number=1, published=True)
+        self.member.record_terms_acceptance(version, source="portal")
+        # The gate applies to admins too; accept so the panel is reachable.
+        self.regular_admin.record_terms_acceptance(version, source="portal")
+
+        response = self.client.post(reverse("panel:terms_delete", args=[version.pk]))
+        self.assertRedirects(response, reverse("panel:terms"))
+        self.assertFalse(TermsVersion.objects.filter(pk=version.pk).exists())
+
+        # The evidence outlives the version: acceptance and revisions remain,
+        # carrying their own copy of the number.
+        acceptance = TermsAcceptance.objects.get(user=self.member)
+        self.assertEqual(acceptance.version_number, 1)
+        self.assertIsNone(acceptance.terms)
+        self.assertTrue(
+            TermsRevision.objects.filter(
+                version_number=1, action=TermsRevision.Action.DELETED,
+                editor=self.regular_admin,
+            ).exists()
+        )
+        self.assertTrue(
+            AuditLog.objects.filter(action="delete_terms", target="v1").exists()
+        )
+
+    def test_acceptances_page_lists_who_agreed_and_who_has_not(self):
+        version = self._version(number=1, published=True)
+        self.member.record_terms_acceptance(version, source="portal")
+        self.regular_admin.record_terms_acceptance(version, source="portal")
+        response = self.client.get(
+            reverse("panel:terms_acceptances", args=[version.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("Mia Member", body)          # accepted
+        self.assertIn("Not yet accepted", body)    # the outstanding section
+
+
+class StatsTimezoneSafetyTests(PanelTestCase):
+    """Regression: the statistics service must not lean on database-side
+    timezone conversion (TruncMonth / __date), which fails on MySQL hosts
+    without the mysql.time_zone* tables — exactly the SRCF setup."""
+
+    def test_rsvps_per_month_buckets_in_python(self):
+        category = Category.objects.create(name="Social", slug="social")
+        event = Event.objects.create(
+            title="Coffee", slug="coffee", category=category,
+            start=timezone.now() + datetime.timedelta(days=3),
+            created_by=self.admin,
+        )
+        from events.models import RSVP
+
+        RSVP.objects.create(event=event, user=self.member, status=RSVP.Status.GOING)
+        rows = services.rsvps_per_month(months=3)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[-1]["count"], 1)  # this month's bucket
+        self.assertEqual(sum(row["count"] for row in rows), 1)
+
+    def test_home_counts_members_this_term(self):
+        counts = services.home_counts()
+        # Both fixture members were created "now", inside the current term.
+        self.assertEqual(counts["members_this_term"], 2)

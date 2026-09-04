@@ -11,6 +11,17 @@ PROFILE_EXEMPT_PREFIXES = (
     "/dj-admin/",
 )
 
+# Paths reachable before the terms have been accepted: the accept page itself
+# and logout (both under /accounts/), the public read-only copy of the terms,
+# and static assets.
+TERMS_EXEMPT_PREFIXES = (
+    "/accounts/",
+    "/static/",
+    "/media/",
+    "/dj-admin/",
+    "/terms/",
+)
+
 
 class BannedUserMiddleware:
     """Kill the session of anyone banned while logged in.
@@ -49,4 +60,31 @@ class ProfileCompletionMiddleware:
             and not request.path.startswith(PROFILE_EXEMPT_PREFIXES)
         ):
             return redirect("accounts:profile_setup")
+        return self.get_response(request)
+
+
+class TermsAcceptanceMiddleware:
+    """Members must accept the current terms and conditions before using the
+    members' area.
+
+    Runs ahead of ProfileCompletionMiddleware: agreeing to the terms is what
+    licenses us to collect the profile details, so it has to come first.
+    Everyone is gated, not just new sign-ups — publishing a new version of the
+    terms therefore re-prompts the whole membership on their next page load.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        user = request.user
+        if user.is_authenticated and not request.path.startswith(
+            TERMS_EXEMPT_PREFIXES
+        ):
+            # Deferred so the query is skipped entirely for static assets and
+            # for the accept page itself.
+            from core.models import TermsVersion
+
+            if not user.has_accepted_terms(TermsVersion.current_number()):
+                return redirect("accounts:terms")
         return self.get_response(request)

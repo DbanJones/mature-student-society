@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load md %}
 
 {% block title %}Wellbeing{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
@@ -8,58 +9,62 @@
 <div class="page-head">
   <div>
     <h1>Wellbeing</h1>
-    <p class="lede">You're not alone &mdash; and we're here to help.</p>
+    <p class="lede">You&rsquo;re not alone &mdash; and we can help you find the right door.</p>
   </div>
+  {% if user.is_authenticated and user.is_portal_admin %}
+    <div class="actions">
+      {% if page %}
+        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">✏️ Edit this page</a>
+      {% else %}
+        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_create' %}">✏️ Create this page</a>
+      {% endif %}
+    </div>
+  {% endif %}
 </div>
 
-<div class="prose">
-  <p>
-    At MSS, we understand that mature students at Cambridge face unique challenges &mdash; often
-    juggling academic pressures with careers, family responsibilities, or major life changes.
-    Many are new to the area, to the university system, or even to the UK itself. It's easy to
-    feel isolated or overwhelmed.
-  </p>
-</div>
-
-<h2>We offer</h2>
-<div class="grid grid-2">
-  <div class="card">
-    <h3>☕ A Mature Students Talking Group</h3>
+{% if page %}
+  {% if not page.is_published %}
+    <div class="flash flash-warning" style="margin:0 0 1.5rem">
+      This page is unpublished &mdash; only admins can see it.
+    </div>
+  {% endif %}
+  <div class="prose">{{ page.content|markdown }}</div>
+{% else %}
+  {# Fallback if an admin has deleted the editable page: the support routes
+     below are the part of this page that must never simply vanish. #}
+  <div class="prose">
     <p>
-      A weekly in-person support group run with the University's Student Services &mdash; a
-      confidential space to talk about academic pressure, isolation, or adjusting to a new
-      environment.
+      At MSS we know that mature students at Cambridge face particular pressures &mdash; often
+      juggling study with careers, family responsibilities or major life changes. It is easy to
+      feel isolated or overwhelmed, and asking early always beats asking late.
     </p>
-  </div>
-  <div class="card">
-    <h3>🧭 Practical advice</h3>
+    <h2>Where to get support</h2>
     <p>
-      Housing, healthcare, childcare, course deadlines &mdash; peer-to-peer guidance and
-      &ldquo;hive mind&rdquo; solutions from people who've been there.
+      <strong>MSS is a peer community, not a counselling service.</strong> We have no trained
+      mental health practitioners on the committee. If you are struggling, please go to the
+      University&rsquo;s official support services below &mdash; they are free, confidential and
+      staffed by qualified professionals.
     </p>
+    <ul>
+      <li><strong>In an emergency, or if someone is in immediate danger &mdash; call 999.</strong></li>
+      <li><strong>University Student Wellbeing Service (including the University Counselling
+        Service)</strong> &mdash; the University&rsquo;s official service for students:
+        <a href="https://www.studentwellbeing.admin.cam.ac.uk/">studentwellbeing.admin.cam.ac.uk</a></li>
+      <li><strong>NHS 111</strong> &mdash; free, 24/7; select the mental health option for urgent help.</li>
+      <li><strong>Samaritans &mdash; 116 123</strong> &mdash; free, 24/7, any time, any reason.</li>
+      <li><strong>Your College Tutor or College Nurse</strong> &mdash; your first port of call inside
+        your college for anything affecting your work or your welfare.</li>
+    </ul>
   </div>
-  <div class="card">
-    <h3>📣 Advocacy</h3>
-    <p>
-      Help finding the right channels for department or college issues &mdash; or speaking up
-      on your behalf.
-    </p>
-  </div>
-  <div class="card">
-    <h3>🤝 Qualified support</h3>
-    <p>
-      Some wellbeing team members have professional training in counselling, coaching, or mental
-      health first aid. Not a replacement for professional services, but an informed,
-      compassionate bridge to further help.
-    </p>
-  </div>
-</div>
+{% endif %}
 
 <div class="card" style="margin-top: 2rem;">
-  <h3>Reach the wellbeing team</h3>
+  <h3>Reach the MSS wellbeing team</h3>
   <p style="margin-bottom: 0;">
     Email <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
-    and mark your message for the wellbeing team. Everything is treated in confidence.
+    and mark your message for the wellbeing team. We can point you to the right service, come
+    with you, or speak up on your behalf &mdash; but for clinical or crisis support please use
+    the University and NHS services above.
   </p>
 </div>
 {% endblock %}

@@ -1,18 +1,22 @@
-"""Public pages: homepage, About Us, Wellbeing, Community Policies.
+"""Public pages: homepage, About Us, Wellbeing, Community Policies, and the
+Terms and Conditions.
 
-All four pages are readable without logging in. The homepage only ever shows
+All are readable without logging in. The homepage only ever shows
 events through ``Event.objects.visible_to(request.user)`` so members_only
 events never leak to anonymous visitors.
 """
 
 from django.db.models import Count, Q
 from django.http import Http404
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 
-from core.models import SitePage
+from core.models import SitePage, TermsVersion
 from events.models import RSVP, Event
 from guide.models import GuidePage
 from supper.models import Restaurant
+
+# The SitePage slug holding the editable body of the Wellbeing page.
+WELLBEING_SLUG = "wellbeing"
 
 # "What We Do" — migrated from the old site (CONTENT.md).
 ACTIVITIES = [
@@ -117,8 +121,17 @@ def about(request):
     })
 
 
+# SitePages that also back a fixed URL of their own. They are edited in
+# panel → Content like any other page, but are served from their canonical
+# path, so /pages/<slug>/ redirects there rather than publishing the same
+# content at two addresses.
+CANONICAL_PAGE_SLUGS = {"wellbeing": "core:wellbeing"}
+
+
 def site_page(request, slug):
     """An admin-managed CMS page (see panel → Content)."""
+    if slug in CANONICAL_PAGE_SLUGS:
+        return redirect(CANONICAL_PAGE_SLUGS[slug], permanent=True)
     page = get_object_or_404(SitePage, slug=slug)
     if not page.is_published and not (
         request.user.is_authenticated and request.user.is_portal_admin
@@ -131,8 +144,31 @@ def site_page(request, slug):
 
 
 def wellbeing(request):
-    return render(request, "core/wellbeing.html")
+    """The Wellbeing page.
+
+    The body is an admin-editable SitePage (slug ``wellbeing``) so the
+    committee can change it from panel → Content without a deploy. The page
+    header and the crisis-support panel stay in the template: those are the
+    parts nobody should be able to delete by accident.
+    """
+    page = SitePage.objects.filter(slug=WELLBEING_SLUG).first()
+    if page and not page.is_published and not (
+        request.user.is_authenticated and request.user.is_portal_admin
+    ):
+        page = None
+    return render(request, "core/wellbeing.html", {"page": page})
 
 
 def policies(request):
     return render(request, "core/policies.html")
+
+
+def terms(request):
+    """The current terms and conditions, readable by anyone.
+
+    Public so that people can read what they will be agreeing to before they
+    request an account — and so the accept page has something to link to.
+    """
+    return render(request, "core/terms.html", {
+        "terms": TermsVersion.current(),
+    })

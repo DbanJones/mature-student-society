@@ -1,0 +1,133 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Terms and conditions{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Terms and conditions</h1>
+    <p class="muted">
+      What members agree to when they join. Publishing a new version asks
+      everyone to accept again the next time they load a page.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-accent btn-small" href="{% url 'panel:terms_create' %}">Add a version</a>
+  </div>
+</div>
+
+<div class="stat-row" style="margin-bottom:1.5rem">
+  <div class="stat-tile">
+    <div class="stat-num">{% if current %}v{{ current.number }}{% else %}—{% endif %}</div>
+    <div class="stat-label">Current version</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ accepted_current }}</div>
+    <div class="stat-label">Members accepted</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ outstanding }}</div>
+    <div class="stat-label">Not yet accepted</div>
+  </div>
+  <div class="stat-tile">
+    <div class="stat-num">{{ member_count }}</div>
+    <div class="stat-label">Members</div>
+  </div>
+</div>
+
+{% if not current %}
+  <div class="flash flash-warning" style="margin-bottom:1.5rem">
+    No version is published, so nobody is being asked to accept anything.
+    Create a version and tick <strong>Published</strong> to turn the gate on.
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Versions</h2>
+  {% if versions %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>State</th>
+            <th>Accepted by</th>
+            <th>Last changed</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for version in versions %}
+            <tr>
+              <td>
+                <strong>v{{ version.number }} — {{ version.title }}</strong>
+                {% if version.change_note %}
+                  <br><span class="small muted">{{ version.change_note }}</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                {% if version == current %}
+                  <span class="badge">Current</span>
+                {% elif version.is_published %}
+                  <span class="small muted">Published (superseded)</span>
+                {% else %}
+                  <span class="badge badge-danger">Draft</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                <a href="{% url 'panel:terms_acceptances' version.pk %}">
+                  {{ version.acceptance_count }} member{{ version.acceptance_count|pluralize }}
+                </a>
+              </td>
+              <td class="small muted">
+                {{ version.updated_at|date:"j M Y, H:i" }}
+                {% if version.updated_by %}<br>by {{ version.updated_by.get_full_name|default:version.updated_by.username }}{% endif %}
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn-small btn-ghost" href="{% url 'panel:terms_edit' version.pk %}">Edit</a>
+                  <form method="post" action="{% url 'panel:terms_delete' version.pk %}"
+                        onsubmit="return confirm('Delete version {{ version.number }}? The record of who accepted it is kept.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No versions yet.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h2>Recent changes</h2>
+  <p class="small muted">Who changed the terms, what they did, and when.</p>
+  {% if recent_changes %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>When</th><th>Version</th><th>Change</th><th>Admin</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for revision in recent_changes %}
+            <tr>
+              <td class="small muted">{{ revision.created_at|date:"j M Y, H:i" }}</td>
+              <td class="small">v{{ revision.version_number }}</td>
+              <td class="small">{{ revision.get_action_display }}</td>
+              <td class="small">
+                {% if revision.editor %}{{ revision.editor.get_full_name|default:revision.editor.username }}
+                {% else %}<span class="muted">(removed)</span>{% endif %}
+              </td>
+              <td class="small muted">{{ revision.change_note|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Nothing yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

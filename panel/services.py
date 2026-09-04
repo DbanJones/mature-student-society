@@ -7,7 +7,6 @@ views stay thin and the mailer body is testable without a browser.
 import datetime
 
 from django.db.models import Avg, Count, Q
-from django.db.models.functions import TruncMonth
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.formats import date_format
@@ -33,6 +32,19 @@ def _with_pct(rows, key="count", scale=None):
     for row in rows:
         row["pct"] = int(round(100 * row[key] / top)) if top else 0
     return rows
+
+
+def local_midnight(day):
+    """Local midnight at the start of ``day``, as an aware datetime.
+
+    Used in place of a ``__date`` lookup. ``__date`` asks the database to
+    convert a UTC timestamp into Europe/London before comparing, which on
+    MySQL compiles to CONVERT_TZ(...) — and that silently returns NULL unless
+    the server's mysql.time_zone* tables are loaded, which shared hosts (e.g.
+    SRCF) typically don't grant permission for. Comparing against an aware
+    datetime bound needs no timezone conversion in the database at all.
+    """
+    return timezone.make_aware(datetime.datetime.combine(day, datetime.time.min))
 
 
 def current_term_start(today=None):
@@ -66,7 +78,7 @@ def home_counts():
         ).count(),
         "total_members": User.objects.filter(is_banned=False).count(),
         "members_this_term": User.objects.filter(
-            is_banned=False, created_at__date__gte=current_term_start()
+            is_banned=False, created_at__gte=local_midnight(current_term_start())
         ).count(),
         "events_14d": Event.objects.filter(
             is_cancelled=False, start__range=(now, horizon)
@@ -140,7 +152,18 @@ def events_by_category():
 
 
 def rsvps_per_month(months=6):
-    """GOING RSVPs created per calendar month, oldest first, zero-filled."""
+    """GOING RSVPs created per calendar month, oldest first, zero-filled.
+
+    The month bucket is worked out in Python rather than with TruncMonth.
+    Grouping by month in the database means converting created_at (stored in
+    UTC) into Europe/London first, which on MySQL compiles to
+    CONVERT_TZ(created_at, 'UTC', 'Europe/London'). That returns NULL unless
+    the server's mysql.time_zone* tables have been loaded — which shared hosts
+    (e.g. SRCF) typically don't grant permission for — and Django then raises
+    "Database returned an invalid datetime value". Fetching the timestamps and
+    bucketing them here needs no database timezone support at all, and the row
+    count is bounded by the window so it stays cheap.
+    """
     now = timezone.localtime()
     keys = []
     year, month = now.year, now.month
@@ -150,17 +173,14 @@ def rsvps_per_month(months=6):
         if month == 0:
             year, month = year - 1, 12
     keys.reverse()
-    start = timezone.make_aware(datetime.datetime(keys[0][0], keys[0][1], 1))
+    start = local_midnight(datetime.date(keys[0][0], keys[0][1], 1))
     counts = {}
-    rows = (
-        RSVP.objects.filter(status=RSVP.Status.GOING, created_at__gte=start)
-        .annotate(month=TruncMonth("created_at"))
-        .values("month")
-        .annotate(count=Count("id"))
-    )
-    for row in rows:
-        local = timezone.localtime(row["month"])
-        counts[(local.year, local.month)] = counts.get((local.year, local.month), 0) + row["count"]
+    stamps = RSVP.objects.filter(
+        status=RSVP.Status.GOING, created_at__gte=start
+    ).values_list("created_at", flat=True)
+    for stamp in stamps:
+        local = timezone.localtime(stamp)
+        counts[(local.year, local.month)] = counts.get((local.year, local.month), 0) + 1
     return _with_pct(
         [
             {

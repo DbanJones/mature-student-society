@@ -35,7 +35,7 @@ urlpatterns = [
         "waitlist", "whatsapp", "set_password",
     ]))),
     path("", include(_stub_patterns("core", [
-        "home", "about", "wellbeing", "policies", "winter_ball",
+        "home", "about", "wellbeing", "policies", "terms", "winter_ball",
     ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
     path("faq/", include(_stub_patterns("faq", ["index", "contacts", "colleges", "departments"]))),

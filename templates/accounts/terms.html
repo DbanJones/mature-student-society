@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% load static %}
+{% load md %}
+
+{% block title %}{{ terms.title }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/accounts.css' %}">{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 48rem; margin: 0 auto;">
+  <h1>{{ terms.title }}</h1>
+  <p class="muted small">
+    Version {{ terms.number }}{% if terms.published_at %} &mdash; in force since
+    {{ terms.published_at|date:"j F Y" }}{% endif %}.
+  </p>
+
+  {% if already_accepted %}
+    <div class="flash flash-success" style="margin:1rem 0">
+      You accepted these terms on {{ user.terms_accepted_at|date:"j F Y" }} at
+      {{ user.terms_accepted_at|time:"H:i" }}.
+    </div>
+  {% else %}
+    <p class="lede">
+      Please read these before continuing. Everyone who uses the MSS portal needs to
+      agree to them, and we record the date you did.
+    </p>
+  {% endif %}
+
+  <div class="prose terms-body">{{ terms.content|markdown }}</div>
+
+  {% if already_accepted %}
+    <hr class="divider">
+    <p><a class="btn btn-accent" href="{% url 'dashboard:home' %}">Back to the portal</a></p>
+  {% else %}
+    <hr class="divider">
+    <form method="post" novalidate>
+      {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <p>
+        <label>
+          <input type="checkbox" name="accept" value="yes" required>
+          I have read and agree to the {{ terms.title }} (version {{ terms.number }}).
+        </label>
+      </p>
+      <button type="submit" class="btn btn-accent">Accept and continue</button>
+    </form>
+    <div class="small muted" style="margin-top:1rem">
+      <p style="margin-bottom:.4rem">
+        If you would rather not agree, you can leave the portal without accepting.
+        Questions about the terms go to
+        <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.
+      </p>
+      <form method="post" action="{% url 'accounts:logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost btn-small">Log out</button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

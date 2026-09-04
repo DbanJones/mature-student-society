@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+{% load md %}
+
+{% block title %}{% if terms %}{{ terms.title }}{% else %}Terms and Conditions{% endif %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if terms %}{{ terms.title }}{% else %}Terms and Conditions{% endif %}</h1>
+    {% if terms %}
+      <p class="muted small">
+        Version {{ terms.number }}{% if terms.published_at %} &mdash; in force since
+        {{ terms.published_at|date:"j F Y" }}{% endif %}.
+      </p>
+    {% endif %}
+  </div>
+  {% if user.is_authenticated and user.is_portal_admin %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:terms' %}">✏️ Manage terms</a>
+    </div>
+  {% endif %}
+</div>
+
+{% if terms %}
+  <div class="prose terms-body">{{ terms.content|markdown }}</div>
+{% else %}
+  <div class="empty">
+    No terms and conditions have been published yet.
+    {% if user.is_authenticated and user.is_portal_admin %}
+      An admin can publish some from <a href="{% url 'panel:terms' %}">panel → Terms</a>.
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

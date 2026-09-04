@@ -4,7 +4,7 @@ from django import forms
 from django.utils.text import slugify
 
 from accounts.models import User
-from core.models import BUILTIN_TABS, VISIBILITY_CHOICES, SitePage
+from core.models import BUILTIN_TABS, VISIBILITY_CHOICES, SitePage, TermsVersion
 from events.models import Category
 from faq.models import ContactNode, DepartmentContact
 
@@ -215,3 +215,45 @@ class ContactNodeForm(forms.ModelForm):
                 if not cleaned.get(field):
                     self.add_error(field, "A result node needs this.")
         return cleaned
+
+
+class TermsVersionForm(forms.ModelForm):
+    """Create or edit a version of the terms and conditions.
+
+    The version number is assigned automatically on creation and is read-only
+    afterwards: acceptances are recorded against the number, so renumbering an
+    existing version would quietly rewrite what members agreed to.
+    """
+
+    class Meta:
+        model = TermsVersion
+        fields = ["title", "number", "content", "change_note", "is_published"]
+        labels = {
+            "number": "Version number",
+            "change_note": "What changed",
+            "is_published": "Published",
+        }
+        widgets = {
+            "content": forms.Textarea(attrs={"rows": 22}),
+            "change_note": forms.TextInput(
+                attrs={"placeholder": "e.g. Added photography consent clause"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            self.fields["number"].disabled = True
+            self.fields["number"].help_text = (
+                "Fixed once created — members' acceptances are recorded "
+                "against this number. Publish a new version to change the "
+                "terms people must agree to."
+            )
+        else:
+            self.fields["number"].initial = TermsVersion.next_number()
+
+    def clean_content(self):
+        content = (self.cleaned_data.get("content") or "").strip()
+        if not content:
+            raise forms.ValidationError("The terms can't be empty.")
+        return content
