@@ -28,4 +28,4 @@ echo "  Log in via the 'Development impersonation' card (dbj25 = admin)."
 echo "  Press Ctrl+C to stop."
 echo ""
 #exec .venv/bin/python manage.py runserver
-exec gunicorn -w 2 -b unix:/societies/mss/mature-student-society/sockets/web.sock --log-file - config.wsgi:application
+exec gunicorn -w 2 -b unix:/public/societies/mss/mature-student-society/sockets/web.sock --log-file - config.wsgi:application
