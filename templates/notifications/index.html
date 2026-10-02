@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Notifications{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/social.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Notifications</h1>
+    <p class="lede">Changes to your plans: events, polls, waitlists, and anything you look after.</p>
+  </div>
+  {% if unread %}
+    <div class="actions">
+      <form method="post" action="{% url 'notifications:mark_all_read' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost btn-small">Mark all as read</button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+
+{% if rows %}
+  <div class="card" style="padding:.4rem .6rem">
+    <ul class="convo-list">
+      {% for row in rows %}
+        <li>
+          <a class="convo-row{% if not row.is_read %} unread{% endif %}" href="{% url 'notifications:go' row.pk %}">
+            <span class="member-photo" aria-hidden="true"><span class="member-initials">{{ row.emoji }}</span></span>
+            <span class="convo-main">
+              <span class="convo-preview">{{ row.text }}</span>
+            </span>
+            <span class="convo-side">
+              <span class="muted small">{{ row.created_at|date:"j M, H:i" }}</span>
+              {% if not row.is_read %}<span class="nav-badge">new</span>{% endif %}
+            </span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <div class="empty">Nothing yet. You'll hear here when something you're part of changes.</div>
+{% endif %}
+{% endblock %}

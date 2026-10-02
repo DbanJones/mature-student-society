@@ -9,9 +9,19 @@
 <div class="page-head">
   <div>
     <h1>Messages</h1>
-    <p class="lede">Direct messages between members. Find someone via the
-      <a href="{% url 'members:directory' %}">members directory</a> to start a
-      conversation.</p>
+    <p class="lede">
+      {% if muted %}
+        Your messaging has been restricted by the committee. You can still read
+        anything sent to you.
+      {% elif restricted %}
+        Direct messages between members are switched off. You can write to the
+        committee below, and reply to anything they send you.
+      {% else %}
+        Direct messages between members. Find someone via the
+        <a href="{% url 'members:directory' %}">members directory</a> to start a
+        conversation.
+      {% endif %}
+    </p>
   </div>
 </div>
 
@@ -48,11 +58,41 @@
       {% endfor %}
     </ul>
   </div>
-{% else %}
+{% elif not restricted %}
   <div class="empty">
     No conversations yet. Head to the
     <a href="{% url 'members:directory' %}">members directory</a>, open a
     profile and press “Message”.
+  </div>
+{% endif %}
+
+{% if committee %}
+  <div class="card" style="margin-top:1rem">
+    <h2>Message the committee</h2>
+    <p class="small muted">
+      Questions, ideas, or something you'd rather not raise in the group?
+      Any committee admin will pick it up.
+    </p>
+    <ul class="convo-list">
+      {% for admin in committee %}
+        <li>
+          <a class="convo-row" href="{% url 'inbox:thread' admin.username %}">
+            <span class="member-photo">
+              {% if admin.photo %}
+                <img src="{{ admin.photo.url }}" alt="">
+              {% else %}
+                <span class="member-initials">{{ admin.initials }}</span>
+              {% endif %}
+            </span>
+            <span class="convo-main">
+              <strong>{{ admin.get_full_name|default:admin.username }}</strong>
+              <span class="convo-preview">{% if admin.college %}{{ admin.get_college_display }} · {% endif %}Committee admin</span>
+            </span>
+            <span class="convo-side"><span class="btn btn-small btn-ghost">Message</span></span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
   </div>
 {% endif %}
 

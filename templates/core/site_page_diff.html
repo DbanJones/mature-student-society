@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Changes to “{{ page.title }}”{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'core:site_page_history' page.slug %}">&larr; History of “{{ page.title }}”</a></p>
+    <h1>What changed</h1>
+  </div>
+</div>
+{% include "core/_diff.html" %}
+{% endblock %}

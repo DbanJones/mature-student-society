@@ -1,7 +1,7 @@
 """Direct-message views: an inbox of conversations and per-member threads.
 
-Sending is guarded in one place (``_send_denied_reason``) so every rule —
-mute, block, ban state, daily cap — applies to every send path.
+Sending is guarded in one place (``inbox.policy`` plus the daily cap in
+``_send_denied_reason``) so every rule applies to every send path.
 """
 
 from django.contrib import messages
@@ -13,8 +13,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from accounts.models import User
+from core.models import SiteConfig
 
 from .models import MAX_MESSAGE_LENGTH, DirectMessage, MessageBlock
+from .policy import messaging_denied_reason
 
 
 def _get_member(request, username):
@@ -34,13 +36,9 @@ def _get_member(request, username):
 
 
 def _send_denied_reason(sender, recipient):
-    if not sender.can_send_messages:
-        return ("Your messaging has been restricted by the committee. "
-                "Contact them if you think this is a mistake.")
-    if recipient.is_banned:
-        return "That member's account is suspended."
-    if MessageBlock.exists_between(sender, recipient):
-        return "You can't exchange messages with this member."
+    denied = messaging_denied_reason(sender, recipient)
+    if denied:
+        return denied
     if DirectMessage.sender_is_over_daily_cap(sender):
         return "You've hit the daily message limit — try again tomorrow."
     return None
@@ -67,9 +65,26 @@ def inbox(request):
         if sender_id in partners:
             partners[sender_id]["unread"] += 1
 
+    # In restricted mode an ordinary member can only start a conversation
+    # with the committee, so list the admins they may write to.
+    restricted = (
+        SiteConfig.get().messaging_mode == SiteConfig.MessagingMode.RESTRICTED
+        and not request.user.messaging_enabled
+    )
+    committee = []
+    if restricted and not request.user.is_muted:
+        committee = list(
+            User.objects.filter(is_portal_admin=True, is_banned=False)
+            .exclude(pk=request.user.pk)
+            .order_by("first_name", "last_name")
+        )
+
     return render(request, "inbox/inbox.html", {
         "nav_active": "messages",
         "conversations": list(partners.values()),
+        "restricted": restricted,
+        "muted": request.user.is_muted,
+        "committee": committee,
     })
 
 

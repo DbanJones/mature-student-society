@@ -19,7 +19,7 @@
 }
 .member-card:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); border-color: var(--sage); color: var(--ink); }
 .member-card-body { display: flex; flex-direction: column; min-width: 0; }
-.member-card-body strong { color: var(--pine-900); }
+.member-card-body strong { color: var(--heading); }
 .member-card-body .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .member-photo {
@@ -41,7 +41,7 @@
 
 /* profile fact list (talk to me about / work / interests) */
 .profile-facts { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .35rem .9rem; }
-.profile-facts dt { font-weight: 650; color: var(--pine-900); white-space: nowrap; }
+.profile-facts dt { font-weight: 650; color: var(--heading); white-space: nowrap; }
 .profile-facts dd { margin: 0; }
 @media (max-width: 540px) { .profile-facts { grid-template-columns: 1fr; } .profile-facts dd { margin-bottom: .4rem; } }
 
@@ -56,7 +56,7 @@
 .convo-list li:last-child .convo-row { border-bottom: none; }
 .convo-row:hover { background: var(--sage-100); color: var(--ink); }
 .convo-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.convo-main strong { color: var(--pine-900); }
+.convo-main strong { color: var(--heading); }
 .convo-preview { font-size: .88rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .convo-row.unread .convo-preview { color: var(--ink); font-weight: 600; }
 .convo-side { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; flex: none; }

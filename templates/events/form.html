@@ -145,6 +145,20 @@
   </form>
 </div>
 
+{% if event and not event.is_cancelled %}
+  <div class="card" style="max-width:46rem; margin-top:1rem">
+    <h2>Repeat weekly</h2>
+    <p class="small muted">Create copies of this event on the following weeks, same time and details. Each copy is its own event you can edit or cancel.</p>
+    <form method="post" action="{% url 'events:repeat' event.slug %}" class="row-actions" data-confirm="Create the weekly copies now?">
+      {% csrf_token %}
+      <label for="repeat-weeks" style="margin:0">For the next</label>
+      <input type="number" id="repeat-weeks" name="weeks" min="1" max="12" value="4" style="width:5rem">
+      <span>weeks</span>
+      <button type="submit" class="btn btn-small">Create copies</button>
+    </form>
+  </div>
+{% endif %}
+
 {{ cat_ratings|json_script:"cat-ratings" }}
 {% endblock %}
 

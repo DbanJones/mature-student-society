@@ -17,7 +17,7 @@
 .lb-name { margin-bottom: .1rem; }
 .lb-meta { margin-bottom: .6rem; }
 .lb-score { display: flex; flex-direction: column; align-items: flex-end; gap: .1rem; text-align: right; }
-.lb-num { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--pine-900); line-height: 1.1; }
+.lb-num { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; color: var(--heading); line-height: 1.1; }
 
 .rating-bars .bar-row { grid-template-columns: 110px 1fr 2.4rem; margin-bottom: .3rem; font-size: .85rem; }
 .rating-bars .bar-fill { background: var(--amber); }
@@ -53,7 +53,7 @@
 .star-fieldset { border: none; padding: 0; margin: 0 0 1.1rem; }
 .star-fieldset legend {
   font-family: var(--font-body); font-weight: 600; font-size: .9rem;
-  color: var(--pine-900); padding: 0; margin-bottom: .15rem;
+  color: var(--heading); padding: 0; margin-bottom: .15rem;
 }
 
 .star-radio { display: inline-flex; flex-direction: row-reverse; justify-content: flex-end; }

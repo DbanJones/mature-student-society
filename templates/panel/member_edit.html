@@ -42,4 +42,21 @@
     <p class="small muted">Changing an associate's email also changes the address they log in with.</p>
   </div>
 </div>
+
+<div class="card" style="margin-top:1rem">
+  <h3>Activity</h3>
+  {% if timeline %}
+    <ul class="audit-list">
+      {% for item in timeline %}
+        <li>
+          <span aria-hidden="true">{{ item.emoji }}</span>
+          {% if item.url %}<a href="{{ item.url }}">{{ item.text }}</a>{% else %}{{ item.text }}{% endif %}
+          <span class="muted small">· {{ item.when|date:"j M Y, H:i" }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted small" style="margin:0">Nothing recorded yet.</p>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 COLLEGES = [
@@ -52,6 +53,11 @@ class User(AbstractUser):
     class AccountType(models.TextChoices):
         RAVEN = "raven", "Raven (CRSid)"
         ASSOCIATE = "associate", "Associate (approved guest)"
+
+    class Messaging(models.TextChoices):
+        DEFAULT = "default", "Committee only"
+        ENABLED = "enabled", "Can message anyone"
+        MUTED = "muted", "Muted"
 
     account_type = models.CharField(
         max_length=12, choices=AccountType.choices, default=AccountType.RAVEN
@@ -107,9 +113,13 @@ class User(AbstractUser):
                   "events and messages are invisible to everyone else.",
     )
     shadow_banned_at = models.DateTimeField(null=True, blank=True)
-    can_send_messages = models.BooleanField(
-        default=True,
-        help_text="Untick to mute this member: they can read messages but not send.",
+    messaging = models.CharField(
+        max_length=10, choices=Messaging.choices, default=Messaging.DEFAULT,
+        help_text="Who this member may send direct messages to. When "
+                  "site-wide messaging is restricted (the default) members "
+                  "can only write to the committee unless an admin enables "
+                  "them; muted members can read but never send. Admins can "
+                  "always message anyone.",
     )
     banned_at = models.DateTimeField(null=True, blank=True)
     banned_by = models.ForeignKey(
@@ -125,6 +135,9 @@ class User(AbstractUser):
         help_text="Highest version of the terms this member has accepted.",
     )
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
+
+    # Personal calendar feed: the secret in /me/calendar.ics?token=…
+    calendar_token = models.CharField(max_length=48, blank=True, db_index=True)
 
     # One-time WhatsApp invite (requirement: approval grants a single view of
     # the group link; afterwards access must be re-requested from an admin).
@@ -148,6 +161,43 @@ class User(AbstractUser):
     @property
     def profile_complete(self):
         return bool(self.first_name and self.last_name and self.college and self.mobile)
+
+    class Onboarding(models.TextChoices):
+        NEVER_LOGGED_IN = "never_logged_in", "Never logged in"
+        TERMS = "terms", "Terms not accepted"
+        PROFILE = "profile", "Profile incomplete"
+        COMPLETE = "complete", "Complete"
+
+    def onboarding_status(self, current_terms_number):
+        """Where this account is in sign-up, in the order the gates fire.
+
+        Raven creates the account at first login, before the terms gate and
+        the profile form, and an approved associate exists before they ever
+        log in — so an account can sit at any of these steps indefinitely.
+        That is why some members show no college or mobile: they never got
+        as far as the profile form.
+        """
+        if self.last_login is None:
+            return self.Onboarding.NEVER_LOGGED_IN
+        if not self.has_accepted_terms(current_terms_number):
+            return self.Onboarding.TERMS
+        if not self.profile_complete:
+            return self.Onboarding.PROFILE
+        return self.Onboarding.COMPLETE
+
+    @classmethod
+    def incomplete_q(cls, current_terms_number):
+        """Queryset filter matching every account whose ``onboarding_status``
+        is anything other than complete."""
+        q = (
+            Q(last_login__isnull=True) | Q(first_name="") | Q(last_name="")
+            | Q(college="") | Q(mobile="")
+        )
+        if current_terms_number is not None:
+            q |= Q(terms_accepted_version__isnull=True) | Q(
+                terms_accepted_version__lt=current_terms_number
+            )
+        return q
 
     def has_accepted_terms(self, current_number):
         """Has this member accepted version ``current_number`` (or later)?
@@ -187,6 +237,17 @@ class User(AbstractUser):
             self.save(update_fields=["terms_accepted_version", "terms_accepted_at"])
         return acceptance
 
+    def get_calendar_token(self):
+        if not self.calendar_token:
+            self.reset_calendar_token()
+        return self.calendar_token
+
+    def reset_calendar_token(self):
+        import secrets
+
+        self.calendar_token = secrets.token_urlsafe(24)
+        self.save(update_fields=["calendar_token"])
+
     @property
     def can_view_whatsapp_link(self):
         return self.whatsapp_link_viewed_at is None
@@ -194,6 +255,16 @@ class User(AbstractUser):
     def mark_whatsapp_link_viewed(self):
         self.whatsapp_link_viewed_at = timezone.now()
         self.save(update_fields=["whatsapp_link_viewed_at"])
+
+    @property
+    def is_muted(self):
+        """Muted members can't send at all. Admins are never muted."""
+        return self.messaging == self.Messaging.MUTED and not self.is_portal_admin
+
+    @property
+    def messaging_enabled(self):
+        """May message any member, whatever the site-wide messaging mode."""
+        return self.is_portal_admin or self.messaging == self.Messaging.ENABLED
 
     def shadow_ban(self):
         self.is_shadow_banned = True

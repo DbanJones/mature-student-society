@@ -110,6 +110,9 @@ INSTALLED_APPS = [
     "panel",
     "inbox",
     "faq",
+    "testimonials",
+    "polls",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -140,6 +143,7 @@ TEMPLATES = [
                 "core.context_processors.site_config",
                 "core.context_processors.navigation",
                 "inbox.context_processors.unread_messages",
+                "notifications.context_processors.unread_notifications",
             ],
         },
     },

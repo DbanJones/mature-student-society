@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static md %}
+
+{% block title %}Edit “{{ page.title }}”{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{{ page_url }}">&larr; {{ page.title }}</a></p>
+    <h1>Edit “{{ page.title }}”</h1>
+    <p class="lede">
+      Every save is kept in the page history, so edit boldly: anything can be
+      restored. Use Preview to check the formatting before you save.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_history' page.slug %}">History</a>
+  </div>
+</div>
+
+<div class="guide-editor">
+  <form method="post" class="card" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>
+      <label for="{{ form.title.id_for_label }}">Title</label>
+      {{ form.title }}
+      {{ form.title.errors }}
+      <span class="helptext">The page address stays {{ page_url }} whatever the title.</span>
+    </p>
+    <p>
+      <label for="{{ form.content.id_for_label }}">Content</label>
+      {{ form.content }}
+      {{ form.content.errors }}
+      <span class="helptext">{{ form.content.help_text }}</span>
+    </p>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-accent">Save changes</button>
+      <button type="submit" class="btn btn-ghost" name="preview" value="1">Preview</button>
+      <a class="btn btn-ghost" href="{{ page_url }}">Cancel</a>
+    </div>
+  </form>
+
+  <aside class="card cheatsheet">
+    <h3>Formatting cheatsheet</h3>
+    <table>
+      <tr><td><code>## Heading</code></td><td>a section heading</td></tr>
+      <tr><td><code>**bold**</code></td><td><strong>bold</strong></td></tr>
+      <tr><td><code>*italics*</code></td><td><em>italics</em></td></tr>
+      <tr><td><code>[UIS](https://…)</code></td><td>a link</td></tr>
+      <tr><td><code>- item</code></td><td>a bulleted list</td></tr>
+      <tr><td><code>1. item</code></td><td>a numbered list</td></tr>
+      <tr><td><code>&gt; quote</code></td><td>a quotation</td></tr>
+    </table>
+    <p class="muted small" style="margin:.8rem 0 0">
+      Basic HTML works too: <code>&lt;b&gt;</code>, <code>&lt;u&gt;</code>,
+      <code>&lt;a href&gt;</code>, <code>&lt;img src&gt;</code>, lists and
+      tables. Scripts and styling are stripped for everyone's safety.
+    </p>
+    {% if not user.is_portal_admin %}
+      <p class="muted small" style="margin:.8rem 0 0">
+        Publishing, who can see the page, and its place in the navigation are
+        set by the committee admins.
+      </p>
+    {% endif %}
+  </aside>
+</div>
+
+{% if previewing %}
+  <h2 id="preview">Preview</h2>
+  {% if preview_content %}
+    <div class="card"><div class="prose">{{ preview_content|richtext }}</div></div>
+  {% else %}
+    <div class="empty">Nothing to preview yet: write some content first.</div>
+  {% endif %}
+  <p class="muted small" style="margin-top:.6rem">
+    This preview is not saved. Press “Save changes” when you are happy.
+  </p>
+{% endif %}
+{% endblock %}

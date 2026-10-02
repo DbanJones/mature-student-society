@@ -25,9 +25,14 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | events | Category, Event, RSVP | Calendar, member-created events, official flag, RSVPs |
 | supper | Restaurant, Rating | Supper Club ratings (4 dimensions × 1–5 stars, per attended visit) |
 | guide | GuidePage, GuideRevision | "Mature Students Guide" wiki with history |
-| core | SiteConfig (singleton) | Society-wide settings, public pages |
-| panel | MailLog, AuditLog | Admin panel, stats, What's-On mailer, audit trail |
-| dashboard | — | Member dashboard (views only) |
+| core | SiteConfig (singleton), SitePage + SitePageRevision, TermsVersion/Revision/Acceptance | Society-wide settings, admin-managed pages with named editors and history, terms |
+| inbox | DirectMessage, MessageBlock | Direct messages; `policy.py` decides who may message whom |
+| testimonials | Testimonial | Members' testimonials, approved by admins before they go public |
+| polls | Poll, PollOption, PollVote | Venue/date polls that set their event on closing, volunteer rotas, general polls |
+| notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
+| faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
+| panel | MailLog, AuditLog | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
+| dashboard | KeepyUppyScore | Member dashboard |
 
 ## Membership model
 
@@ -74,6 +79,20 @@ security invariants in DEPLOYMENT_SRCF.md §7–8):
 | Edit/cancel an event, export attendee numbers | — | — | own events | ✔ |
 | Rate a restaurant | — | attended visits only | | |
 | Approve waitlist, ban, promote admins, mailer, stats | — | — | — | ✔ |
+| Submit or withdraw a testimonial | — | ✔ | ✔ | ✔ |
+| Approve, feature, unpublish testimonials | — | — | — | ✔ |
+| Edit the words of a managed page | — | named editors | | ✔ |
+| Create/delete pages, set audience, nav and editors | — | — | — | ✔ |
+| Direct-message the committee | — | ✔ | ✔ | ✔ |
+| Direct-message any member | — | only if an admin enabled them | | ✔ |
+| Direct-message the host of an event you're going to (and reply) | — | ✔ | ✔ | ✔ |
+| Start a poll or rota on an event | — | — | creator, host, tag owners | ✔ |
+| Start a poll for the whole membership | — | — | — | ✔ |
+| Vote, sign up for a slot | — | ✔ | ✔ | ✔ |
+| See a rota's roster with contact details | — | — | event editors | ✔ |
+| Subscribe to a personal calendar feed, download .ics | — | ✔ | ✔ | ✔ |
+| Duplicate or repeat an event | — | — | event editors | ✔ |
+| Bulk remind/export/ban members, edit committee and banner | — | — | — | ✔ |
 
 Mobile numbers are treated as private data: visible only to admins and to an
 event's creator for that event's attendees (the WhatsApp-group export).
@@ -102,6 +121,75 @@ event's creator for that event's attendees (the WhatsApp-group export).
 14. Basic details at signup → profile-setup gate
 15. Personal dashboard → dashboard:home (next up, going, running, stats)
 16. Old-site content → CONTENT.md, migrated into core pages and seed data
+
+## Messaging policy
+
+Member-to-member messaging is **off by default** (`SiteConfig.messaging_mode
+= restricted`), in line with the community policy's "no unsolicited DMs".
+Every member can write to a committee admin and reply to them; admins can
+message anyone; an admin can set a member to `enabled` (message anyone) or
+`muted` (send nothing) from the Members tab. The whole rule lives in
+`inbox/policy.py` and is applied to every send path and to the Message
+button on profiles. The mode can be switched back to `open` on the panel's
+Messages tab without a deploy.
+
+## Managed pages
+
+`SitePage` is the CMS: admins create, publish, delete, set the audience
+(which now applies to the page itself, not just its nav link) and name
+`editors`. Editors change the title and body from the page itself
+(`/pages/<slug>/edit/`) with preview; every save writes a `SitePageRevision`
+and any version can be restored. Panel → Content → Pages lists every managed
+page plus the fixed pages and where each is edited.
+
+## Unfinished sign-ups
+
+An account exists from first Raven login (or waitlist approval), *before*
+the terms gate and the profile form, so anyone who stops there leaves a
+blank account: that is why some members show no college or mobile.
+`User.onboarding_status()` names the step they stopped at; the Members tab
+shows it, filters on it, can email a reminder, and can remove unfinished
+accounts older than 90 days that have left nothing behind.
+`manage.py profile_audit` prints the same picture from the shell.
+
+## Polls and rotas
+
+`polls.Poll` is one mechanism with four kinds. Venue and date polls belong
+to an event and, on closing, write the winner onto it (location, or start
+with the end shifted by the original duration), audit it, and email and
+notify everyone going; a tie waits for the host to decide. Volunteer polls
+are rotas: options are slots with a capacity, votes are sign-ups, and the
+host gets a roster with contact details under the attendee-export privacy
+rule. Polls close lazily whenever loaded and from `manage.py close_polls`
+on cron. They surface on the event page, the dashboard, calendar cards and
+the What's On mailer.
+
+## Notifications
+
+`notifications.services.notify()` is the only writer. Hooks: a poll opens
+or decides on an event you're going to, an event you're going to is
+cancelled or moved, you come off a waitlist, your testimonial is reviewed,
+a page you edit is changed by someone else. Cancellations and waitlist
+promotions are emailed as well. The bell in the header and the mobile tab
+bar show the unread count.
+
+## Calendar feeds, waitlists and repeats
+
+Every event has an `.ics` download; every member has a token-protected
+feed at `/me/calendar.ics` (reset from the dashboard). A full event puts
+new RSVPs on a waitlist and promotes the first in line when someone drops
+out. Events can be duplicated a week on, or repeated weekly for up to 12
+weeks.
+
+## Visual layer
+
+Stats charts are inline SVG from `panel/charts.py` (no JavaScript, no
+CDN). The calendar labels Cambridge term weeks from term dates on
+SiteConfig and has an agenda view that is the default on phones. Revision
+diffs (`core/diff.py`) cover managed pages and the terms. The header turns
+into a drawer on phones with a bottom tab bar for members; dark mode
+re-points the CSS tokens; `data-confirm` forms confirm through a `<dialog>`
+and simply post without JavaScript.
 
 ## Deliberate simplifications
 

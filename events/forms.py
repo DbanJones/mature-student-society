@@ -129,6 +129,8 @@ class EventForm(forms.ModelForm):
                 raise forms.ValidationError(
                     f"Pictures must be {settings.MAX_UPLOAD_SIZE_MB} MB or smaller."
                 )
+            from core.images import EVENT_MAX_PX, shrink_image
+            image = shrink_image(image, EVENT_MAX_PX)
         return image
 
     def clean(self):

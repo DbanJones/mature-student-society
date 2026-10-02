@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Testimonials{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>In members' words</h1>
+    <p class="lede">
+      What being part of MSS has meant to the people in it. Every testimonial
+      comes from a member and is read by the committee before it appears.
+    </p>
+  </div>
+  {% if user.is_authenticated %}
+    <div class="actions"><a class="btn btn-accent" href="#share">Share yours</a></div>
+  {% endif %}
+</div>
+
+{% if testimonials %}
+  <div class="grid grid-2">
+    {% for t in testimonials %}
+      <blockquote class="card testimonial{% if t.is_featured %} featured{% endif %}">
+        <p class="testimonial-body">{{ t.body|linebreaksbr }}</p>
+        <footer class="testimonial-by">
+          <strong>{{ t.display_name }}</strong>{% if t.display_detail %} &middot; {{ t.display_detail }}{% endif %}
+          <span class="muted small">&middot; {{ t.reviewed_at|date:"F Y" }}</span>
+        </footer>
+      </blockquote>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">
+    No testimonials yet.
+    {% if user.is_authenticated %}Be the first: the form is just below.{% else %}<a href="{% url 'accounts:login' %}">Log in</a> to share yours.{% endif %}
+  </div>
+{% endif %}
+
+{% if user.is_authenticated %}
+  <h2 id="share">Share your experience</h2>
+  <div class="grid grid-2" style="align-items:start">
+    <div class="card">
+      {% if can_submit %}
+        <form method="post" action="{% url 'testimonials:submit' %}" novalidate>
+          {% csrf_token %}
+          {{ form.non_field_errors }}
+          <p>
+            {{ form.body.label_tag }} {{ form.body }}
+            <span class="helptext">{{ form.body.help_text }}</span>
+            {{ form.body.errors }}
+          </p>
+          <p class="check-row">
+            {{ form.is_anonymous }}
+            <label for="{{ form.is_anonymous.id_for_label }}" style="display:inline">{{ form.is_anonymous.label }}</label>
+            <span class="helptext">{{ form.is_anonymous.help_text }}</span>
+          </p>
+          <button type="submit" class="btn btn-accent">Send to the committee</button>
+        </form>
+        <p class="small muted" style="margin:.8rem 0 0">
+          Testimonials are reviewed before they are shown. You can remove
+          yours at any time.
+        </p>
+      {% else %}
+        <p class="muted" style="margin:0">
+          You already have a testimonial waiting for review. You can send
+          another once the committee has looked at it.
+        </p>
+      {% endif %}
+    </div>
+    <div class="card">
+      <h3>Your testimonials</h3>
+      {% if mine %}
+        <ul class="mine-list">
+          {% for t in mine %}
+            <li>
+              <span style="flex:1">
+                {% if t.status == 'approved' %}<span class="badge badge-ok">Published</span>{% elif t.status == 'pending' %}<span class="badge badge-warn">Awaiting review</span>{% else %}<span class="badge badge-danger">Not published</span>{% endif %}
+                {% if t.is_anonymous %}<span class="badge">anonymous</span>{% endif %}
+                <span class="small">{{ t.body|truncatechars:90 }}</span>
+                {% if t.review_note %}<br><span class="small muted">Committee note: {{ t.review_note }}</span>{% endif %}
+              </span>
+              <form method="post" action="{% url 'testimonials:withdraw' t.pk %}"
+                    data-confirm="Remove this testimonial?">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-small btn-ghost">Remove</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted small" style="margin:0">Nothing yet.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

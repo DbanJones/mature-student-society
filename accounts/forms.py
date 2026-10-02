@@ -122,6 +122,8 @@ class ProfileForm(forms.ModelForm):
                     f"Photos must be {settings.MAX_UPLOAD_SIZE_MB} MB or "
                     "smaller — this one is too big."
                 )
+            from core.images import PROFILE_MAX_PX, shrink_image
+            photo = shrink_image(photo, PROFILE_MAX_PX)
         return photo
 
 

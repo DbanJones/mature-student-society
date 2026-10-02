@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Volunteers — {{ poll.question }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      {% if poll.event %}<a href="{{ poll.event.get_absolute_url }}">&larr; {{ poll.event.title }}</a>{% else %}<a href="{% url 'panel:polls' %}">&larr; Polls</a>{% endif %}
+    </p>
+    <h1>Volunteer roster</h1>
+    <p class="lede">{{ poll.question }}</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-small" href="{% url 'polls:roster' poll.pk %}?format=csv">Download CSV</a>
+    <button type="button" class="btn btn-ghost btn-small no-print" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div class="flash flash-info no-print" style="margin:0 0 1.25rem">
+  Contact details are shown so you can organise the day; treat them as private.
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="stack">
+    {% for slot in slots %}
+      <div class="card">
+        <h2 style="margin-bottom:.3rem">{{ slot.option.label }}</h2>
+        <p class="small muted" style="margin:0 0 .6rem">
+          {{ slot.people|length }}{% if slot.option.capacity %} of {{ slot.option.capacity }}{% endif %} signed up{% if slot.short %} · {{ slot.short }} more needed{% endif %}
+        </p>
+        {% if slot.people %}
+          <table class="data">
+            <thead><tr><th>Name</th><th>College</th><th>Mobile</th><th>Email</th></tr></thead>
+            <tbody>
+              {% for person in slot.people %}
+                <tr>
+                  <td>{{ person.get_full_name|default:person.username }}</td>
+                  <td class="small">{{ person.get_college_display|default:"—" }}</td>
+                  <td class="small">{{ person.mobile|default:"—" }}</td>
+                  <td class="small"><a href="mailto:{{ person.email }}">{{ person.email }}</a></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted small" style="margin:0">Nobody yet.</p>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  <div class="card no-print">
+    <h2>Paste as a list</h2>
+    <p class="small muted">One line per slot, for the group chat.</p>
+    <textarea readonly rows="{{ slots|length|add:'2' }}">{{ paste }}</textarea>
+  </div>
+</div>
+{% endblock %}

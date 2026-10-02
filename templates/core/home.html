@@ -95,6 +95,25 @@
   </div>
 </section>
 
+{% if testimonials and "testimonials" in visible_tabs %}
+<section class="band">
+  <div class="container">
+    <h2>In members' words</h2>
+    <div class="grid grid-3">
+      {% for t in testimonials %}
+        <blockquote class="card testimonial{% if t.is_featured %} featured{% endif %}">
+          <p class="testimonial-body">{{ t.body|truncatechars:220|linebreaksbr }}</p>
+          <footer class="testimonial-by">
+            <strong>{{ t.display_name }}</strong>{% if t.display_detail %} &middot; {{ t.display_detail }}{% endif %}
+          </footer>
+        </blockquote>
+      {% endfor %}
+    </div>
+    <p class="band-more"><a href="{% url 'testimonials:index' %}">Read more, or add yours &rarr;</a></p>
+  </div>
+</section>
+{% endif %}
+
 <section class="band">
   <div class="container">
     <h2>The Mature Students Guide</h2>

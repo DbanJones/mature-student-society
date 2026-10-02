@@ -32,3 +32,10 @@
 
 .delta-pos { color: var(--ok); font-weight: 600; }
 .delta-neg { color: var(--danger); font-weight: 600; }
+
+/* revision diffs */
+.diff { padding: .6rem .8rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; overflow-x: auto; }
+.diff-line { white-space: pre-wrap; padding: .05rem .4rem; border-radius: 3px; }
+.diff-mark { display: inline-block; width: 1.2em; color: var(--ink-soft); }
+.diff-ins { background: var(--ok-soft); }
+.diff-del { background: var(--danger-soft); text-decoration: line-through; text-decoration-color: rgba(0,0,0,.35); }

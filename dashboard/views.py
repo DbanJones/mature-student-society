@@ -6,16 +6,22 @@ activity. Admin extras appear only for ``is_portal_admin`` users.
 
 import json
 
+import datetime
+
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
-from django.http import JsonResponse
-from django.shortcuts import render
+from django.http import Http404, HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
+
+from accounts.models import User
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
 from events.models import RSVP, Event
 from guide.models import GuideRevision
+from polls.models import Poll, PollVote
 from supper.models import Rating
 
 from .models import KeepyUppyScore
@@ -39,6 +45,12 @@ def home(request):
     )
     going_events = list(going_events)
     next_up = going_events[0] if going_events else None
+    waiting_events = list(
+        Event.objects.filter(
+            rsvps__user=user, rsvps__status=RSVP.Status.WAITING,
+            start__gte=now, is_cancelled=False,
+        ).select_related("category").order_by("start")
+    )
 
     # Upcoming events they created ("You're running").
     running_events = (
@@ -78,6 +90,26 @@ def home(request):
 
     guide_edit_count = GuideRevision.objects.filter(editor=user).count()
 
+    # New-member checklist: what makes a profile useful to other members.
+    has_rsvp = RSVP.objects.filter(user=user, status=RSVP.Status.GOING).exists()
+    checklist = [
+        {"done": bool(user.photo), "label": "Add a profile photo", "url": "/accounts/profile/"},
+        {"done": bool(user.talk_to_me_about), "label": "Fill in “talk to me about…”", "url": "/accounts/profile/"},
+        {"done": not user.can_view_whatsapp_link, "label": "Join the WhatsApp community", "url": "/accounts/whatsapp/"},
+        {"done": has_rsvp, "label": "RSVP to your first event", "url": "/events/"},
+    ]
+    checklist_done = sum(1 for item in checklist if item["done"])
+    show_checklist = checklist_done < len(checklist)
+
+    # Polls this member can still vote in, and rota slots they've taken.
+    polls_waiting = list(Poll.objects.for_dashboard(user)[:5])
+    volunteering = list(
+        PollVote.objects.filter(user=user, poll__kind=Poll.Kind.VOLUNTEERS)
+        .filter(Q(poll__event__isnull=True) | Q(poll__event__start__gte=now))
+        .select_related("option", "poll", "poll__event")
+        .order_by("poll__event__start", "poll__closes_at")
+    )
+
     stats = {
         "attended": RSVP.objects.filter(
             user=user,
@@ -95,6 +127,17 @@ def home(request):
         "next_up": next_up,
         "super_events": super_events,
         "owned_tags": user.tags_owned.all(),
+        "editable_pages": user.site_pages_editable.all(),
+        "show_testimonial_invite": not user.testimonials.exists(),
+        "polls_waiting": polls_waiting,
+        "volunteering": volunteering,
+        "waiting_events": waiting_events,
+        "checklist": checklist,
+        "checklist_done": checklist_done,
+        "show_checklist": show_checklist,
+        "feed_url": request.build_absolute_uri(
+            f"/me/calendar.ics?token={user.get_calendar_token()}"
+        ),
         "going_events": going_events,
         "running_events": running_events,
         "unrated_visits": unrated_visits,
@@ -157,3 +200,40 @@ def game_scores(request):
             for row in top
         ],
     })
+
+
+# --- personal calendar feed ------------------------------------------------------
+
+
+def calendar_feed(request):
+    """The member's events as an iCalendar feed their calendar app can
+    subscribe to. The token in the URL is the only authentication, so it
+    can be reset from the dashboard if it ever leaks."""
+    from events.ics import build_calendar
+
+    token = request.GET.get("token", "")
+    user = User.objects.filter(calendar_token=token, is_banned=False).first() if token else None
+    if user is None:
+        raise Http404("No calendar found.")
+    since = timezone.now() - datetime.timedelta(days=60)
+    events = (
+        Event.objects.filter(start__gte=since)
+        .filter(
+            Q(rsvps__user=user, rsvps__status=RSVP.Status.GOING)
+            | Q(host=user) | Q(created_by=user)
+        )
+        .distinct().select_related("category").order_by("start")
+    )
+    body = build_calendar(
+        events, "MSS: my events",
+        lambda e: request.build_absolute_uri(e.get_absolute_url()),
+    )
+    return HttpResponse(body, content_type="text/calendar; charset=utf-8")
+
+
+@login_required
+@require_POST
+def calendar_token_reset(request):
+    request.user.reset_calendar_token()
+    messages.success(request, "Your calendar link has been reset. Re-subscribe with the new one.")
+    return redirect("dashboard:home")

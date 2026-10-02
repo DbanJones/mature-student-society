@@ -20,10 +20,11 @@ from django.urls import include, path, reverse
 from django.utils import timezone
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
-from core.models import SiteConfig
+from core.models import BUILTIN_TABS, SiteConfig, SitePage
 from events.models import Category, Event
 from panel import ai, services
 from panel.models import AuditLog, MailLog
+from testimonials.models import Testimonial
 
 User = get_user_model()
 
@@ -58,12 +59,16 @@ urlpatterns = [
         ("", "home"), ("about/", "about"),
         ("wellbeing/", "wellbeing"), ("policies/", "policies"),
         ("terms/", "terms"), ("pages/<slug:slug>/", "site_page"),
+        ("search/", "search"), ("banner/dismiss/", "dismiss_banner"),
+        ("pages/<slug:slug>/edit/", "site_page_edit"),
+        ("pages/<slug:slug>/history/", "site_page_history"),
         ("winter-ball/", "winter_ball"),
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
         ("profile-setup/", "profile_setup"), ("profile/", "profile"),
         ("terms/", "terms"),
+        ("set-password/<uidb64>/<token>/", "set_password"),
     ])),
     path("events/", _ns("events", [
         ("", "calendar"),
@@ -84,6 +89,11 @@ urlpatterns = [
         ("<str:username>/block/", "block_toggle"),
     ])),
     path("me/", _ns("dashboard", [("", "home")])),
+    path("testimonials/", _ns("testimonials", [
+        ("", "index"), ("submit/", "submit"), ("<int:pk>/withdraw/", "withdraw"),
+    ])),
+    path("polls/", include("polls.urls")),
+    path("notifications/", include("notifications.urls")),
 ]
 
 
@@ -123,7 +133,13 @@ class PanelTestCase(TestCase):
             reverse("panel:member_unban", args=[1]),
             reverse("panel:member_delete", args=[1]),
             reverse("panel:member_reset_whatsapp", args=[1]),
+            reverse("panel:member_remind", args=[1]),
+            reverse("panel:member_messaging", args=[1]),
+            reverse("panel:messaging_settings"),
+            reverse("panel:members_cleanup"),
             reverse("panel:whatsapp_handle", args=[1]),
+            reverse("panel:testimonials"),
+            reverse("panel:testimonial_action", args=[1]),
         ]
 
 
@@ -142,9 +158,10 @@ class PermissionTests(PanelTestCase):
 
     def test_admin_can_load_every_page(self):
         self.client.force_login(self.admin)
-        for name in ["home", "waitlist", "members", "events", "messages",
-                     "whatsapp_requests", "content", "contact_map", "terms",
-                     "stats", "mailer", "audit", "superadmin"]:
+        for name in ["home", "waitlist", "members", "members_cleanup", "events",
+                     "messages", "whatsapp_requests", "content", "contact_map",
+                     "pages", "navigation", "testimonials", "terms", "stats",
+                     "mailer", "audit", "superadmin", "polls", "about"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -314,9 +331,12 @@ class MemberManagementTests(PanelTestCase):
 
     def test_admin_cannot_mute_another_admin(self):
         target = self._other_admin()
-        self.client.post(reverse("panel:member_toggle_mute", args=[target.pk]))
+        self.client.post(
+            reverse("panel:member_messaging", args=[target.pk]), {"level": "muted"}
+        )
         target.refresh_from_db()
-        self.assertTrue(target.can_send_messages)
+        self.assertEqual(target.messaging, User.Messaging.DEFAULT)
+        self.assertFalse(AuditLog.objects.filter(action="mute_messages").exists())
 
     def test_reset_whatsapp_link(self):
         self.member.whatsapp_link_viewed_at = timezone.now()
@@ -351,7 +371,8 @@ class MemberManagementTests(PanelTestCase):
         self.assertRedirects(response, reverse("panel:members"))
         self.member.refresh_from_db()
         self.assertEqual(self.member.last_name, "Member-Smith")
-        self.assertEqual(self.member.mobile, "+44 7700 900002")
+        # Normalised the same way the member's own profile form does it.
+        self.assertEqual(self.member.mobile, "+447700900002")
         self.assertTrue(AuditLog.objects.filter(action="edit_member").exists())
 
 
@@ -834,3 +855,457 @@ class TaggedEventsTests(PanelTestCase):
             [e.pk for e in ordered],
             [self.event.pk, self.other_event.pk, early_plain.pk],
         )
+
+
+class OnboardingTests(PanelTestCase):
+    """Accounts that never finished signing up: how the panel surfaces them.
+
+    An account exists from the moment Raven first logs someone in (or an
+    associate is approved), before the terms gate and the profile form, so
+    the panel has to show which step each unfinished account stopped at.
+    """
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        # A Raven member who logged in once and stopped at the profile form.
+        self.stuck = User.objects.create_user(
+            username="stk1", email="stk1@cam.ac.uk", crsid="stk1",
+            last_login=timezone.now(),
+        )
+        # An approved associate who never set a password.
+        self.ghost = User.objects.create_user(
+            username="ghost@example.com", email="ghost@example.com",
+            first_name="Gus", last_name="Ghost",
+            account_type=User.AccountType.ASSOCIATE,
+        )
+        self.ghost.set_unusable_password()
+        self.ghost.save()
+
+    def _mark_logged_in(self, user):
+        user.last_login = timezone.now()
+        user.save(update_fields=["last_login"])
+
+    def test_status_follows_the_sign_up_gates_in_order(self):
+        self.assertEqual(self.stuck.onboarding_status(None), User.Onboarding.PROFILE)
+        self.assertEqual(
+            self.ghost.onboarding_status(None), User.Onboarding.NEVER_LOGGED_IN
+        )
+        self._mark_logged_in(self.member)
+        self.assertEqual(self.member.onboarding_status(None), User.Onboarding.COMPLETE)
+        # Published terms gate everyone who hasn't accepted the current version.
+        self.assertEqual(self.member.onboarding_status(3), User.Onboarding.TERMS)
+
+    def test_incomplete_filter_lists_only_unfinished_accounts(self):
+        self._mark_logged_in(self.member)
+        response = self.client.get(reverse("panel:members") + "?incomplete=1")
+        self.assertContains(response, "stk1")
+        self.assertContains(response, "Gus Ghost")
+        self.assertNotContains(response, "Mia Member")
+        self.assertContains(response, "Profile incomplete")
+        self.assertContains(response, "Never logged in")
+
+    def test_home_counts_unfinished_accounts(self):
+        # stuck, ghost and the never-logged-in member; the admin is complete.
+        self.assertEqual(services.home_counts()["incomplete_accounts"], 3)
+        self.assertEqual(services.stats_summary()["incomplete_members"], 3)
+
+    def test_remind_resends_the_invite_to_an_associate(self):
+        mail.outbox = []
+        response = self.client.post(reverse("panel:member_remind", args=[self.ghost.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("set-password", mail.outbox[0].body)
+        self.assertTrue(AuditLog.objects.filter(action="remind_member").exists())
+
+    def test_remind_nudges_a_raven_member_to_finish_their_profile(self):
+        mail.outbox = []
+        self.client.post(reverse("panel:member_remind", args=[self.stuck.pk]))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("Finish setting up", mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, ["stk1@cam.ac.uk"])
+
+    def test_remind_does_nothing_for_a_complete_account(self):
+        mail.outbox = []
+        self._mark_logged_in(self.member)
+        self.client.post(reverse("panel:member_remind", args=[self.member.pk]))
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(AuditLog.objects.filter(action="remind_member").exists())
+
+    def test_cleanup_removes_only_old_unfinished_accounts(self):
+        old = timezone.now() - datetime.timedelta(days=120)
+        User.objects.filter(pk__in=[self.stuck.pk, self.ghost.pk]).update(created_at=old)
+        # An old but complete member, and a recent unfinished one, both stay.
+        User.objects.filter(pk=self.member.pk).update(created_at=old)
+        recent = User.objects.create_user(username="new1", email="new1@cam.ac.uk")
+
+        response = self.client.get(reverse("panel:members_cleanup"))
+        self.assertContains(response, "stk1")
+        self.assertContains(response, "ghost@example.com")
+        self.assertNotContains(response, "new1")
+        self.assertNotContains(response, "Mia Member")
+
+        response = self.client.post(reverse("panel:members_cleanup"))
+        self.assertRedirects(response, reverse("panel:members"))
+        self.assertFalse(
+            User.objects.filter(pk__in=[self.stuck.pk, self.ghost.pk]).exists()
+        )
+        self.assertTrue(User.objects.filter(pk__in=[self.member.pk, recent.pk]).exists())
+        self.assertTrue(AuditLog.objects.filter(action="cleanup_incomplete").exists())
+
+    def test_cleanup_spares_accounts_that_took_part(self):
+        old = timezone.now() - datetime.timedelta(days=120)
+        User.objects.filter(pk=self.stuck.pk).update(created_at=old)
+        category = Category.objects.create(name="Pub", slug="pub")
+        Event.objects.create(
+            title="Quiz", category=category, start=timezone.now(),
+            created_by=self.stuck,
+        )
+        self.client.post(reverse("panel:members_cleanup"))
+        self.assertTrue(User.objects.filter(pk=self.stuck.pk).exists())
+
+    def test_edit_form_normalises_mobile_and_warns_on_blank_college(self):
+        response = self.client.post(
+            reverse("panel:member_edit", args=[self.member.pk]),
+            {
+                "first_name": "Mia", "last_name": "Member",
+                "email": "mem1@cam.ac.uk", "college": "",
+                "mobile": "07700 900 123",
+            },
+            follow=True,
+        )
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.mobile, "07700900123")
+        self.assertContains(response, "still has no college")
+
+
+class PanelNavTests(PanelTestCase):
+    """The two-tier admin bar: groups on top, the active group's pages beneath."""
+
+    def test_groups_and_subtabs_render_for_an_admin(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("panel:waitlist"))
+        self.assertContains(response, 'class="panel-tabs"')
+        self.assertContains(response, 'class="panel-subtabs"')
+        for label in ["Overview", "People", "Events", "Messages", "Content",
+                      "Mailer", "Stats", "Super admin"]:
+            self.assertContains(response, ">" + label, msg_prefix=label)
+        # The active group's pages appear on the second row.
+        self.assertContains(response, ">Waitlist</a>")
+        self.assertContains(response, ">WhatsApp</a>")
+        # Pages from other groups do not.
+        self.assertNotContains(response, ">Audit log</a>")
+
+    def test_single_page_groups_have_no_second_row(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("panel:mailer"))
+        self.assertNotContains(response, 'class="panel-subtabs"')
+
+    def test_regular_admin_has_no_super_tab(self):
+        regular = User.objects.create_user(
+            username="adm9", password="pw", email="adm9@cam.ac.uk", crsid="adm9",
+            first_name="Reg", last_name="Admin", college="darwin",
+            mobile="+44 7700 900009", is_portal_admin=True,
+        )
+        self.client.force_login(regular)
+        response = self.client.get(reverse("panel:home"))
+        self.assertNotContains(response, "tab-super")
+
+    def test_pending_items_badge_the_people_group(self):
+        WaitlistRequest.objects.create(
+            first_name="Pat", last_name="Pending", email="pat@example.com",
+            connection="partner",
+        )
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("panel:home"))
+        self.assertContains(response, 'People<span class="nav-badge">1</span>')
+
+
+class MessagingAdminTests(PanelTestCase):
+    """Admins set who may message whom: per member, and site-wide."""
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_enable_mute_and_reset_a_member(self):
+        url = reverse("panel:member_messaging", args=[self.member.pk])
+        self.client.post(url, {"level": "enabled"})
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.messaging, User.Messaging.ENABLED)
+        self.assertTrue(AuditLog.objects.filter(action="enable_messaging").exists())
+
+        self.client.post(url, {"level": "muted"})
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.messaging, User.Messaging.MUTED)
+        self.assertTrue(AuditLog.objects.filter(action="mute_messages").exists())
+
+        self.client.post(url, {"level": "default"})
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.messaging, User.Messaging.DEFAULT)
+        self.assertTrue(AuditLog.objects.filter(action="reset_messaging").exists())
+
+    def test_unknown_level_changes_nothing(self):
+        self.client.post(
+            reverse("panel:member_messaging", args=[self.member.pk]), {"level": "loud"}
+        )
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.messaging, User.Messaging.DEFAULT)
+
+    def test_site_wide_mode_toggle_is_audited(self):
+        response = self.client.post(
+            reverse("panel:messaging_settings"), {"messaging_mode": "open"}
+        )
+        self.assertRedirects(response, reverse("panel:messages"))
+        self.assertEqual(SiteConfig.get().messaging_mode, "open")
+        self.assertTrue(
+            AuditLog.objects.filter(action="update_messaging_mode", detail="open").exists()
+        )
+
+    def test_messages_page_lists_enabled_and_muted_members(self):
+        self.member.messaging = User.Messaging.ENABLED
+        self.member.save(update_fields=["messaging"])
+        quiet = User.objects.create_user(
+            username="qt1", email="qt1@cam.ac.uk", first_name="Quinn", last_name="Quiet",
+            college="darwin", mobile="+44 7700 900010", messaging=User.Messaging.MUTED,
+        )
+        response = self.client.get(reverse("panel:messages"))
+        self.assertContains(response, "Mia Member")
+        self.assertContains(response, "Quinn Quiet")
+        self.assertContains(response, "Switch off")
+        self.assertContains(response, "Unmute")
+
+
+class PagesAdminTests(PanelTestCase):
+    """The Pages tab: admins own every page and name its editors."""
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_create_with_editors_writes_a_revision_and_lists_the_page(self):
+        response = self.client.post(reverse("panel:page_create"), {
+            "title": "Sponsors", "content": "Thanks.", "is_published": "on",
+            "nav_label": "", "nav_visibility": "public", "sort_order": 100,
+            "editors": [self.member.pk],
+        })
+        self.assertRedirects(response, reverse("panel:pages"))
+        page = SitePage.objects.get(slug="sponsors")
+        self.assertEqual(list(page.editors.all()), [self.member])
+        self.assertEqual(page.revisions.count(), 1)
+        self.assertEqual(page.revisions.first().action, "created")
+        response = self.client.get(reverse("panel:pages"))
+        self.assertContains(response, "Sponsors")
+        self.assertContains(response, "Mia Member")
+        self.assertContains(response, "Fixed pages")
+
+    def test_edit_records_editors_in_the_audit_log(self):
+        page = SitePage.objects.create(title="Rules", slug="rules", content="Be kind.")
+        self.client.post(reverse("panel:page_edit", args=[page.pk]), {
+            "title": "Rules", "content": "Be kinder.", "is_published": "on",
+            "nav_label": "", "nav_visibility": "public", "sort_order": 100,
+            "editors": [self.member.pk],
+        })
+        page.refresh_from_db()
+        self.assertEqual(page.content, "Be kinder.")
+        entry = AuditLog.objects.get(action="edit_page")
+        self.assertIn("Mia Member", entry.detail)
+
+    def test_navigation_tab_saves_tab_visibility(self):
+        data = {f"tab_{key}": "public" for key, _label, _default in BUILTIN_TABS}
+        data["tab_supper"] = "members"
+        response = self.client.post(reverse("panel:navigation"), data)
+        self.assertRedirects(response, reverse("panel:navigation"))
+        self.assertEqual(SiteConfig.get().tab_visibility_for("supper"), "members")
+        self.assertTrue(AuditLog.objects.filter(action="update_tab_visibility").exists())
+
+
+class TestimonialsAdminTests(PanelTestCase):
+    """The committee approves testimonials before they go public."""
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+        self.testimonial = Testimonial.objects.create(
+            author=self.member, author_name="Mia Member", author_college="Darwin",
+            body="Brilliant society.", is_anonymous=True,
+        )
+        self.action = reverse("panel:testimonial_action", args=[self.testimonial.pk])
+
+    def test_queue_shows_the_author_even_when_anonymous(self):
+        response = self.client.get(reverse("panel:testimonials"))
+        self.assertContains(response, "Mia Member")
+        self.assertContains(response, "will show as anonymous")
+        self.assertContains(response, "Brilliant society.")
+
+    def test_approve_feature_unpublish_and_delete_are_audited(self):
+        self.client.post(self.action, {"action": "approve"})
+        self.testimonial.refresh_from_db()
+        self.assertEqual(self.testimonial.status, Testimonial.Status.APPROVED)
+        self.assertEqual(self.testimonial.reviewed_by, self.admin)
+        self.assertTrue(AuditLog.objects.filter(action="approve_testimonial").exists())
+
+        self.client.post(self.action, {"action": "feature"})
+        self.testimonial.refresh_from_db()
+        self.assertTrue(self.testimonial.is_featured)
+
+        self.client.post(self.action, {"action": "reject", "review_note": "Too long"})
+        self.testimonial.refresh_from_db()
+        self.assertEqual(self.testimonial.status, Testimonial.Status.REJECTED)
+        self.assertEqual(self.testimonial.review_note, "Too long")
+        self.assertFalse(self.testimonial.is_featured)
+
+        self.client.post(self.action, {"action": "delete"})
+        self.assertFalse(Testimonial.objects.filter(pk=self.testimonial.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action="delete_testimonial").exists())
+
+    def test_only_published_testimonials_can_be_featured(self):
+        self.client.post(self.action, {"action": "feature"})
+        self.testimonial.refresh_from_db()
+        self.assertFalse(self.testimonial.is_featured)
+
+    def test_pending_count_reaches_the_overview_and_the_content_badge(self):
+        self.assertEqual(services.home_counts()["pending_testimonials"], 1)
+        response = self.client.get(reverse("panel:home"))
+        self.assertContains(response, "Testimonials to review")
+        self.assertContains(response, 'Content<span class="nav-badge">1</span>')
+
+
+class AboutAndBannerAdminTests(PanelTestCase):
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_committee_and_activity_crud(self):
+        from core.models import Activity, CommitteeMember
+
+        response = self.client.post(reverse("panel:committee_add"), {
+            "name": "Pat President", "role": "President", "sort_order": 1, "is_active": "on",
+        })
+        self.assertRedirects(response, reverse("panel:about"))
+        member = CommitteeMember.objects.get(name="Pat President")
+        self.client.post(reverse("panel:committee_edit", args=[member.pk]), {
+            "name": "Pat President", "role": "Chair", "sort_order": 1, "is_active": "on",
+        })
+        member.refresh_from_db()
+        self.assertEqual(member.role, "Chair")
+        self.client.post(reverse("panel:activity_add"), {
+            "emoji": "🎲", "name": "Board games", "blurb": "Monthly.", "sort_order": 5,
+        })
+        activity = Activity.objects.get(name="Board games")
+        response = self.client.get(reverse("panel:about"))
+        self.assertContains(response, "Pat President")
+        self.assertContains(response, "Board games")
+        self.client.post(reverse("panel:activity_delete", args=[activity.pk]))
+        self.assertFalse(Activity.objects.filter(pk=activity.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action="delete_activity").exists())
+
+    def test_banner_saves_and_clears_with_audit(self):
+        response = self.client.post(reverse("panel:banner"), {
+            "banner_text": "Freshers Fair this Saturday", "banner_until": "",
+        })
+        self.assertRedirects(response, reverse("panel:navigation"))
+        self.assertEqual(SiteConfig.get().banner_text, "Freshers Fair this Saturday")
+        self.assertContains(self.client.get(reverse("panel:navigation")), "live now")
+        self.client.post(reverse("panel:banner"), {"banner_text": "", "banner_until": ""})
+        self.assertEqual(SiteConfig.get().banner_text, "")
+        self.assertEqual(AuditLog.objects.filter(action="update_banner").count(), 2)
+
+
+class BulkAndQuickToggleTests(PanelTestCase):
+    def setUp(self):
+        self.client.force_login(self.admin)
+        self.other = User.objects.create_user(
+            username="blk1", email="blk1@cam.ac.uk", first_name="Bea", last_name="Bulk",
+            college="darwin", mobile="+44 7700 900031",
+        )
+
+    def test_bulk_export_is_csv_and_audited(self):
+        response = self.client.post(reverse("panel:members_bulk"), {
+            "action": "export", "ids": [self.member.pk, self.other.pk],
+        })
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        body = response.content.decode()
+        self.assertIn("Mia Member", body)
+        self.assertIn("Bea Bulk", body)
+        self.assertTrue(AuditLog.objects.filter(action="export_members").exists())
+
+    def test_bulk_ban_confirms_then_bans_but_never_admins(self):
+        response = self.client.post(reverse("panel:members_bulk"), {
+            "action": "ban", "ids": [self.member.pk, self.admin.pk],
+        })
+        self.assertContains(response, "Ban 1 member?")
+        self.assertContains(response, "Mia Member")
+        self.client.post(reverse("panel:members_bulk"), {
+            "action": "ban", "confirm": "1", "ids": [self.member.pk, self.admin.pk],
+        })
+        self.member.refresh_from_db()
+        self.admin.refresh_from_db()
+        self.assertTrue(self.member.is_banned)
+        self.assertFalse(self.admin.is_banned)
+
+    def test_bulk_remind_only_emails_unfinished_accounts(self):
+        stuck = User.objects.create_user(username="stk2", email="stk2@cam.ac.uk", last_login=timezone.now())
+        mail.outbox = []
+        self.client.post(reverse("panel:members_bulk"), {
+            "action": "remind", "ids": [stuck.pk, self.admin.pk],
+        })
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["stk2@cam.ac.uk"])
+
+    def test_page_quick_toggles(self):
+        page = SitePage.objects.create(title="Rules", slug="rules", content="x")
+        self.client.post(reverse("panel:page_toggle", args=[page.pk]))
+        page.refresh_from_db()
+        self.assertFalse(page.is_published)
+        self.client.post(reverse("panel:page_toggle", args=[page.pk]), {"nav_visibility": "members"})
+        page.refresh_from_db()
+        self.assertEqual(page.nav_visibility, "members")
+        self.assertTrue(AuditLog.objects.filter(action="unpublish_page").exists())
+
+
+class VisualToolsTests(PanelTestCase):
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_stats_page_renders_svg_charts_and_tables(self):
+        category = Category.objects.create(name="Pub", slug="pub")
+        Event.objects.create(title="Quiz", category=category, start=timezone.now(), created_by=self.member)
+        response = self.client.get(reverse("panel:stats"))
+        self.assertContains(response, "<svg", count=3)
+        self.assertContains(response, "Members over the last year")
+        self.assertContains(response, "Tags that fill up")
+        self.assertContains(response, "Pub")
+
+    def test_charts_escape_labels(self):
+        from panel.charts import heatmap, line_chart
+        svg = line_chart([("<b>Jan</b>", 1), ("Feb", 3)])
+        self.assertIn("&lt;b&gt;Jan&lt;/b&gt;", svg)
+        self.assertIn("<circle", svg)
+        svg = heatmap([("Mon", [0, 2])], ["8-10", "10-12"])
+        self.assertIn("<rect", svg)
+
+    def test_member_edit_shows_an_activity_timeline(self):
+        category = Category.objects.create(name="Pub", slug="pub")
+        event = Event.objects.create(title="Quiz", category=category, start=timezone.now(), created_by=self.member)
+        from events.models import RSVP
+        RSVP.objects.create(event=event, user=self.member)
+        response = self.client.get(reverse("panel:member_edit", args=[self.member.pk]))
+        self.assertContains(response, "Created “Quiz”")
+        self.assertContains(response, "Going to “Quiz”")
+
+    def test_term_dates_save_and_terms_diff_renders(self):
+        import datetime
+        response = self.client.post(reverse("panel:term_dates"), {
+            "michaelmas_start": "2026-10-06", "lent_start": "", "easter_start": "",
+        })
+        self.assertRedirects(response, reverse("panel:navigation"))
+        config = SiteConfig.get()
+        self.assertEqual(config.michaelmas_start, datetime.date(2026, 10, 6))
+        self.assertEqual(config.term_week_label(datetime.date(2026, 10, 19)), "Michaelmas wk 3")
+        self.assertEqual(config.term_week_label(datetime.date(2026, 9, 1)), "")
+
+        from core.models import TermsRevision, TermsVersion
+        version = TermsVersion.objects.create(number=7, content="one")
+        first = version.save_revision(self.admin, TermsRevision.Action.CREATED)
+        version.content = "one" + chr(10) + "two"
+        version.save()
+        second = version.save_revision(self.admin, TermsRevision.Action.EDITED)
+        response = self.client.get(reverse("panel:terms_diff", args=[second.pk]))
+        self.assertContains(response, "diff-ins")
+        self.assertContains(response, "+1")

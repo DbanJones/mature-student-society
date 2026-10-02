@@ -245,6 +245,33 @@ class Event(models.Model):
     def is_full(self):
         return self.capacity is not None and self.going_count >= self.capacity
 
+    @property
+    def waiting(self):
+        """The waitlist in the order people joined it."""
+        return (
+            self.rsvps.filter(status=RSVP.Status.WAITING)
+            .select_related("user").order_by("updated_at")
+        )
+
+    @property
+    def waiting_count(self):
+        return self.rsvps.filter(status=RSVP.Status.WAITING).count()
+
+    def promote_waitlist(self):
+        """Move people off the waitlist while there is room. Returns the
+        RSVPs promoted; the caller tells them."""
+        promoted = []
+        if self.capacity is None:
+            waiters = list(self.waiting)
+        else:
+            room = self.capacity - self.going_count
+            waiters = list(self.waiting[:max(0, room)])
+        for rsvp in waiters:
+            rsvp.status = RSVP.Status.GOING
+            rsvp.save(update_fields=["status", "updated_at"])
+            promoted.append(rsvp)
+        return promoted
+
     def user_rsvp(self, user):
         if not user.is_authenticated:
             return None
@@ -304,6 +331,7 @@ class Event(models.Model):
 class RSVP(models.Model):
     class Status(models.TextChoices):
         GOING = "going", "Going"
+        WAITING = "waiting", "On the waitlist"
         CANCELLED = "cancelled", "Not going any more"
 
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="rsvps")

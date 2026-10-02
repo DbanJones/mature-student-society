@@ -3,18 +3,38 @@
 from django import forms
 from django.utils.text import slugify
 
+from accounts.forms import clean_mobile_number
 from accounts.models import User
-from core.models import BUILTIN_TABS, VISIBILITY_CHOICES, SitePage, TermsVersion
+from core.models import (
+    BUILTIN_TABS,
+    VISIBILITY_CHOICES,
+    Activity,
+    CommitteeMember,
+    SiteConfig,
+    SitePage,
+    TermsVersion,
+)
 from events.models import Category
 from faq.models import ContactNode, DepartmentContact
 
 
 class MemberEditForm(forms.ModelForm):
-    """Small fix-up form for correcting a member's details on request."""
+    """Small fix-up form for correcting a member's details on request.
+
+    College and mobile stay optional here — an admin sometimes needs to clear
+    a wrong value — but the view warns when either is left blank, because
+    that is exactly what makes a member show as incomplete.
+    """
 
     class Meta:
         model = User
         fields = ["first_name", "last_name", "email", "college", "course", "mobile"]
+
+    def clean_mobile(self):
+        raw = self.cleaned_data.get("mobile", "")
+        if not raw.strip():
+            return ""
+        return clean_mobile_number(raw)
 
 
 class MailerForm(forms.Form):
@@ -114,6 +134,16 @@ class EmailSettingsForm(forms.Form):
     )
 
 
+class MessagingSettingsForm(forms.Form):
+    """Admins: the site-wide member-to-member messaging mode (SiteConfig)."""
+
+    messaging_mode = forms.ChoiceField(
+        label="Member-to-member messaging",
+        choices=SiteConfig.MessagingMode.choices,
+        widget=forms.RadioSelect,
+    )
+
+
 class WhatsAppSettingsForm(forms.Form):
     """Admins: rotate the group invite link (SiteConfig)."""
 
@@ -126,20 +156,38 @@ class WhatsAppSettingsForm(forms.Form):
 
 class SitePageForm(forms.ModelForm):
     """Admin-managed content pages (everything that isn't the calendar or
-    the Guide)."""
+    the Guide): the full set of controls, including who else may edit."""
 
     class Meta:
         model = SitePage
         fields = [
             "title", "content", "is_published",
-            "nav_label", "nav_visibility", "sort_order",
+            "nav_label", "nav_visibility", "sort_order", "editors",
         ]
+        labels = {
+            "nav_visibility": "Audience",
+            "editors": "Editors",
+        }
         help_texts = {
             "sort_order": "Lower numbers appear first in the navigation.",
+            "nav_visibility": "Who can read the page and see its navigation "
+                              "link. “Hidden” keeps it out of the navigation "
+                              "but readable by anyone with the address. "
+                              "Admins always see everything.",
+            "editors": "Members who may change the title and content "
+                       "without being admins. Everything else on this form "
+                       "stays with admins.",
         }
         widgets = {
             "content": forms.Textarea(attrs={"rows": 16}),
+            "editors": forms.CheckboxSelectMultiple,
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["editors"].queryset = User.objects.filter(
+            is_banned=False, is_portal_admin=False
+        ).order_by("first_name", "last_name")
 
     def save(self, commit=True):
         page = super().save(commit=False)
@@ -152,6 +200,7 @@ class SitePageForm(forms.ModelForm):
             page.slug = slug
         if commit:
             page.save()
+            self.save_m2m()
         return page
 
 
@@ -262,3 +311,41 @@ class TermsVersionForm(forms.ModelForm):
         if not content:
             raise forms.ValidationError("The terms can't be empty.")
         return content
+
+
+class BannerForm(forms.Form):
+    """The site-wide announcement banner (SiteConfig)."""
+
+    banner_text = forms.CharField(
+        required=False, label="Announcement",
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "e.g. Freshers Fair stall: volunteers needed, see the poll."}),
+        help_text="Markdown. Blank means no banner. Visitors can dismiss it for their session.",
+    )
+    banner_until = forms.DateTimeField(
+        required=False, label="Show until",
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+        help_text="Leave blank to show it until you clear the text.",
+    )
+
+
+class TermDatesForm(forms.Form):
+    """When each Full Term begins, so the calendar can label term weeks."""
+
+    michaelmas_start = forms.DateField(required=False, label="Michaelmas Full Term begins",
+                                       widget=forms.DateInput(attrs={"type": "date"}))
+    lent_start = forms.DateField(required=False, label="Lent Full Term begins",
+                                 widget=forms.DateInput(attrs={"type": "date"}))
+    easter_start = forms.DateField(required=False, label="Easter Full Term begins",
+                                   widget=forms.DateInput(attrs={"type": "date"}))
+
+
+class CommitteeMemberForm(forms.ModelForm):
+    class Meta:
+        model = CommitteeMember
+        fields = ["name", "role", "sort_order", "is_active"]
+
+
+class ActivityForm(forms.ModelForm):
+    class Meta:
+        model = Activity
+        fields = ["emoji", "name", "blurb", "sort_order"]

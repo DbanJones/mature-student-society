@@ -1,0 +1,69 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}About & committee{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>About &amp; committee</h1>
+    <p class="muted">The committee table on the About page and the “What we do” cards on the homepage.</p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <h2>Committee</h2>
+    <p><a class="btn btn-small btn-accent" href="{% url 'panel:committee_add' %}">Add a member</a></p>
+    {% if committee %}
+      <table class="data">
+        <thead><tr><th>Name</th><th>Role</th><th></th></tr></thead>
+        <tbody>
+          {% for member in committee %}
+            <tr>
+              <td>{{ member.name }}{% if not member.is_active %} <span class="badge badge-danger">stepped down</span>{% endif %}</td>
+              <td class="small">{{ member.role }}</td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn-small btn-ghost" href="{% url 'panel:committee_edit' member.pk %}">Edit</a>
+                  <form method="post" action="{% url 'panel:committee_delete' member.pk %}" data-confirm="Remove {{ member.name }} from the list?">
+                    {% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted small">Nothing here yet, so the About page shows the built-in list.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>What we do</h2>
+    <p><a class="btn btn-small btn-accent" href="{% url 'panel:activity_add' %}">Add an activity</a></p>
+    {% if activities %}
+      <table class="data">
+        <thead><tr><th>Activity</th><th></th></tr></thead>
+        <tbody>
+          {% for activity in activities %}
+            <tr>
+              <td>{{ activity.emoji }} <strong>{{ activity.name }}</strong><br><span class="small muted">{{ activity.blurb }}</span></td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn-small btn-ghost" href="{% url 'panel:activity_edit' activity.pk %}">Edit</a>
+                  <form method="post" action="{% url 'panel:activity_delete' activity.pk %}" data-confirm="Remove “{{ activity.name }}”?">
+                    {% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted small">Nothing here yet, so the homepage shows the built-in list.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

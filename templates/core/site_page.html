@@ -4,7 +4,13 @@
 {% block title %}{{ page.title }}{% endblock %}
 
 {% block content %}
-{% if not page.is_published %}
+{% if preview_as %}
+  <div class="flash {% if preview_visible %}flash-info{% else %}flash-warning{% endif %}" style="margin:0 0 1.5rem">
+    Previewing as {% if preview_as == 'public' %}a logged-out visitor{% else %}an ordinary member{% endif %}:
+    {% if preview_visible %}they can read this page.{% else %}they would get “page not found”.{% endif %}
+    <a href="{{ page.get_absolute_url }}">Back to the normal view</a>
+  </div>
+{% elif not page.is_published %}
   <div class="flash flash-warning" style="margin:0 0 1.5rem">
     This page is unpublished — only admins can see it.
   </div>
@@ -14,14 +20,22 @@
   <div>
     <h1>{{ page.title }}</h1>
   </div>
-  {% if user.is_portal_admin %}
+  {% if can_edit %}
     <div class="actions">
-      <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Edit page</a>
+      <a class="btn btn-small" href="{% url 'core:site_page_edit' page.slug %}">Edit page</a>
+      <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_history' page.slug %}">History</a>
+      {% if user.is_portal_admin %}
+        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Settings</a>
+      {% endif %}
     </div>
   {% endif %}
 </div>
 
-<div class="card"><div class="prose">{{ page.content|richtext }}</div></div>
+{% if preview_as and not preview_visible %}
+  <div class="empty">Page not found. (This is what that audience sees.)</div>
+{% else %}
+  <div class="card"><div class="prose">{{ page.content|richtext }}</div></div>
+{% endif %}
 
 <p class="muted small" style="margin-top:1rem">
   Last updated {{ page.updated_at|date:"j F Y" }}{% if page.updated_by %}

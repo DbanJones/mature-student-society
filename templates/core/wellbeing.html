@@ -11,13 +11,16 @@
     <h1>Wellbeing</h1>
     <p class="lede">You&rsquo;re not alone &mdash; and we can help you find the right door.</p>
   </div>
-  {% if user.is_authenticated and user.is_portal_admin %}
+  {% if page and can_edit %}
     <div class="actions">
-      {% if page %}
-        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">✏️ Edit this page</a>
-      {% else %}
-        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_create' %}">✏️ Create this page</a>
+      <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_edit' page.slug %}">✏️ Edit this page</a>
+      {% if user.is_portal_admin %}
+        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Settings</a>
       {% endif %}
+    </div>
+  {% elif not page and user.is_authenticated and user.is_portal_admin %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:page_create' %}">✏️ Create this page</a>
     </div>
   {% endif %}
 </div>

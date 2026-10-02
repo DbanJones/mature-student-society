@@ -265,13 +265,17 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 
 - **Quota**: 2 GB default (`srcf-quota` to check). Profile photos are resized
   on upload, but request more quota from the sysadmins before a big intake.
+- **Cron**: polls close themselves when loaded, but to apply results (and
+  email attendees) on time even when nobody visits, add on sinkhole:
+  `*/15 * * * * cd /societies/<soc>/portal && set -a && . ./.env && set +a && .venv/bin/python manage.py close_polls`
 - **Backups**: SRCF keeps best-effort snapshots (`.snapshot` dirs). Add a cron
   job on sinkhole for DB dumps into private space:
   `sudo -u <soc> crontab -e` →
   `0 4 * * * pg_dump -h postgres <soc> | gzip > /societies/<soc>/backups/db-$(date +\%u).sql.gz`
-- **Upgrades**: `git pull && .venv/bin/pip install -r requirements.txt &&
+- **Upgrades**: see UPGRADING.md (backup first; keep `.env` and `media/`;
+  `git pull && .venv/bin/pip install -r requirements.txt &&
   manage.py migrate && manage.py collectstatic --noinput`, then
-  `systemctl --user reload mssportal` (graceful HUP).
+  `systemctl --user restart mssportal`).
 - **Handover**: future committee needs (a) SRCF group account membership,
   (b) this file, (c) the control-panel DB password location, (d) Toolkit app
   registration ownership if on Track B. Keep at least two admins on the SRCF

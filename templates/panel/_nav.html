@@ -1,0 +1,20 @@
+<div class="panel-nav">
+  <nav class="panel-tabs" aria-label="Admin panel sections">
+    {% if tag_owner_only %}
+      <a href="{% url 'panel:tagged_events' %}" class="active" aria-current="page">Tagged events</a>
+    {% else %}
+      {% for group in groups %}
+        <a href="{{ group.url }}"
+           class="{% if group.active %}active{% endif %}{% if group.key == 'superadmin' %} tab-super{% endif %}"
+           {% if group.active %}aria-current="page"{% endif %}>{{ group.label }}{% if group.badge %}<span class="nav-badge">{{ group.badge }}</span>{% endif %}</a>
+      {% endfor %}
+    {% endif %}
+  </nav>
+  {% if subtabs %}
+    <nav class="panel-subtabs" aria-label="Pages in this section">
+      {% for tab in subtabs %}
+        <a href="{{ tab.url }}" {% if tab.active %}class="active" aria-current="page"{% endif %}>{{ tab.label }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+</div>

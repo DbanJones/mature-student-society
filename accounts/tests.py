@@ -531,3 +531,31 @@ class TermsAcceptanceTests(TestCase):
         self.assertRedirects(response, reverse("accounts:waitlist_done"))
         request = WaitlistRequest.objects.get(email="pat2@example.com")
         self.assertIsNone(request.terms_version)
+
+
+class OnboardingAuditTests(TestCase):
+    """``profile_audit`` explains why an account has no college or mobile."""
+
+    def test_command_lists_unfinished_accounts_with_their_step(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        make_member("ok1")  # complete profile, but never logged in
+        make_member("st1", complete=False, last_login=timezone.now())
+        done = make_member("dn1", last_login=timezone.now())
+
+        out = StringIO()
+        call_command("profile_audit", stdout=out)
+        text = out.getvalue()
+        self.assertIn("st1", text)
+        self.assertIn("Profile incomplete", text)
+        self.assertIn("ok1", text)
+        self.assertIn("Never logged in", text)
+        self.assertNotIn(done.username, text)
+        self.assertIn("college, mobile", text)
+
+        out = StringIO()
+        call_command("profile_audit", "--all", stdout=out)
+        self.assertIn(done.username, out.getvalue())

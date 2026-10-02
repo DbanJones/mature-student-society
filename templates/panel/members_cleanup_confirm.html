@@ -1,0 +1,58 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Remove unfinished accounts{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:members' %}?incomplete=1">&larr; Members</a></p>
+    <h1>Remove accounts that never finished signing up</h1>
+    <p class="muted">
+      Accounts created more than {{ days }} days ago whose profile was never
+      completed. Admins, and anyone who has created an event or RSVP'd, are
+      never included. Deleting is permanent.
+    </p>
+  </div>
+</div>
+
+{% if candidates %}
+  <div class="card">
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr><th>Account</th><th>Type</th><th>Created</th><th>Last login</th><th>Missing</th></tr>
+        </thead>
+        <tbody>
+          {% for member in candidates %}
+            <tr>
+              <td>
+                <strong>{{ member.get_full_name|default:member.username }}</strong>
+                <br><span class="small muted">{{ member.email|default:member.username }}</span>
+              </td>
+              <td class="small">{{ member.get_account_type_display }}</td>
+              <td class="small muted">{{ member.created_at|date:"j M Y" }}</td>
+              <td class="small muted">{{ member.last_login|date:"j M Y"|default:"never" }}</td>
+              <td class="small">
+                {% if not member.first_name or not member.last_name %}name{% endif %}
+                {% if not member.college %} college{% endif %}
+                {% if not member.mobile %} mobile{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <form method="post" style="margin-top:1rem"
+          data-confirm="Delete {{ candidates|length }} account{{ candidates|length|pluralize }}? This cannot be undone.">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger">Delete {{ candidates|length }} account{{ candidates|length|pluralize }}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:members' %}">Cancel</a>
+    </form>
+  </div>
+{% else %}
+  <div class="empty">
+    Nothing to remove: every account older than {{ days }} days either has a
+    complete profile or has taken part in something.
+  </div>
+{% endif %}
+{% endblock %}

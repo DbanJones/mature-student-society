@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static md %}<!doctype html>
 <html lang="en-gb">
 <head>
   <meta charset="utf-8">
@@ -9,7 +9,7 @@
   {% block extra_css %}{% endblock %}
   <link rel="icon" type="image/png" href="{% static 'img/lion-mark.png' %}">
 </head>
-<body>
+<body class="{% if user.is_authenticated %}has-tab-bar{% endif %}">
 <a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
@@ -18,6 +18,8 @@
       <img class="brand-lockup" src="{% static 'img/lion.png' %}"
            alt="{{ site_config.society_name }}">
     </a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1">
+    <label for="nav-toggle" class="nav-burger" aria-label="Menu" role="button">☰</label>
     <nav class="site-nav" aria-label="Main">
       <details class="nav-group">
         <summary class="{% if nav_active == 'calendar' or nav_active == 'supper' or nav_active == 'ball' %}active{% endif %}">What's on</summary>
@@ -37,17 +39,23 @@
         </div>
       </details>
       <details class="nav-group">
-        <summary class="{% if nav_active == 'about' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
+        <summary class="{% if nav_active == 'about' or nav_active == 'testimonials' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
         <div class="nav-menu">
           {% if "about" in visible_tabs %}<a href="{% url 'core:about' %}">🦁 About MSS</a>{% endif %}
           <a href="{% url 'core:wellbeing' %}">💙 Wellbeing</a>
+          {% if "testimonials" in visible_tabs %}<a href="{% url 'testimonials:index' %}">🗣️ Testimonials</a>{% endif %}
           <a href="{% url 'core:policies' %}">🤝 Community policies</a>
           {% for page in nav_pages %}
             <a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>
           {% endfor %}
         </div>
       </details>
+      <form class="nav-search" method="get" action="{% url 'core:search' %}" role="search">
+        <input type="search" name="q" placeholder="Search…" aria-label="Search the site">
+      </form>
       {% if user.is_authenticated %}
+        <a href="{% url 'notifications:index' %}" class="nav-bell{% if nav_active == 'notifications' %} active{% endif %}"
+           aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Notifications">🔔{% if unread_notifications %}<span class="nav-badge">{{ unread_notifications }}</span>{% endif %}</a>
         <details class="nav-group">
           <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
           <div class="nav-menu">
@@ -71,8 +79,21 @@
   </div>
 </header>
 
-{% if messages %}
+{% if site_banner %}
   <div class="container">
+    <div class="site-banner" role="region" aria-label="Announcement">
+      <div class="prose site-banner-text">{{ site_banner|markdown }}</div>
+      <form method="post" action="{% url 'core:dismiss_banner' %}" class="site-banner-dismiss">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="linklike" aria-label="Dismiss announcement">✕</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+
+{% if messages %}
+  <div class="container" aria-live="polite">
     {% for message in messages %}
       <div class="flash flash-{{ message.tags|default:'info' }}">{{ message }}</div>
     {% endfor %}
@@ -82,6 +103,15 @@
 <main id="main" class="{% block main_class %}container{% endblock %}">
   {% block content %}{% endblock %}
 </main>
+
+{% if user.is_authenticated %}
+  <nav class="tab-bar" aria-label="Quick links">
+    <a href="{% url 'dashboard:home' %}" class="{% if nav_active == 'dashboard' %}active{% endif %}"><span aria-hidden="true">🏠</span><span>Home</span></a>
+    <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>What's on</span></a>
+    <a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>
+    <a href="{% url 'notifications:index' %}" class="{% if nav_active == 'notifications' %}active{% endif %}"><span aria-hidden="true">🔔</span><span>Alerts{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</span></a>
+  </nav>
+{% endif %}
 
 <footer class="site-footer">
   <div class="container footer-inner">
@@ -95,6 +125,7 @@
       <a href="{% url 'guide:index' %}">Mature Students Guide</a>
       <a href="{% url 'faq:contacts' %}">Who to contact</a>
       <a href="{% url 'core:wellbeing' %}">Wellbeing</a>
+      {% if "testimonials" in visible_tabs %}<a href="{% url 'testimonials:index' %}">Testimonials</a>{% endif %}
       <a href="{% url 'core:policies' %}">Community policies</a>
       <a href="{% url 'core:terms' %}">Terms and conditions</a>
       <a href="{% url 'accounts:waitlist' %}">Join without a CRSid</a>
@@ -120,6 +151,48 @@ document.addEventListener("click", function (e) {
     if (!d.contains(e.target)) d.removeAttribute("open");
   });
 });
+</script>
+<dialog id="confirm-dialog" class="confirm-dialog">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button value="cancel" class="btn btn-ghost btn-small" type="submit">Cancel</button>
+      <button value="ok" class="btn btn-accent btn-small" type="submit">Confirm</button>
+    </div>
+  </form>
+</dialog>
+<script>
+// Confirmations: forms and buttons with data-confirm ask first via <dialog>.
+// Without JavaScript (or without <dialog>) the form simply posts.
+(function () {
+  var dialog = document.getElementById("confirm-dialog");
+  if (!dialog || typeof dialog.showModal !== "function") return;
+  var text = document.getElementById("confirm-text");
+  var pending = null;
+  function ask(message, proceed) { text.textContent = message; pending = proceed; dialog.showModal(); }
+  dialog.addEventListener("close", function () {
+    if (dialog.returnValue === "ok" && pending) pending();
+    pending = null;
+  });
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form.dataset.confirm || form.dataset.confirmed) return;
+    e.preventDefault();
+    ask(form.dataset.confirm, function () {
+      form.dataset.confirmed = "1";
+      if (form.requestSubmit) form.requestSubmit(); else form.submit();
+    });
+  });
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest ? e.target.closest("button[data-confirm]") : null;
+    if (!btn || !btn.form) return;
+    e.preventDefault();
+    ask(btn.dataset.confirm, function () {
+      btn.form.dataset.confirmed = "1";
+      btn.form.requestSubmit(btn);
+    });
+  });
+})();
 </script>
 {% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>{% endif %}
 {% block extra_js %}{% endblock %}

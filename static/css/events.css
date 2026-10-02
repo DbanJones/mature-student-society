@@ -39,7 +39,7 @@
 .up-row:last-child { border-bottom: none; padding-bottom: .2rem; }
 .up-row:first-child { padding-top: .2rem; }
 .up-date { flex: 0 0 56px; text-align: center; background: var(--sage-100); border-radius: var(--radius-small); padding: .3rem 0; line-height: 1.15; }
-.up-date .up-day { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--pine-900); }
+.up-date .up-day { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: var(--heading); }
 .up-date .up-mon { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft); }
 .up-main { flex: 1 1 16rem; min-width: 0; }
 .up-title { font-weight: 600; }
@@ -91,3 +91,59 @@
 /* --- forms -------------------------------------------------------- */
 
 .check-row input[type="checkbox"] { width: auto; margin-right: .4rem; }
+
+/* --- polls ---------------------------------------------------------- */
+
+.poll-kind { display: flex; flex-direction: column; gap: .3rem; text-decoration: none; color: var(--ink); }
+.poll-kind:hover { box-shadow: var(--shadow-lift); border-color: var(--sage); color: var(--ink); }
+.poll-option-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: .4rem; margin-bottom: .5rem; }
+.poll-option-row input[type="datetime-local"] { max-width: 14rem; }
+.poll-option-row input[type="number"] { max-width: 7rem; }
+@media (min-width: 560px) { .poll-option-row { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; } }
+
+.poll-card { border-left: 4px solid var(--gold); }
+.poll-card.poll-closed { border-left-color: var(--line); }
+.poll-form { margin: .5rem 0 0; }
+.poll-option {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 7rem 2rem; gap: .5rem .6rem;
+  align-items: center; padding: .45rem .55rem; border-radius: var(--radius-small);
+  font-weight: 500; cursor: pointer; margin-bottom: .25rem;
+}
+.poll-option:hover { background: var(--sage-100); }
+.poll-option.chosen { background: var(--sage-100); box-shadow: inset 0 0 0 1.5px var(--pine-700); }
+.poll-option.full { opacity: .55; cursor: not-allowed; }
+.poll-option input { width: auto; margin: 0; }
+.poll-option-label { min-width: 0; }
+.poll-bar { display: block; height: 10px; border-radius: 99px; background: var(--sage-100); overflow: hidden; }
+.poll-fill { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--pine-700), var(--sage-dark)); }
+.poll-count { text-align: right; font-variant-numeric: tabular-nums; }
+.poll-winner { font-weight: 700; color: var(--heading); }
+@media (max-width: 560px) {
+  .poll-option { grid-template-columns: auto minmax(0, 1fr); }
+  .poll-bar { grid-column: 2; }
+  .poll-count { grid-column: 2; text-align: left; }
+}
+
+/* --- calendar: agenda view, term weeks, capacity ------------------- */
+
+.cal-view .btn.active { background: var(--pine-800); color: #fff !important; }
+.cal-term {
+  position: absolute; left: .35rem; top: .35rem;
+  font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--pine-700); background: var(--sage-100); border-radius: 4px; padding: 0 .3rem;
+}
+.cal-cell { position: relative; }
+.cal-agenda { display: none; margin-bottom: 2rem; }
+.cal-agenda.forced { display: block; }
+.cal-grid.hidden-view { display: none; }
+.agenda-day { margin-bottom: 1rem; }
+.agenda-date { font-size: 1rem; margin: 0 0 .3rem; color: var(--heading); }
+.agenda-day.today .agenda-date::after { content: " · today"; color: var(--brick); font-weight: 400; }
+@media (max-width: 720px) {
+  .cal-agenda:not(.hidden-view) { display: block; }
+  .cal-grid:not(.forced) { display: none; }
+}
+.up-thumb { width: 56px; height: 42px; object-fit: cover; border-radius: 6px; flex: none; }
+.cap { display: inline-flex; flex-direction: column; gap: .2rem; min-width: 7rem; }
+.cap-track { display: block; height: 7px; border-radius: 99px; background: var(--sage-100); overflow: hidden; }
+.cap-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--pine-700), var(--brick)); border-radius: 99px; }

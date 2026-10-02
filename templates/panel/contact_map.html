@@ -49,7 +49,7 @@
                 {% endif %}
                 {% if node.parent_id %}
                   <form method="post" action="{% url 'panel:contact_node_delete' node.pk %}"
-                        onsubmit="return confirm('Delete “{{ node.option_label|escapejs }}”{% if not node.is_result %} and everything beneath it{% endif %}?');">
+                        data-confirm="Delete “{{ node.option_label }}”{% if not node.is_result %} and everything beneath it{% endif %}?">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-small btn-danger">Delete</button>
                   </form>

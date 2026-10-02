@@ -93,7 +93,7 @@
                   </form>
                 {% endif %}
                 <form method="post" action="{% url 'panel:event_action' event.pk %}"
-                      onsubmit="return confirm('Delete “{{ event.title|escapejs }}” and all its RSVPs permanently?');">
+                      data-confirm="Delete “{{ event.title }}” and all its RSVPs permanently?">
                   {% csrf_token %}
                   <input type="hidden" name="next" value="{{ request.get_full_path }}">
                   <input type="hidden" name="action" value="delete">

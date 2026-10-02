@@ -48,6 +48,8 @@ urlpatterns = [
     path("faq/", _namespace("faq", ["index", "contacts", "colleges", "departments"])),
     path("me/", _namespace("dashboard", ["home"])),
     path("panel/", _namespace("panel", ["home"])),
+    path("testimonials/", _namespace("testimonials", ["index"])),
+    path("notifications/", include("notifications.urls")),
     path("members/", include(([
         path("", _stub_view, name="directory"),
         path("<str:username>/", _stub_view, name="profile"),
@@ -58,7 +60,8 @@ urlpatterns = [
         path("<str:username>/block/", _stub_view, name="block_toggle"),
     ], "inbox"))),
     path("", _namespace("core", ["home", "about", "wellbeing", "policies",
-                                 "terms", "winter_ball"])),
+                                 "terms", "winter_ball", "search",
+                                 "dismiss_banner"])),
 ]
 
 VALID_SCORES = {

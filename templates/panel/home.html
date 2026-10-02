@@ -28,6 +28,10 @@
     <div class="stat-label">New this term</div>
   </div>
   <div class="stat-tile">
+    <div class="stat-num">{{ counts.incomplete_accounts }}</div>
+    <div class="stat-label">Unfinished sign-ups</div>
+  </div>
+  <div class="stat-tile">
     <div class="stat-num">{{ counts.events_14d }}</div>
     <div class="stat-label">Events (14 days)</div>
   </div>
@@ -61,6 +65,24 @@
       <p>{{ counts.terms_outstanding }} member{{ counts.terms_outstanding|pluralize }} yet
          to accept terms v{{ counts.terms_current }} — they'll be asked on their next visit.</p>
       <a class="btn btn-ghost btn-small" href="{% url 'panel:terms' %}">See who</a>
+    </div>
+  {% endif %}
+  {% if counts.pending_testimonials %}
+    <div class="card">
+      <h3>Testimonials to review</h3>
+      <p>{{ counts.pending_testimonials }} testimonial{{ counts.pending_testimonials|pluralize }}
+         waiting for approval before {{ counts.pending_testimonials|pluralize:"it appears,they appear" }}
+         on the public page.</p>
+      <a class="btn btn-accent btn-small" href="{% url 'panel:testimonials' %}">Review</a>
+    </div>
+  {% endif %}
+  {% if counts.incomplete_accounts %}
+    <div class="card">
+      <h3>Unfinished sign-ups</h3>
+      <p>{{ counts.incomplete_accounts }} account{{ counts.incomplete_accounts|pluralize }}
+         never completed the terms or profile step, so they have no college or
+         mobile on file. You can remind them or clear out old ones.</p>
+      <a class="btn btn-ghost btn-small" href="{% url 'panel:members' %}?incomplete=1">See who</a>
     </div>
   {% endif %}
   <div class="card">

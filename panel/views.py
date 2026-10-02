@@ -5,14 +5,18 @@ Every view is gated by ``portal_admin_required`` (society admins via
 action writes an ``AuditLog`` row via ``AuditLog.record``.
 """
 
+import datetime
+
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.mail import EmailMessage
+from django.http import HttpResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -24,8 +28,12 @@ from accounts.decorators import (
 )
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
 from core.models import (
+    VISIBILITY_CHOICES,
+    Activity,
+    CommitteeMember,
     SiteConfig,
     SitePage,
+    SitePageRevision,
     TermsAcceptance,
     TermsRevision,
     TermsVersion,
@@ -36,11 +44,16 @@ from inbox.models import DirectMessage
 
 from . import ai, services
 from .forms import (
+    ActivityForm,
+    BannerForm,
+    TermDatesForm,
+    CommitteeMemberForm,
     ContactNodeForm,
     DepartmentContactForm,
     EmailSettingsForm,
     MailerForm,
     MemberEditForm,
+    MessagingSettingsForm,
     SitePageForm,
     TabVisibilityForm,
     TermsVersionForm,
@@ -241,6 +254,8 @@ def members(request):
     type_filter = request.GET.get("type", "")
     only_admins = request.GET.get("admin") == "1"
     only_banned = request.GET.get("banned") == "1"
+    only_incomplete = request.GET.get("incomplete") == "1"
+    current_terms = TermsVersion.current_number()
 
     members_qs = User.objects.all()
     if q:
@@ -260,10 +275,16 @@ def members(request):
         members_qs = members_qs.filter(is_portal_admin=True)
     if only_banned:
         members_qs = members_qs.filter(is_banned=True)
+    if only_incomplete:
+        members_qs = members_qs.filter(User.incomplete_q(current_terms))
 
     page = Paginator(members_qs, 50).get_page(request.GET.get("page"))
     params = request.GET.copy()
     params.pop("page", None)
+    # Where each account is in sign-up: shown as a badge on the row, so an
+    # admin can see at a glance why a member has no college or mobile.
+    for member in page.object_list:
+        member.onboarding = member.onboarding_status(current_terms)
 
     return render(request, "panel/members.html", {
         "nav_active": "panel",
@@ -273,6 +294,10 @@ def members(request):
         "type_filter": type_filter,
         "only_admins": only_admins,
         "only_banned": only_banned,
+        "only_incomplete": only_incomplete,
+        "incomplete_count": User.objects.filter(is_banned=False)
+        .filter(User.incomplete_q(current_terms))
+        .count(),
         "qs": params.urlencode(),
     })
 
@@ -310,6 +335,18 @@ def member_edit(request, pk):
                 detail="details updated from the panel",
             )
             messages.success(request, f"Saved changes to {_display_name(member)}.")
+            missing = [
+                label for label, value in (
+                    ("college", updated.college), ("mobile number", updated.mobile)
+                ) if not value
+            ]
+            if missing:
+                messages.warning(
+                    request,
+                    f"Saved, but {_display_name(member)} still has no "
+                    f"{' or '.join(missing)}, so they count as an unfinished "
+                    "sign-up.",
+                )
             return redirect("panel:members")
     else:
         form = MemberEditForm(instance=member)
@@ -318,6 +355,7 @@ def member_edit(request, pk):
         "panel_tab": "members",
         "member": member,
         "form": form,
+        "timeline": services.member_timeline(member),
     })
 
 
@@ -382,25 +420,44 @@ def member_shadow_unban(request, pk):
 
 @portal_admin_required
 @require_POST
-def member_toggle_mute(request, pk):
+def member_messaging(request, pk):
+    """Set who a member may message: the committee only (the default),
+    anyone, or nobody (muted). Admins can always message anyone, so the
+    setting is only meaningful for ordinary members."""
     member = get_object_or_404(User, pk=pk)
-    if member == request.user:
-        messages.error(request, "You cannot mute yourself.")
-        return _redirect_back(request, fallback="panel:messages")
-    if member.is_portal_admin or member.is_super_admin:
+    level = request.POST.get("level")
+    name = _display_name(member)
+    if level not in User.Messaging.values:
+        messages.error(request, "Unknown messaging setting — nothing was changed.")
+    elif member == request.user:
+        messages.error(request, "You cannot change your own messaging setting.")
+    elif (
+        (member.is_portal_admin or member.is_super_admin)
+        and level == User.Messaging.MUTED
+    ):
         messages.error(request, "Admins can't be muted — demote them first.")
-        return _redirect_back(request, fallback="panel:messages")
-    member.can_send_messages = not member.can_send_messages
-    member.save(update_fields=["can_send_messages"])
-    action = "unmute_messages" if member.can_send_messages else "mute_messages"
-    AuditLog.record(request.user, action, target=member)
-    if member.can_send_messages:
-        messages.success(request, f"{_display_name(member)} can send messages again.")
-    else:
-        messages.success(
+    elif member.messaging == level:
+        messages.info(
             request,
-            f"Muted {_display_name(member)} — they can read but not send messages.",
+            f"{name} is already set to “{User.Messaging(level).label.lower()}”.",
         )
+    else:
+        member.messaging = level
+        member.save(update_fields=["messaging"])
+        action = {
+            User.Messaging.ENABLED: "enable_messaging",
+            User.Messaging.MUTED: "mute_messages",
+            User.Messaging.DEFAULT: "reset_messaging",
+        }[level]
+        AuditLog.record(request.user, action, target=member)
+        if level == User.Messaging.ENABLED:
+            messages.success(request, f"{name} can now message any member.")
+        elif level == User.Messaging.MUTED:
+            messages.success(
+                request, f"Muted {name} — they can read messages but not send any."
+            )
+        else:
+            messages.success(request, f"{name} can now message the committee only.")
     return _redirect_back(request, fallback="panel:messages")
 
 
@@ -503,6 +560,92 @@ def member_reset_whatsapp(request, pk):
         "They can view the invite link once more.",
     )
     return _redirect_back(request)
+
+
+@portal_admin_required
+@require_POST
+def member_remind(request, pk):
+    """Nudge an account that never finished signing up.
+
+    Associates who have never set a password get their invite again; anyone
+    else gets a short reminder with the login link.
+    """
+    from accounts.services import send_associate_invite, send_profile_reminder
+
+    member = get_object_or_404(User, pk=pk)
+    name = _display_name(member)
+    status = member.onboarding_status(TermsVersion.current_number())
+    if status == User.Onboarding.COMPLETE:
+        messages.info(request, f"{name} has already finished signing up.")
+        return _redirect_back(request)
+    if not member.email:
+        messages.error(request, f"{name} has no email address to write to.")
+        return _redirect_back(request)
+    try:
+        if (
+            member.account_type == User.AccountType.ASSOCIATE
+            and not member.has_usable_password()
+        ):
+            send_associate_invite(member, request)
+            detail = "re-sent the set-password invite"
+        else:
+            send_profile_reminder(member, request)
+            detail = f"reminder sent ({status.label.lower()})"
+    except Exception as exc:
+        messages.error(request, f"Couldn't email {name}: {exc}")
+        return _redirect_back(request)
+    AuditLog.record(request.user, "remind_member", target=member, detail=detail)
+    messages.success(request, f"Reminder sent to {member.email}.")
+    return _redirect_back(request)
+
+
+# How old an unfinished account must be before the cleanup will offer to
+# remove it. Long enough that a slow starter isn't deleted mid-term.
+CLEANUP_AFTER_DAYS = 90
+
+
+def _cleanup_candidates():
+    """Accounts that never completed their profile, are older than
+    CLEANUP_AFTER_DAYS, aren't admins, and have left nothing behind (no
+    events, no RSVPs) — so deleting them loses nothing."""
+    cutoff = timezone.now() - datetime.timedelta(days=CLEANUP_AFTER_DAYS)
+    return (
+        User.objects.filter(
+            created_at__lt=cutoff,
+            is_portal_admin=False, is_super_admin=False, is_superuser=False,
+        )
+        .filter(Q(first_name="") | Q(last_name="") | Q(college="") | Q(mobile=""))
+        .exclude(events_created__isnull=False)
+        .exclude(rsvps__isnull=False)
+        .order_by("created_at")
+    )
+
+
+@portal_admin_required
+def members_cleanup(request):
+    """GET: list the unfinished accounts that would go. POST: delete them."""
+    candidates = list(_cleanup_candidates())
+    if request.method == "POST":
+        count = len(candidates)
+        names = ", ".join(u.email or u.username for u in candidates[:20])
+        for user in candidates:
+            user.delete()
+        AuditLog.record(
+            request.user, "cleanup_incomplete",
+            detail=f"deleted {count} account(s): {names}"[:300],
+        )
+        messages.success(
+            request,
+            f"Removed {count} account{'s' if count != 1 else ''} that never "
+            "finished signing up.",
+        )
+        return redirect("panel:members")
+    return render(request, "panel/members_cleanup_confirm.html", {
+        "nav_active": "panel",
+        "panel_tab": "members",
+        "candidates": candidates,
+        "days": CLEANUP_AFTER_DAYS,
+    })
 
 
 # --- WhatsApp access queue -----------------------------------------------------------
@@ -650,8 +793,11 @@ def event_action(request, pk):
     action = request.POST.get("action")
 
     if action == "cancel":
+        from events.views import tell_attendees_cancelled
+
         event.is_cancelled = True
         event.save(update_fields=["is_cancelled", "updated_at"])
+        tell_attendees_cancelled(event, actor=request.user)
         AuditLog.record(request.user, "cancel_event", target=event.title)
         messages.success(request, f"Cancelled “{event.title}” — it's off the calendar.")
     elif action == "restore":
@@ -728,15 +874,55 @@ def messages_admin(request):
     params = request.GET.copy()
     params.pop("page", None)
 
-    muted = User.objects.filter(can_send_messages=False).order_by("first_name")
+    config = SiteConfig.get()
+    enabled = User.objects.filter(
+        messaging=User.Messaging.ENABLED, is_portal_admin=False
+    ).order_by("first_name", "last_name")
+    muted = User.objects.filter(messaging=User.Messaging.MUTED).order_by(
+        "first_name", "last_name"
+    )
     return render(request, "panel/messages.html", {
         "nav_active": "panel",
         "panel_tab": "messages",
         "page": page,
         "q": q,
         "qs": params.urlencode(),
+        "config": config,
+        "settings_form": MessagingSettingsForm(
+            initial={"messaging_mode": config.messaging_mode}
+        ),
+        "enabled": enabled,
         "muted": muted,
     })
+
+
+@portal_admin_required
+@require_POST
+def messaging_settings(request):
+    """Switch member-to-member messaging between open and restricted."""
+    config = SiteConfig.get()
+    form = MessagingSettingsForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Couldn't save the messaging setting.")
+        return redirect("panel:messages")
+    mode = form.cleaned_data["messaging_mode"]
+    if mode == config.messaging_mode:
+        messages.info(request, "Nothing changed.")
+        return redirect("panel:messages")
+    config.messaging_mode = mode
+    config.save()
+    AuditLog.record(request.user, "update_messaging_mode", detail=mode)
+    if mode == SiteConfig.MessagingMode.OPEN:
+        messages.success(
+            request, "Messaging is now open: any member can message any other member."
+        )
+    else:
+        messages.success(
+            request,
+            "Messaging is now restricted: members can message the committee, "
+            "and only members you enable can message each other.",
+        )
+    return redirect("panel:messages")
 
 
 @portal_admin_required
@@ -763,12 +949,48 @@ def message_remove(request, pk):
 
 # --- content: CMS pages, tab visibility, contact map --------------------------------------
 
+# Pages that are not SitePages, and where each one is changed, so the Pages
+# tab shows one map of the whole site.
+FIXED_PAGES = [
+    ("Home", "core:home", "Managed in code (templates/core/home.html)."),
+    ("About MSS", "core:about",
+     "Managed in code; the intro text is the “About text” field of Site "
+     "configuration in the Django admin."),
+    ("Wellbeing", "core:wellbeing",
+     "The body is the “wellbeing” page in the table above; the header and "
+     "the crisis-support panel stay in code so they can't be deleted."),
+    ("Community policies", "core:policies", "Managed in code."),
+    ("Terms and conditions", "core:terms", "Versioned on the Terms tab."),
+    ("The Guide", "guide:index", "Community wiki: any member can edit any page."),
+    ("Calendar", "events:calendar",
+     "Members create events; tag owners and admins promote them."),
+]
+
+
 @portal_admin_required
-def content(request):
-    """One tab for everything editorial: site pages, who sees which nav
-    tabs, and the who-to-contact map."""
+def pages(request):
+    """Every page on the site in one table: the admin-managed pages with
+    their audience, navigation slot, publishing state and editors, plus the
+    fixed pages and where each of those is edited."""
+    return render(request, "panel/pages.html", {
+        "nav_active": "panel",
+        "panel_tab": "pages",
+        "pages": SitePage.objects.prefetch_related("editors").select_related(
+            "updated_by"
+        ),
+        "fixed_pages": [
+            {"title": title, "url": reverse(name), "note": note}
+            for title, name, note in FIXED_PAGES
+        ],
+        "visibility_choices": VISIBILITY_CHOICES,
+    })
+
+
+@portal_admin_required
+def navigation(request):
+    """Who sees each built-in tab, and which managed pages sit in the nav."""
     config = SiteConfig.get()
-    if request.method == "POST" and "save_tabs" in request.POST:
+    if request.method == "POST":
         tabs_form = TabVisibilityForm(request.POST, config=config)
         if tabs_form.is_valid():
             tabs_form.apply(config)
@@ -777,15 +999,35 @@ def content(request):
                 detail=str(config.tab_visibility)[:250],
             )
             messages.success(request, "Navigation visibility saved.")
-            return redirect("panel:content")
+            return redirect("panel:navigation")
     else:
         tabs_form = TabVisibilityForm(config=config)
+    return render(request, "panel/navigation.html", {
+        "nav_active": "panel",
+        "panel_tab": "navigation",
+        "tabs_form": tabs_form,
+        "nav_pages": SitePage.objects.exclude(nav_label=""),
+        "banner_form": BannerForm(initial={
+            "banner_text": config.banner_text,
+            "banner_until": timezone.localtime(config.banner_until) if config.banner_until else None,
+        }),
+        "banner_live": bool(config.banner_text) and (
+            config.banner_until is None or config.banner_until > timezone.now()
+        ),
+        "term_form": TermDatesForm(initial={
+            "michaelmas_start": config.michaelmas_start,
+            "lent_start": config.lent_start,
+            "easter_start": config.easter_start,
+        }),
+    })
 
+
+@portal_admin_required
+def content(request):
+    """Contacts: recorded department addresses and the who-to-contact map."""
     return render(request, "panel/content.html", {
         "nav_active": "panel",
         "panel_tab": "content",
-        "pages": SitePage.objects.all(),
-        "tabs_form": tabs_form,
         "contact_node_count": ContactNode.objects.count(),
         "dept_contacts": DepartmentContact.objects.all(),
     })
@@ -850,11 +1092,13 @@ def page_create(request):
         page = form.save(commit=False)
         page.updated_by = request.user
         page.save()
+        form.save_m2m()
+        page.save_revision(request.user, SitePageRevision.Action.CREATED)
         AuditLog.record(request.user, "create_page", target=page.title)
         messages.success(
             request, f"Created “{page.title}” at /pages/{page.slug}/."
         )
-        return redirect("panel:content")
+        return redirect("panel:pages")
     return render(request, "panel/page_form.html", {
         "nav_active": "panel", "panel_tab": "content",
         "form": form, "page": None,
@@ -869,9 +1113,18 @@ def page_edit(request, pk):
         page = form.save(commit=False)
         page.updated_by = request.user
         page.save()
-        AuditLog.record(request.user, "edit_page", target=page.title)
+        form.save_m2m()
+        page.save_revision(request.user, SitePageRevision.Action.EDITED)
+        from core.views import tell_page_editors
+        tell_page_editors(page, request.user)
+        AuditLog.record(
+            request.user, "edit_page", target=page.title,
+            detail="editors: " + (
+                ", ".join(str(u) for u in form.cleaned_data["editors"]) or "none"
+            )[:250],
+        )
         messages.success(request, f"Saved “{page.title}”.")
-        return redirect("panel:content")
+        return redirect("panel:pages")
     return render(request, "panel/page_form.html", {
         "nav_active": "panel", "panel_tab": "content",
         "form": form, "page": page,
@@ -886,7 +1139,7 @@ def page_delete(request, pk):
     page.delete()
     AuditLog.record(request.user, "delete_page", target=title)
     messages.success(request, f"Deleted “{title}”.")
-    return redirect("panel:content")
+    return redirect("panel:pages")
 
 
 # --- who-to-contact map editor --------------------------------------------------------------
@@ -1367,9 +1620,20 @@ def terms_acceptances(request, pk):
 
 @portal_admin_required
 def stats(request):
+    from . import charts
+
+    heat_rows, heat_cols = services.events_heatmap()
+    rsvps = services.rsvps_per_month(months=12)
     return render(request, "panel/stats.html", {
         "nav_active": "panel",
         "panel_tab": "stats",
+        "growth_chart": charts.line_chart(services.members_growth()),
+        "rsvp_chart": charts.line_chart(
+            [(r["label"], r["count"]) for r in rsvps], colour="var(--brick)"
+        ),
+        "heatmap": charts.heatmap(heat_rows, heat_cols),
+        "tag_rows": services.tag_performance(),
+        "poll_rows": services.poll_turnout(),
         "summary": services.stats_summary(),
         "by_college": services.members_by_college(),
         "by_category": services.events_by_category(),
@@ -1486,3 +1750,336 @@ def audit(request):
         "action_filter": action,
         "qs": params.urlencode(),
     })
+
+
+# --- testimonials -------------------------------------------------------------------
+
+@portal_admin_required
+def testimonials(request):
+    """Review members' testimonials before they appear on the public page.
+
+    Anonymous ones are anonymous to the public, not to the committee: the
+    queue always shows who wrote what.
+    """
+    from testimonials.models import Testimonial
+
+    status = request.GET.get("status", Testimonial.Status.PENDING)
+    if status not in Testimonial.Status.values:
+        status = Testimonial.Status.PENDING
+    queue = Testimonial.objects.filter(status=status).select_related(
+        "author", "reviewed_by"
+    )
+    if status == Testimonial.Status.PENDING:
+        queue = queue.order_by("submitted_at")
+    else:
+        queue = queue.order_by("-is_featured", "-reviewed_at")
+    counts = {
+        row["status"]: row["count"]
+        for row in Testimonial.objects.values("status").annotate(count=Count("id"))
+    }
+    return render(request, "panel/testimonials.html", {
+        "nav_active": "panel",
+        "panel_tab": "testimonials",
+        "status": status,
+        "statuses": Testimonial.Status.choices,
+        "testimonials": queue,
+        "counts": counts,
+    })
+
+
+@portal_admin_required
+@require_POST
+def testimonial_action(request, pk):
+    from testimonials.models import Testimonial
+
+    testimonial = get_object_or_404(Testimonial, pk=pk)
+    action = request.POST.get("action")
+    note = request.POST.get("review_note", "").strip()[:200]
+    who = testimonial.author_name or "a former member"
+    excerpt = testimonial.body[:80]
+
+    from notifications.models import Notification
+    from notifications.services import notify
+
+    if action == "approve":
+        testimonial.review(request.user, Testimonial.Status.APPROVED, note)
+        AuditLog.record(request.user, "approve_testimonial", target=who, detail=excerpt)
+        notify(
+            [testimonial.author], Notification.Kind.TESTIMONIAL,
+            "Your testimonial has been published. Thank you!",
+            reverse("testimonials:index"),
+        )
+        messages.success(request, f"Published {who}'s testimonial.")
+    elif action == "reject":
+        testimonial.review(request.user, Testimonial.Status.REJECTED, note)
+        AuditLog.record(
+            request.user, "reject_testimonial", target=who, detail=note or excerpt
+        )
+        notify(
+            [testimonial.author], Notification.Kind.TESTIMONIAL,
+            "Your testimonial wasn't published." + (f" Note: {note}" if note else ""),
+            reverse("testimonials:index"),
+        )
+        messages.info(request, f"{who}'s testimonial is not published.")
+    elif action in ("feature", "unfeature"):
+        if testimonial.status != Testimonial.Status.APPROVED:
+            messages.error(request, "Only published testimonials can be featured.")
+        else:
+            testimonial.is_featured = action == "feature"
+            testimonial.save(update_fields=["is_featured"])
+            AuditLog.record(request.user, f"{action}_testimonial", target=who)
+            messages.success(
+                request,
+                f"{who}'s testimonial is {'now' if testimonial.is_featured else 'no longer'} featured.",
+            )
+    elif action == "delete":
+        testimonial.delete()
+        AuditLog.record(request.user, "delete_testimonial", target=who, detail=excerpt)
+        messages.success(request, f"Deleted {who}'s testimonial.")
+    else:
+        messages.error(request, "Unknown action — nothing was changed.")
+    return _redirect_back(request, fallback="panel:testimonials")
+
+
+# --- polls ------------------------------------------------------------------------
+
+@portal_admin_required
+def polls(request):
+    """Every poll on the site, open ones first, with where each one stands."""
+    from polls.models import Poll
+
+    all_polls = list(
+        Poll.objects.select_related("event", "created_by", "outcome_option")
+        .annotate(vote_count=Count("votes"))
+        .order_by("status", "closes_at")[:200]
+    )
+    for poll in all_polls:
+        poll.resolve_if_due()
+    return render(request, "panel/polls.html", {
+        "nav_active": "panel",
+        "panel_tab": "polls",
+        "polls": all_polls,
+    })
+
+
+# --- announcement banner, committee and "what we do" --------------------------------
+
+@portal_admin_required
+@require_POST
+def banner(request):
+    config = SiteConfig.get()
+    form = BannerForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Couldn't save the banner — check the date.")
+        return redirect("panel:navigation")
+    config.banner_text = form.cleaned_data["banner_text"].strip()
+    config.banner_until = form.cleaned_data["banner_until"]
+    config.save()
+    AuditLog.record(
+        request.user, "update_banner",
+        detail=(config.banner_text[:120] or "cleared"),
+    )
+    messages.success(
+        request, "Banner saved." if config.banner_text else "Banner cleared."
+    )
+    return redirect("panel:navigation")
+
+
+@portal_admin_required
+def about_content(request):
+    return render(request, "panel/about.html", {
+        "nav_active": "panel",
+        "panel_tab": "about",
+        "committee": CommitteeMember.objects.all(),
+        "activities": Activity.objects.all(),
+    })
+
+
+def _simple_edit(request, model, form_class, pk, label, audit):
+    obj = get_object_or_404(model, pk=pk) if pk else None
+    form = form_class(request.POST or None, instance=obj)
+    if request.method == "POST" and form.is_valid():
+        obj = form.save()
+        AuditLog.record(request.user, audit, target=str(obj))
+        messages.success(request, f"Saved {obj}.")
+        return redirect("panel:about")
+    return render(request, "panel/simple_form.html", {
+        "nav_active": "panel", "panel_tab": "about",
+        "form": form, "obj": obj, "label": label,
+        "back": reverse("panel:about"),
+    })
+
+
+@portal_admin_required
+def committee_edit(request, pk=None):
+    return _simple_edit(
+        request, CommitteeMember, CommitteeMemberForm, pk, "committee member", "edit_committee"
+    )
+
+
+@portal_admin_required
+@require_POST
+def committee_delete(request, pk):
+    member = get_object_or_404(CommitteeMember, pk=pk)
+    AuditLog.record(request.user, "delete_committee", target=str(member))
+    member.delete()
+    messages.success(request, "Removed from the committee list.")
+    return redirect("panel:about")
+
+
+@portal_admin_required
+def activity_edit(request, pk=None):
+    return _simple_edit(request, Activity, ActivityForm, pk, "activity", "edit_activity")
+
+
+@portal_admin_required
+@require_POST
+def activity_delete(request, pk):
+    activity = get_object_or_404(Activity, pk=pk)
+    AuditLog.record(request.user, "delete_activity", target=str(activity))
+    activity.delete()
+    messages.success(request, "Removed the activity.")
+    return redirect("panel:about")
+
+
+# --- bulk member actions --------------------------------------------------------------
+
+def _remind_member(request, member):
+    """Email a nudge to an unfinished account. Returns what was sent, or
+    None if there was nothing to do."""
+    from accounts.services import send_associate_invite, send_profile_reminder
+
+    status = member.onboarding_status(TermsVersion.current_number())
+    if status == User.Onboarding.COMPLETE or not member.email:
+        return None
+    if (
+        member.account_type == User.AccountType.ASSOCIATE
+        and not member.has_usable_password()
+    ):
+        send_associate_invite(member, request)
+        return "re-sent the set-password invite"
+    send_profile_reminder(member, request)
+    return f"reminder sent ({status.label.lower()})"
+
+
+@portal_admin_required
+@require_POST
+def members_bulk(request):
+    """Apply one action to the ticked members: remind, export, or ban (with
+    a confirmation step)."""
+    ids = [i for i in request.POST.getlist("ids") if i.isdigit()]
+    action = request.POST.get("action")
+    members = list(User.objects.filter(pk__in=ids).order_by("first_name", "last_name"))
+    if not members:
+        messages.error(request, "Tick at least one member first.")
+        return _redirect_back(request)
+
+    if action == "export":
+        import csv
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="members.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Name", "Email", "College", "Mobile", "Type", "Joined", "Sign-up"])
+        current = TermsVersion.current_number()
+        for m in members:
+            writer.writerow([
+                m.get_full_name() or m.username, m.email,
+                m.get_college_display() if m.college else "", m.mobile,
+                m.get_account_type_display(), m.created_at.strftime("%Y-%m-%d"),
+                m.onboarding_status(current).label,
+            ])
+        AuditLog.record(request.user, "export_members", detail=f"{len(members)} member(s)")
+        return response
+
+    if action == "remind":
+        sent = 0
+        for m in members:
+            detail = _remind_member(request, m)
+            if detail:
+                sent += 1
+                AuditLog.record(request.user, "remind_member", target=m, detail=detail)
+        messages.success(request, f"Sent {sent} reminder{'s' if sent != 1 else ''}.")
+        return _redirect_back(request)
+
+    if action == "ban":
+        eligible = [
+            m for m in members
+            if m != request.user and not (m.is_portal_admin or m.is_super_admin)
+            and not m.is_banned
+        ]
+        if request.POST.get("confirm") == "1":
+            for m in eligible:
+                m.ban(request.user)
+                AuditLog.record(request.user, "ban", target=m, detail="bulk")
+            messages.success(request, f"Banned {len(eligible)} member{'s' if len(eligible) != 1 else ''}.")
+            return redirect("panel:members")
+        return render(request, "panel/members_bulk_confirm.html", {
+            "nav_active": "panel", "panel_tab": "members",
+            "members": eligible, "skipped": len(members) - len(eligible),
+        })
+
+    messages.error(request, "Pick an action first.")
+    return _redirect_back(request)
+
+
+@portal_admin_required
+@require_POST
+def page_toggle(request, pk):
+    """Quick changes from the Pages table: publish/unpublish, or audience."""
+    page = get_object_or_404(SitePage, pk=pk)
+    if "nav_visibility" in request.POST:
+        value = request.POST["nav_visibility"]
+        if value not in dict(VISIBILITY_CHOICES):
+            messages.error(request, "Unknown audience.")
+            return redirect("panel:pages")
+        page.nav_visibility = value
+        page.save(update_fields=["nav_visibility", "updated_at"])
+        AuditLog.record(request.user, "edit_page", target=page.title, detail=f"audience: {value}")
+        messages.success(request, f"“{page.title}” is now {page.get_nav_visibility_display().lower()}.")
+    else:
+        page.is_published = not page.is_published
+        page.save(update_fields=["is_published", "updated_at"])
+        AuditLog.record(
+            request.user, "publish_page" if page.is_published else "unpublish_page",
+            target=page.title,
+        )
+        messages.success(
+            request, f"“{page.title}” is {'published' if page.is_published else 'unpublished'}."
+        )
+    return redirect("panel:pages")
+
+
+@portal_admin_required
+def terms_diff(request, pk):
+    """What one save of the terms changed, against the save before it."""
+    from core.diff import line_diff, summary
+
+    newer = get_object_or_404(TermsRevision.objects.select_related("editor"), pk=pk)
+    older = (
+        TermsRevision.objects.filter(
+            version_number=newer.version_number, created_at__lt=newer.created_at
+        ).order_by("-created_at").first()
+    )
+    rows = line_diff(older.content if older else "", newer.content)
+    return render(request, "panel/terms_diff.html", {
+        "nav_active": "panel", "panel_tab": "terms",
+        "older": older or newer, "newer": newer,
+        "rows": rows, "diff_summary": summary(rows),
+    })
+
+
+@portal_admin_required
+@require_POST
+def term_dates(request):
+    config = SiteConfig.get()
+    form = TermDatesForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Couldn't save the term dates — check the dates.")
+        return redirect("panel:navigation")
+    for field in ("michaelmas_start", "lent_start", "easter_start"):
+        setattr(config, field, form.cleaned_data[field])
+    config.save()
+    AuditLog.record(request.user, "update_term_dates")
+    messages.success(request, "Term dates saved. The calendar now labels term weeks.")
+    return redirect("panel:navigation")

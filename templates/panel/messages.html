@@ -14,21 +14,63 @@
   </div>
 </div>
 
+<div class="grid grid-2" style="align-items:start; margin-bottom:1rem">
+  <div class="card">
+    <h3>Who can message whom</h3>
+    <form method="post" action="{% url 'panel:messaging_settings' %}">
+      {% csrf_token %}
+      <div class="radio-list">{{ settings_form.messaging_mode }}</div>
+      <button type="submit" class="btn btn-small">Save</button>
+    </form>
+    <p class="small muted" style="margin:.8rem 0 0">
+      Admins can always message anyone, and anyone can reply to an admin.
+      Switch individual members on from the <a href="{% url 'panel:members' %}">Members</a> tab.
+    </p>
+  </div>
+  <div class="card">
+    <h3>Members who can message anyone</h3>
+    {% if enabled %}
+      <ul class="audit-list">
+        {% for member in enabled %}
+          <li class="row-actions">
+            <span style="flex:1">{{ member.get_full_name|default:member.username }}</span>
+            <form method="post" action="{% url 'panel:member_messaging' member.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="level" value="default">
+              <button type="submit" class="btn btn-small btn-ghost">Switch off</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted small" style="margin:0">
+        {% if config.messaging_mode == 'open' %}Not needed while messaging is open.{% else %}None yet.{% endif %}
+      </p>
+    {% endif %}
+    {% if muted %}
+      <h3 style="margin-top:1rem">Muted</h3>
+      <ul class="audit-list">
+        {% for member in muted %}
+          <li class="row-actions">
+            <span style="flex:1">{{ member.get_full_name|default:member.username }}</span>
+            <form method="post" action="{% url 'panel:member_messaging' member.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="level" value="default">
+              <button type="submit" class="btn btn-small">Unmute</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+</div>
+
 <form method="get" class="card filter-bar">
   <input type="text" name="q" value="{{ q }}" placeholder="Search sender, recipient or text"
          aria-label="Search messages">
   <button type="submit" class="btn btn-small">Search</button>
   {% if q %}<a class="btn btn-small btn-ghost" href="{% url 'panel:messages' %}">Clear</a>{% endif %}
 </form>
-
-{% if muted %}
-  <div class="flash flash-warning" style="margin-top:1rem">
-    Currently muted:
-    {% for member in muted %}
-      {{ member.get_full_name|default:member.username }}{% if not forloop.last %}, {% endif %}
-    {% endfor %}
-  </div>
-{% endif %}
 
 {% if page.object_list %}
   <div class="table-scroll" style="margin-top:1rem">
@@ -48,7 +90,7 @@
             <td class="small">
               {{ dm.sender.get_full_name|default:dm.sender.username }}
               {% if dm.sender.is_shadow_banned %}<span class="badge badge-danger">shadow</span>{% endif %}
-              {% if not dm.sender.can_send_messages %}<span class="badge badge-danger">muted</span>{% endif %}
+              {% if dm.sender.messaging == 'muted' %}<span class="badge badge-danger">muted</span>{% endif %}
               →<br>{{ dm.recipient.get_full_name|default:dm.recipient.username }}
             </td>
             <td class="small" style="max-width:26rem">
@@ -62,19 +104,25 @@
               <div class="row-actions">
                 {% if not dm.is_removed %}
                   <form method="post" action="{% url 'panel:message_remove' dm.pk %}"
-                        onsubmit="return confirm('Remove this message from the thread?');">
+                        data-confirm="Remove this message from the thread?">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">
                     <button type="submit" class="btn btn-small btn-danger">Remove</button>
                   </form>
                 {% endif %}
-                <form method="post" action="{% url 'panel:member_toggle_mute' dm.sender.pk %}">
-                  {% csrf_token %}
-                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                  <button type="submit" class="btn btn-small btn-ghost">
-                    {% if dm.sender.can_send_messages %}Mute sender{% else %}Unmute sender{% endif %}
-                  </button>
-                </form>
+                {% if not dm.sender.is_portal_admin %}
+                  <form method="post" action="{% url 'panel:member_messaging' dm.sender.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    {% if dm.sender.messaging == 'muted' %}
+                      <input type="hidden" name="level" value="default">
+                      <button type="submit" class="btn btn-small btn-ghost">Unmute sender</button>
+                    {% else %}
+                      <input type="hidden" name="level" value="muted">
+                      <button type="submit" class="btn btn-small btn-ghost">Mute sender</button>
+                    {% endif %}
+                  </form>
+                {% endif %}
               </div>
             </td>
           </tr>

@@ -183,3 +183,207 @@ class TabVisibilityAndPagesTests(TestCase):
         response = self.client.post(reverse("panel:page_delete", args=[page.pk]))
         self.assertEqual(response.status_code, 302)
         self.assertFalse(SitePage.objects.filter(pk=page.pk).exists())
+
+
+class SitePageAudienceAndEditorTests(TestCase):
+    """Admins own pages; named editors may change the words; the audience
+    applies to the page itself, not just its navigation link."""
+
+    def setUp(self):
+        from core.models import SitePage
+        self.editor = User.objects.create_user(
+            username="pe001", password="pw", first_name="Pat", last_name="Editor",
+            college="wolfson", mobile="+44 7700 900011",
+        )
+        self.other = User.objects.create_user(
+            username="pe002", password="pw", first_name="Ol", last_name="Other",
+            college="wolfson", mobile="+44 7700 900012",
+        )
+        self.page = SitePage.objects.create(
+            title="Partners handbook", slug="partners-handbook", content="Welcome.",
+            nav_label="Partners", nav_visibility="members",
+        )
+        self.page.editors.add(self.editor)
+        self.edit_url = reverse("core:site_page_edit", args=[self.page.slug])
+
+    def test_members_only_page_is_not_readable_logged_out(self):
+        self.assertEqual(self.client.get(self.page.get_absolute_url()).status_code, 404)
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(self.page.get_absolute_url()).status_code, 200)
+
+    def test_hidden_page_is_readable_by_link_but_not_in_nav(self):
+        self.page.nav_visibility = "hidden"
+        self.page.save()
+        self.assertEqual(self.client.get(self.page.get_absolute_url()).status_code, 200)
+        self.assertNotContains(self.client.get(reverse("core:home")), ">Partners</a>")
+
+    def test_editor_sees_edit_button_and_can_change_the_content(self):
+        self.client.force_login(self.editor)
+        self.assertContains(self.client.get(self.page.get_absolute_url()), self.edit_url)
+        response = self.client.post(
+            self.edit_url, {"title": "Partners handbook", "content": "Updated **welcome**."}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.page.refresh_from_db()
+        self.assertEqual(self.page.content, "Updated **welcome**.")
+        self.assertEqual(self.page.updated_by, self.editor)
+        self.assertEqual(self.page.revisions.count(), 1)
+        self.assertEqual(self.page.revisions.first().editor, self.editor)
+
+    def test_editor_cannot_change_publishing_audience_or_settings(self):
+        self.client.force_login(self.editor)
+        self.client.post(self.edit_url, {
+            "title": "Partners handbook", "content": "x",
+            "is_published": "", "nav_visibility": "public",
+        })
+        self.page.refresh_from_db()
+        self.assertTrue(self.page.is_published)
+        self.assertEqual(self.page.nav_visibility, "members")
+        self.assertEqual(
+            self.client.get(reverse("panel:page_edit", args=[self.page.pk])).status_code,
+            403,
+        )
+
+    def test_non_editor_gets_403_and_no_edit_button(self):
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(self.edit_url).status_code, 403)
+        self.assertNotContains(self.client.get(self.page.get_absolute_url()), self.edit_url)
+
+    def test_history_lists_versions_and_restore_puts_one_back(self):
+        self.client.force_login(self.editor)
+        self.client.post(self.edit_url, {"title": "Partners handbook", "content": "Version one."})
+        self.client.post(self.edit_url, {"title": "Partners handbook", "content": "Version two."})
+        first = self.page.revisions.order_by("created_at").first()
+        response = self.client.get(reverse("core:site_page_history", args=[self.page.slug]))
+        self.assertContains(response, "Pat Editor")
+        response = self.client.post(
+            reverse("core:site_page_restore", args=[self.page.slug, first.pk])
+        )
+        self.assertEqual(response.status_code, 302)
+        self.page.refresh_from_db()
+        self.assertEqual(self.page.content, "Version one.")
+        self.assertEqual(self.page.revisions.first().action, "restored")
+
+    def test_preview_renders_without_saving(self):
+        self.client.force_login(self.editor)
+        response = self.client.post(self.edit_url, {
+            "title": "Partners handbook", "content": "Draft **bold**", "preview": "1",
+        })
+        self.assertContains(response, "<strong>bold</strong>")
+        self.page.refresh_from_db()
+        self.assertEqual(self.page.content, "Welcome.")
+
+    def test_dashboard_lists_pages_you_can_edit(self):
+        self.client.force_login(self.editor)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, "Pages you can edit")
+        self.assertContains(response, "Partners handbook")
+
+
+class SearchBannerAndAboutTests(TestCase):
+    def setUp(self):
+        from core.models import Activity, CommitteeMember, SiteConfig, SitePage
+        self.config = SiteConfig.get()
+        self.member = User.objects.create_user(
+            username="sb001", password="pw", first_name="Sam", last_name="Searcher",
+            college="wolfson", mobile="+44 7700 900021", course="MPhil Archaeology",
+        )
+        category = Category.objects.create(name="Walks", slug="walks")
+        Event.objects.create(
+            title="Grantchester meadows walk", category=category,
+            start=timezone.now() + datetime.timedelta(days=2), created_by=self.member,
+        )
+        SitePage.objects.create(title="Sponsors", slug="sponsors", content="Thanks to Grantchester Bakery.")
+        CommitteeMember.objects.create(name="Pat President", role="President")
+        Activity.objects.create(emoji="🎲", name="Board games", blurb="Monthly games night.")
+
+    def test_search_finds_events_pages_and_members_for_members_only(self):
+        response = self.client.get(reverse("core:search") + "?q=grantchester")
+        self.assertContains(response, "Grantchester meadows walk")
+        self.assertContains(response, "Sponsors")
+        self.assertNotContains(response, ">Members<")
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("core:search") + "?q=archaeology")
+        self.assertContains(response, "Sam Searcher")
+
+    def test_banner_shows_until_expiry_and_can_be_dismissed(self):
+        self.config.banner_text = "Freshers Fair volunteers needed"
+        self.config.save()
+        self.assertContains(self.client.get(reverse("core:home")), "Freshers Fair volunteers")
+        self.client.post(reverse("core:dismiss_banner"), {"next": "/"})
+        self.assertNotContains(self.client.get(reverse("core:home")), "Freshers Fair volunteers")
+        # A new banner text shows again even after a dismissal.
+        self.config.banner_text = "Winter Ball tickets on sale"
+        self.config.save()
+        self.assertContains(self.client.get(reverse("core:home")), "Winter Ball tickets")
+        self.config.banner_until = timezone.now() - datetime.timedelta(hours=1)
+        self.config.save()
+        self.assertNotContains(self.client.get(reverse("core:home")), "Winter Ball tickets")
+
+    def test_about_and_home_read_committee_and_activities_from_the_database(self):
+        from core.models import CommitteeMember
+        self.assertContains(self.client.get(reverse("core:about")), "Pat President")
+        # The seed migration carried the old hardcoded list over; stepping
+        # someone down hides them without deleting the row.
+        CommitteeMember.objects.filter(name="Basma Al Ghamdi").update(is_active=False)
+        self.assertNotContains(self.client.get(reverse("core:about")), "Basma Al Ghamdi")
+        self.assertContains(self.client.get(reverse("core:home")), "Board games")
+
+
+class PreviewAndImageTests(TestCase):
+    def test_admin_previews_a_members_page_as_the_public(self):
+        from core.models import SitePage
+        admin = User.objects.create_user(
+            username="pv001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900041", is_portal_admin=True,
+        )
+        page = SitePage.objects.create(title="Secret", slug="secret", content="Shh.", nav_visibility="members")
+        self.client.force_login(admin)
+        response = self.client.get(page.get_absolute_url() + "?as=public")
+        self.assertContains(response, "page not found")
+        self.assertNotContains(response, "Shh.")
+        response = self.client.get(page.get_absolute_url() + "?as=member")
+        self.assertContains(response, "Shh.")
+        self.assertContains(response, "they can read this page")
+
+    def test_shrink_image_resizes_and_strips_to_jpeg(self):
+        from io import BytesIO
+
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from core.images import shrink_image
+
+        buffer = BytesIO()
+        Image.new("RGB", (2400, 1200), "red").save(buffer, format="PNG")
+        upload = SimpleUploadedFile("big.png", buffer.getvalue(), content_type="image/png")
+        small = shrink_image(upload, 512)
+        self.assertEqual(small.name, "big.jpg")
+        self.assertEqual(Image.open(small).size, (512, 256))
+        with self.assertRaises(Exception):
+            shrink_image(SimpleUploadedFile("x.png", b"not an image", content_type="image/png"), 512)
+
+
+class PageDiffTests(TestCase):
+    def test_diff_shows_added_and_removed_lines(self):
+        from core.diff import line_diff, summary
+        from core.models import SitePage, SitePageRevision
+
+        rows = line_diff("a" + chr(10) + "b", "a" + chr(10) + "c")
+        self.assertEqual([k for k, _ in rows], ["same", "del", "ins"])
+        self.assertEqual(summary(rows), {"added": 1, "removed": 1})
+
+        admin = User.objects.create_user(
+            username="df001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900051", is_portal_admin=True,
+        )
+        page = SitePage.objects.create(title="Rules", slug="rules", content="Be kind.")
+        first = page.save_revision(admin, SitePageRevision.Action.CREATED)
+        page.content = "Be kinder."
+        page.save()
+        second = page.save_revision(admin, SitePageRevision.Action.EDITED)
+        self.client.force_login(admin)
+        response = self.client.get(reverse("core:site_page_diff", args=["rules", second.pk]))
+        self.assertContains(response, "Be kinder.")
+        self.assertContains(response, "diff-del")
+        self.assertContains(self.client.get(reverse("core:site_page_history", args=["rules"])), "What changed")

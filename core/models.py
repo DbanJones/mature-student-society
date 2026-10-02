@@ -17,6 +17,7 @@ BUILTIN_TABS = [
     ("supper", "Supper Club", "public"),
     ("ball", "Winter Ball", "public"),
     ("about", "About", "public"),
+    ("testimonials", "Testimonials", "public"),
     ("members", "Members directory", "members"),
     ("messages", "Messages", "members"),
 ]
@@ -34,6 +35,14 @@ def visible_to(visibility, user):
 
 class SiteConfig(models.Model):
     """Singleton for society-wide settings, editable in the admin panel."""
+
+    class MessagingMode(models.TextChoices):
+        OPEN = "open", "Open: any member can message any other member"
+        RESTRICTED = (
+            "restricted",
+            "Restricted: members can message the committee; only members an "
+            "admin has enabled can message each other",
+        )
 
     society_name = models.CharField(
         max_length=120, default="University of Cambridge Mature Student Society"
@@ -80,6 +89,48 @@ class SiteConfig(models.Model):
                   "drafting society emails — shown alongside the mailer.",
     )
 
+    # Cambridge term starts (the Tuesday Full Term begins), so the calendar
+    # can label weeks "Michaelmas wk 3". Leave blank to show no labels.
+    michaelmas_start = models.DateField(null=True, blank=True)
+    lent_start = models.DateField(null=True, blank=True)
+    easter_start = models.DateField(null=True, blank=True)
+
+    def term_week_label(self, day):
+        """'Michaelmas wk 3' for a date inside a term (weeks 0 to 9), else ''."""
+        import datetime
+
+        for name, start in (
+            ("Michaelmas", self.michaelmas_start),
+            ("Lent", self.lent_start),
+            ("Easter", self.easter_start),
+        ):
+            if start is None:
+                continue
+            # Count from the Monday of the week Full Term begins.
+            monday = start - datetime.timedelta(days=start.weekday())
+            weeks = (day - monday).days // 7
+            if 0 <= weeks <= 9:
+                return f"{name} wk {weeks + 1}"
+        return ""
+
+    # Site-wide announcement, shown under the header until it expires or the
+    # visitor dismisses it for their session.
+    banner_text = models.TextField(
+        blank=True, help_text="Markdown. Leave blank for no banner.",
+    )
+    banner_until = models.DateTimeField(
+        null=True, blank=True, help_text="Hide the banner after this time.",
+    )
+
+    # Who may send direct messages to whom. Restricted by default: the
+    # community policy already asks for no unsolicited DMs. See inbox.policy.
+    messaging_mode = models.CharField(
+        max_length=10, choices=MessagingMode.choices,
+        default=MessagingMode.RESTRICTED,
+        help_text="Admins can always message anyone, and anyone can reply "
+                  "to an admin, whichever mode is chosen.",
+    )
+
     # Which built-in nav tabs are visible to whom, keyed by tab key
     # (see BUILTIN_TABS). Managed by admins on the panel's Content tab.
     tab_visibility = models.JSONField(default=dict, blank=True)
@@ -112,9 +163,46 @@ class SiteConfig(models.Model):
         return obj
 
 
+class CommitteeMember(models.Model):
+    """One row of the committee table on the About page."""
+
+    name = models.CharField(max_length=80)
+    role = models.CharField(max_length=80)
+    sort_order = models.PositiveSmallIntegerField(default=100)
+    is_active = models.BooleanField(default=True, help_text="Untick when someone steps down.")
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.role})"
+
+
+class Activity(models.Model):
+    """One card in the homepage's "What we do" grid."""
+
+    emoji = models.CharField(max_length=8, blank=True)
+    name = models.CharField(max_length=60)
+    blurb = models.CharField(max_length=160)
+    sort_order = models.PositiveSmallIntegerField(default=100)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+        verbose_name_plural = "activities"
+
+    def __str__(self):
+        return self.name
+
+
 class SitePage(models.Model):
     """An admin-managed content page (everything that isn't the calendar or
-    the Guide): served at /pages/<slug>/, optionally shown in the nav."""
+    the Guide): served at /pages/<slug>/, optionally shown in the nav.
+
+    Admins create, publish, delete and set the audience; the members named
+    as ``editors`` may change the title and body without being admins. Every
+    save is snapshotted as a SitePageRevision so delegated edits can be
+    reviewed and reverted.
+    """
 
     title = models.CharField(max_length=120)
     slug = models.SlugField(max_length=140, unique=True)
@@ -135,6 +223,12 @@ class SitePage(models.Model):
                   "'published' plus this audience).",
     )
     sort_order = models.PositiveSmallIntegerField(default=100)
+    editors = models.ManyToManyField(
+        settings.AUTH_USER_MODEL, blank=True, related_name="site_pages_editable",
+        help_text="Members who may edit this page's title and content "
+                  "without being admins. Publishing, audience and navigation "
+                  "stay with admins.",
+    )
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.SET_NULL, related_name="site_pages_edited",
@@ -151,6 +245,66 @@ class SitePage(models.Model):
     def get_absolute_url(self):
         from django.urls import reverse
         return reverse("core:site_page", args=[self.slug])
+
+    def is_visible_to(self, user):
+        """May ``user`` read this page?
+
+        Unpublished pages are admin-only. Otherwise the audience applies to
+        the page itself, not just its navigation link; "hidden" means
+        link-only, readable by anyone who has the address.
+        """
+        if user.is_authenticated and user.is_portal_admin:
+            return True
+        if not self.is_published:
+            return False
+        if self.nav_visibility == "hidden":
+            return True
+        return visible_to(self.nav_visibility, user)
+
+    def can_edit(self, user):
+        return user.is_authenticated and (
+            user.is_portal_admin or self.editors.filter(pk=user.pk).exists()
+        )
+
+    def save_revision(self, editor, action):
+        """Snapshot the page as it stands now."""
+        return SitePageRevision.objects.create(
+            page=self, title=self.title, content=self.content,
+            editor=editor, action=action,
+        )
+
+
+class SitePageRevision(models.Model):
+    """A snapshot of a SitePage taken on every save.
+
+    With editing delegated to non-admins, "who changed what, and when" has
+    to be answerable, and any version restorable.
+    """
+
+    class Action(models.TextChoices):
+        CREATED = "created", "Created"
+        EDITED = "edited", "Edited"
+        RESTORED = "restored", "Restored"
+
+    page = models.ForeignKey(
+        SitePage, on_delete=models.CASCADE, related_name="revisions"
+    )
+    title = models.CharField(max_length=120)
+    content = models.TextField(blank=True)
+    action = models.CharField(
+        max_length=10, choices=Action.choices, default=Action.EDITED
+    )
+    editor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="site_page_revisions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} {self.action} @ {self.created_at:%Y-%m-%d %H:%M}"
 
 
 class TermsVersion(models.Model):
