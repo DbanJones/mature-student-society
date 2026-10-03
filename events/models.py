@@ -173,7 +173,8 @@ class Event(models.Model):
     is_cancelled = models.BooleanField(default=False)
 
     # Where the venue is, looked up once from ``location`` for the poster
-    # map (posters.geocode). geocoded_at records that a lookup was attempted.
+    # map (posters.geocode). geocoded_at records a definite answer, found or
+    # not found; a lookup that failed leaves it empty so it is tried again.
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
     geocoded_at = models.DateTimeField(null=True, blank=True)

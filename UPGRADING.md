@@ -108,6 +108,8 @@ you were before; your admin rights are unchanged.
   → Navigation until the first testimonials are approved, if you'd rather.
 - **Poster maps** need a free Geoapify key pasted into the Super admin tab;
   without one, posters print a "scan for directions" code instead of a map.
+  The first poster for each event takes a few seconds longer while the
+  venue is looked up.
 - **Polls close on time** even when nobody visits if this cron line runs on
   `sinkhole` (`crontab -e`):
   ```

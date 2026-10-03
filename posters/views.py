@@ -179,7 +179,7 @@ def map_image(request, slug):
         if data is None:
             raise Http404("Map unavailable.")
         cache.set(key, data, 3600)
-    response = HttpResponse(data, content_type="image/png")
+    response = HttpResponse(data, content_type=geocode.image_type(data))
     response["Cache-Control"] = "private, max-age=3600"
     return response
 

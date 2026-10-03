@@ -315,10 +315,11 @@ def detail(request, slug):
 
 
 def _geocode_quietly(event):
-    """Look the venue up for the poster map; never let it break a save."""
+    """Look the venue up for the poster map; never let it break or stall a
+    save (the poster studio tries again, with more patience, if this fails)."""
     try:
-        from posters.geocode import ensure_geocoded
-        ensure_geocoded(event)
+        from posters.geocode import SAVE_TIMEOUT, ensure_geocoded
+        ensure_geocoded(event, timeout=SAVE_TIMEOUT)
     except Exception:
         pass
 

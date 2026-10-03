@@ -194,7 +194,9 @@ from a canvas, and a photo chosen on the device is read with FileReader and
 kept in that browser's storage, never uploaded. The QR code (segno) encodes
 `/p/<slug>/`, a redirect that counts scans. The map is a Geoapify static
 image proxied by `posters.views.map_image` so the key (SiteConfig) never
-reaches the browser; venues are geocoded once and cached on the event. The
+reaches the browser; venues are geocoded once and cached on the event
+(Geoapify answers in seconds, not milliseconds, so a save waits only
+briefly, the studio waits longer, and a failed lookup is retried). The
 organiser's choices live in one `EventPoster` row; other members' tweaks are
 query-string overrides that are never saved. The SRCF stores no poster
 files.

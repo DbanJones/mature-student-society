@@ -3,6 +3,7 @@
 import datetime
 from unittest import mock
 
+from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -27,6 +28,7 @@ def make_user(username, **extra):
 
 class PosterTestCase(TestCase):
     def setUp(self):
+        cache.clear()
         self.host = make_user("host1")
         self.member = make_user("mem1")
         self.admin = make_user("adm1", is_portal_admin=True, is_super_admin=True)
@@ -180,3 +182,45 @@ class MapTests(PosterTestCase):
         self.client.post(reverse("panel:superadmin_maps"), {"geoapify_api_key": "CLEAR"})
         self.assertEqual(SiteConfig.get().geoapify_api_key, "")
         self.assertEqual(AuditLog.objects.filter(action="update_map_key").count(), 2)
+
+    def test_a_failed_lookup_is_retried_but_no_match_is_remembered(self):
+        config = SiteConfig.get()
+        config.geoapify_api_key = "test-key"
+        config.save()
+        with mock.patch.object(geocode, "_fetch", side_effect=TimeoutError) as fetch:
+            self.assertFalse(geocode.ensure_geocoded(self.event))
+            self.assertFalse(geocode.ensure_geocoded(self.event))  # waiting: not asked again yet
+        self.assertEqual(fetch.call_count, 1)
+        self.event.refresh_from_db()
+        self.assertIsNone(self.event.geocoded_at)  # a failure is not written off
+        cache.clear()  # the wait is over
+        with mock.patch.object(geocode, "_fetch", return_value=b'{"results": []}') as fetch:
+            self.assertFalse(geocode.ensure_geocoded(self.event))
+            self.assertFalse(geocode.ensure_geocoded(self.event))
+        self.assertEqual(fetch.call_count, 1)  # no such place: remembered, not asked again
+        self.event.refresh_from_db()
+        self.assertIsNotNone(self.event.geocoded_at)
+        self.event.geocoded_at = timezone.now() - datetime.timedelta(days=8)
+        self.event.save()
+        with mock.patch.object(geocode, "_fetch", return_value=b'{"results": [{"lat": 52.2, "lon": 0.1}]}'):
+            self.assertTrue(geocode.ensure_geocoded(self.event))  # a week on, worth another look
+
+    def test_saving_an_event_waits_only_briefly_for_the_venue(self):
+        from events.views import _geocode_quietly
+
+        with mock.patch.object(geocode, "ensure_geocoded") as ensure:
+            _geocode_quietly(self.event)
+        ensure.assert_called_once_with(self.event, timeout=geocode.SAVE_TIMEOUT)
+
+    def test_a_jpeg_map_is_labelled_as_one(self):
+        config = SiteConfig.get()
+        config.geoapify_api_key = "test-key"
+        config.save()
+        self.event.latitude, self.event.longitude = 52.2, 0.1
+        self.event.save()
+        self.client.force_login(self.member)
+        picture = geocode.JPEG_MAGIC + b"rest of the picture"
+        with mock.patch.object(geocode, "_fetch", return_value=picture):
+            response = self.client.get(reverse("posters:map", args=[self.event.slug]))
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        self.assertEqual(response.content, picture)
