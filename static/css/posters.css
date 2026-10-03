@@ -1,0 +1,29 @@
+/* The poster studio: controls beside a live preview. The poster itself is
+   an SVG the server lays out; this file only styles the page around it. */
+
+@font-face { font-family: "Libre Caslon Text"; src: url("../fonts/LibreCaslonText-Variable.ttf") format("truetype"); font-weight: 400 700; font-display: swap; }
+@font-face { font-family: "Source Sans 3"; src: url("../fonts/SourceSans3-Variable.ttf") format("truetype"); font-weight: 200 900; font-display: swap; }
+
+.studio { display: grid; gap: 1.2rem; align-items: start; }
+@media (min-width: 900px) { .studio { grid-template-columns: 320px minmax(0, 1fr); } }
+.studio-controls fieldset { margin: 0 0 .9rem; padding: .7rem .9rem .8rem; }
+.studio-controls legend { font-size: .95rem; }
+.studio-controls p { margin: 0 0 .5rem; }
+.studio-controls .helptext { margin-top: .25rem; }
+.studio-controls .linklike { padding: 0; color: var(--brick); font-size: .85rem; }
+.seg { display: flex; gap: .35rem; flex-wrap: wrap; }
+.seg-opt { position: relative; display: inline-flex; }
+.seg-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg-opt span { border: 1px solid var(--line); border-radius: 8px; padding: .3rem .65rem; font-size: .88rem; font-weight: 500; cursor: pointer; background: var(--card); }
+.seg-opt input:checked + span { background: var(--pine-800); color: #fff; border-color: var(--pine-800); }
+.seg-opt input:focus-visible + span { outline: 3px solid var(--gold); outline-offset: 2px; }
+.no-js-only { display: none; }
+.no-js .no-js-only { display: inline-block; }
+
+.preview-sheet { background: var(--table, #1a2320); background: #1a2320; border-radius: var(--radius); padding: clamp(.8rem, 3vw, 2rem); display: grid; justify-items: center; }
+.preview-sheet .poster-svg { width: 100%; max-width: 560px; height: auto; display: block; background: #fbfaf5; box-shadow: 0 1px 1px rgba(0,0,0,.3), 0 30px 50px -22px rgba(0,0,0,.7); }
+.preview-sheet.busy .poster-svg { opacity: .6; }
+.preview-sheet #photo { cursor: crosshair; }
+.preview-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+.preview-actions form { margin: 0; }
+@media print { .studio-controls, .preview-actions, .page-head .actions { display: none !important; } }

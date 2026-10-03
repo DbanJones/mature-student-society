@@ -137,6 +137,7 @@ class Command(BaseCommand):
         call_command("seed_guide")  # the Master Report pages
         self.seed_waitlist()
         self.seed_messages(users)
+        self.seed_polls_and_testimonials(users)
         self.stdout.write(self.style.SUCCESS(
             "Demo data seeded. Dev logins: any demo user via the dev login page "
             "(RAVEN_ENABLED=false), or password 'demo-password' for all of them."
@@ -537,3 +538,82 @@ class Command(BaseCommand):
                 connection="Partner of a incoming Hughes Hall MBA student.",
             ),
         )
+
+    def seed_polls_and_testimonials(self, users):
+        """A venue poll, a Freshers Fair volunteer rota, a general poll, a few
+        testimonials, term dates, and one member with messaging enabled."""
+        from polls.models import Poll, PollOption, PollVote
+        from testimonials.models import Testimonial
+
+        config = SiteConfig.get()
+        if config.michaelmas_start is None:
+            config.michaelmas_start = datetime.date(2026, 10, 6)
+            config.lent_start = datetime.date(2027, 1, 19)
+            config.easter_start = datetime.date(2027, 4, 27)
+            config.save()
+        User.objects.filter(username="amk67").update(messaging=User.Messaging.ENABLED)
+
+        if not Poll.objects.exists():
+            now = timezone.now()
+            book_club = Event.objects.filter(title__startswith="MSS Book Club").first()
+            if book_club:
+                poll = Poll.objects.create(
+                    event=book_club, kind=Poll.Kind.VENUE, created_by=users["efw22"],
+                    question="Where shall we meet next month?",
+                    closes_at=now + datetime.timedelta(days=3),
+                )
+                options = [
+                    PollOption.objects.create(poll=poll, label=label, sort_order=i)
+                    for i, label in enumerate(["Emmanuel College bar", "Heffers café", "The Eagle"])
+                ]
+                for uid, option in (("efw22", 0), ("sc777", 0), ("pn315", 1), ("dbj25", 2)):
+                    PollVote.objects.create(poll=poll, option=options[option], user=users[uid])
+
+            fair_start = (now + datetime.timedelta(days=12)).replace(hour=10, minute=0, second=0, microsecond=0)
+            fair = Event.objects.create(
+                title="Freshers Fair stall", category=Category.objects.get(slug="society-wide"),
+                description="Our stall at the Freshers Fair. **Volunteers needed** for the slots below.",
+                location="Kelsey Kerridge Sports Hall", start=fair_start,
+                end=fair_start + datetime.timedelta(hours=5), created_by=users["dbj25"],
+                host=users["dbj25"], is_official=True,
+            )
+            rota = Poll.objects.create(
+                event=fair, kind=Poll.Kind.VOLUNTEERS, created_by=users["dbj25"],
+                question="Who can staff the stall?", allow_multiple=True,
+                closes_at=fair_start - datetime.timedelta(days=1),
+            )
+            slots = [
+                PollOption.objects.create(poll=rota, label=label, capacity=cap, sort_order=i)
+                for i, (label, cap) in enumerate([
+                    ("Set-up and 10:00 to 12:00", 2), ("12:00 to 14:00", 2), ("14:00 to pack-down", 3),
+                ])
+            ]
+            PollVote.objects.create(poll=rota, option=slots[0], user=users["amk67"])
+            PollVote.objects.create(poll=rota, option=slots[1], user=users["jm901"])
+
+            general = Poll.objects.create(
+                kind=Poll.Kind.GENERAL, created_by=users["amk67"],
+                question="Which should we run next term?", allow_multiple=True,
+                closes_at=now + datetime.timedelta(days=7),
+                description="Pick everything you'd come to.",
+            )
+            for i, label in enumerate(["Garden party", "Punting afternoon", "Quiz night", "Day trip to Ely"]):
+                PollOption.objects.create(poll=general, label=label, sort_order=i)
+
+        if not Testimonial.objects.exists():
+            Testimonial.objects.create(
+                author=users["rt489"], author_name="Robert Tanaka", author_college="St Edmund's",
+                body="I came back to study at 48 convinced I'd be the odd one out. MSS made Cambridge feel like somewhere I belonged within a fortnight.",
+                status=Testimonial.Status.APPROVED, is_featured=True,
+                reviewed_by=users["dbj25"], reviewed_at=timezone.now(),
+            )
+            Testimonial.objects.create(
+                author=users["pn315"], author_name="Priya Natarajan", author_college="Wolfson",
+                body="Doing a PhD with a toddler is hard. The family picnics and the parents' group meant I never had to choose between the two.",
+                is_anonymous=True, status=Testimonial.Status.APPROVED,
+                reviewed_by=users["dbj25"], reviewed_at=timezone.now(),
+            )
+            Testimonial.objects.create(
+                author=users["hb244"], author_name="Henry Blackwood", author_college="St Edmund's",
+                body="The Supper Club alone is worth the membership. Also the cricket chat.",
+            )

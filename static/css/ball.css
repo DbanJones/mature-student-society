@@ -94,6 +94,6 @@
 
 .ball-faq-wrap { background: linear-gradient(180deg, var(--paper), var(--sage-100)); border-top: 1px solid var(--line); }
 .ball-faq { max-width: 40rem; margin: 0 auto; }
-.ball-faq dt { font-weight: 700; color: var(--pine-900); margin-top: 1.1rem; }
+.ball-faq dt { font-weight: 700; color: var(--heading); margin-top: 1.1rem; }
 .ball-faq dd { margin: .25rem 0 0; color: var(--ink-soft); }
 .ball-contact { text-align: center; margin: 2.2rem 0 0; }

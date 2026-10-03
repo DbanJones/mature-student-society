@@ -5,7 +5,7 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -14,6 +14,47 @@ from django.views.decorators.http import require_POST
 
 from .forms import EventForm, TagPageForm
 from .models import RSVP, Category, Event
+
+
+def _attendees_of(event):
+    """Members going to (or waiting for) an event: who to tell of changes."""
+    return [
+        r.user for r in event.rsvps.filter(
+            status__in=[RSVP.Status.GOING, RSVP.Status.WAITING]
+        ).select_related("user")
+    ]
+
+
+def tell_attendees_cancelled(event, actor=None):
+    from notifications.models import Notification
+    from notifications.services import notify
+
+    when = timezone.localtime(event.start).strftime("%a %d %b, %H:%M")
+    notify(
+        _attendees_of(event), Notification.Kind.EVENT,
+        f"{event.title} ({when}) has been cancelled.", event.get_absolute_url(),
+        email_subject=f"Cancelled: {event.title}",
+        email_body=(
+            f"{event.title} on {when} has been cancelled by the organiser. "
+            "Sorry for the change of plan."
+        ),
+        exclude=[actor],
+    )
+
+
+def tell_attendees_moved(event, old_start, actor=None):
+    from notifications.models import Notification
+    from notifications.services import notify
+
+    new = timezone.localtime(event.start).strftime("%a %d %b, %H:%M")
+    old = timezone.localtime(old_start).strftime("%a %d %b, %H:%M")
+    notify(
+        _attendees_of(event), Notification.Kind.EVENT,
+        f"{event.title} has moved from {old} to {new}.", event.get_absolute_url(),
+        email_subject=f"New time: {event.title}",
+        email_body=f"{event.title} has moved from {old} to {new}. The event page has the details.",
+        exclude=[actor],
+    )
 
 UPCOMING_LIMIT = 10
 UPCOMING_TOKENS = 6  # initials tokens shown per row before "+N"
@@ -72,7 +113,12 @@ def calendar_view(request):
     weeks = calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 
-    visible = Event.objects.visible_to(request.user).select_related("category")
+    visible = Event.objects.visible_to(request.user).select_related("category").annotate(
+        open_poll_count=Count(
+            "polls",
+            filter=Q(polls__status="open", polls__closes_at__gt=timezone.now()),
+        )
+    )
     if active_slugs:
         visible = visible.filter(category__slug__in=active_slugs)
     if q:
@@ -103,18 +149,29 @@ def calendar_view(request):
     for event in month_events:
         by_day.setdefault(timezone.localtime(event.start).date(), []).append(event)
 
+    from core.models import SiteConfig
+    config = SiteConfig.get()
     grid = [
-        [
-            {
-                "date": day,
-                "in_month": day.month == month,
-                "is_today": day == today,
-                "events": by_day.get(day, []),
-            }
-            for day in week
-        ]
+        {
+            "label": config.term_week_label(week[0]),
+            "days": [
+                {
+                    "date": day,
+                    "in_month": day.month == month,
+                    "is_today": day == today,
+                    "events": by_day.get(day, []),
+                }
+                for day in week
+            ],
+        }
         for week in weeks
     ]
+    agenda = [
+        (day, by_day[day]) for day in sorted(by_day) if day.month == month
+    ]
+    view = request.GET.get("view", "")
+    if view not in ("grid", "list"):
+        view = ""
 
     upcoming = list(
         visible.filter(start__gte=timezone.now())
@@ -123,6 +180,8 @@ def calendar_view(request):
     )
     for event in upcoming:
         event.extra_going = max(0, len(event.going_list) - UPCOMING_TOKENS)
+        if event.capacity:
+            event.spots_left = max(0, event.capacity - len(event.going_list))
 
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
@@ -142,6 +201,8 @@ def calendar_view(request):
     return render(request, "events/calendar.html", {
         "nav_active": "calendar",
         "grid": grid,
+        "agenda": agenda,
+        "view": view,
         "month_date": datetime.date(year, month, 1),
         "pills": pills,
         "active_categories": active_categories,
@@ -196,6 +257,12 @@ def detail(request, slug):
 
     viewer_rsvp = event.user_rsvp(request.user)
     is_going = bool(viewer_rsvp and viewer_rsvp.status == RSVP.Status.GOING)
+    is_waiting = bool(viewer_rsvp and viewer_rsvp.status == RSVP.Status.WAITING)
+    waiting = list(event.waiting) if event.capacity else []
+    waiting_position = (
+        next((i for i, r in enumerate(waiting, 1) if r.user_id == request.user.pk), None)
+        if is_waiting else None
+    )
     can_rsvp = (
         request.user.is_authenticated and not event.is_cancelled and not event.is_past
     )
@@ -213,7 +280,23 @@ def detail(request, slug):
             request.build_absolute_uri(event.get_absolute_url())
         )
 
+    from inbox.policy import can_message
+    can_message_host = (
+        request.user.is_authenticated
+        and request.user != event.effective_host
+        and can_message(request.user, event.effective_host)
+    )
+
+    from polls.views import card_context
+    poll_cards = [
+        card_context(poll, request.user)
+        for poll in event.polls.select_related("outcome_option").order_by("status", "closes_at")
+    ]
+
     return render(request, "events/detail.html", {
+        "poll_cards": poll_cards,
+        "can_message_host": can_message_host,
+        "poster_scans": event.poster_scans.count() if event.can_edit(request.user) else 0,
         "nav_active": "calendar",
         "event": event,
         "attendees": attendees,
@@ -221,11 +304,24 @@ def detail(request, slug):
         "is_full": is_full,
         "spots_left": spots_left,
         "is_going": is_going,
+        "is_waiting": is_waiting,
+        "waiting_count": len(waiting),
+        "waiting_position": waiting_position,
         "can_rsvp": can_rsvp,
         "can_rate": can_rate,
         "can_edit": event.can_edit(request.user),
         "share_url": share_url,
     })
+
+
+def _geocode_quietly(event):
+    """Look the venue up for the poster map; never let it break or stall a
+    save (the poster studio tries again, with more patience, if this fails)."""
+    try:
+        from posters.geocode import SAVE_TIMEOUT, ensure_geocoded
+        ensure_geocoded(event, timeout=SAVE_TIMEOUT)
+    except Exception:
+        pass
 
 
 def _ratings_map():
@@ -245,6 +341,7 @@ def create(request):
         if not event.host:
             event.host = request.user
         event.save()
+        _geocode_quietly(event)
         messages.success(
             request,
             "Event created — it's on the calendar. Use “Share to WhatsApp” "
@@ -268,8 +365,16 @@ def edit(request, slug):
         request.POST or None, request.FILES or None,
         instance=event, user=request.user, is_create=False,
     )
+    old_start = event.start
+    old_location = event.location
     if request.method == "POST" and form.is_valid():
         form.save()  # created_by untouched: admins editing don't take ownership
+        if event.location != old_location:
+            event.latitude = event.longitude = event.geocoded_at = None
+            event.save(update_fields=["latitude", "longitude", "geocoded_at"])
+            _geocode_quietly(event)
+        if event.start != old_start and not event.is_past:
+            tell_attendees_moved(event, old_start, actor=request.user)
         messages.success(request, "Event updated.")
         return redirect(event)
     return render(request, "events/form.html", {
@@ -289,16 +394,54 @@ def cancel(request, slug):
     if not event.is_cancelled:
         event.is_cancelled = True
         event.save(update_fields=["is_cancelled", "updated_at"])
+        tell_attendees_cancelled(event, actor=request.user)
         messages.success(
             request, "Event cancelled. It no longer appears on the calendar."
         )
     return redirect(event)
 
 
+def _tell_promoted(request, event, promoted):
+    """Email people who have just come off the waitlist."""
+    from django.core.mail import send_mail
+
+    from notifications.models import Notification
+    from notifications.services import notify
+
+    url = request.build_absolute_uri(event.get_absolute_url())
+    when = timezone.localtime(event.start).strftime("%A %d %B at %H:%M")
+    notify(
+        [r.user for r in promoted], Notification.Kind.WAITLIST,
+        f"A place opened up: you're now going to {event.title}.",
+        event.get_absolute_url(),
+    )
+    for rsvp in promoted:
+        if not rsvp.user.email:
+            continue
+        body = f"""Hi {rsvp.user.first_name or 'there'},
+
+Good news: a place has come free at "{event.title}" on {when}, and you've
+moved off the waitlist. You're now going.
+
+If you can't make it after all, please cancel so the next person can have
+the place: {url}
+
+— The MSS portal
+"""
+        send_mail(
+            subject=f"A place has opened up: {event.title}",
+            message=body,
+            from_email=None,
+            recipient_list=[rsvp.user.email],
+            fail_silently=True,
+        )
+
+
 @require_POST
 @login_required
 def rsvp(request, slug):
-    """Toggle the viewer's RSVP, flipping GOING<->CANCELLED (never deleting)."""
+    """Toggle the viewer's RSVP (never deleting). A full event puts new
+    arrivals on the waitlist; a cancellation promotes the first in line."""
     event = get_object_or_404(Event, slug=slug)
     if event.is_cancelled:
         messages.error(request, "This event has been cancelled — RSVPs are closed.")
@@ -308,23 +451,33 @@ def rsvp(request, slug):
         return redirect(event)
 
     existing = event.rsvps.filter(user=request.user).first()
-    turning_on = existing is None or existing.status == RSVP.Status.CANCELLED
-    if turning_on and event.is_full:
-        messages.error(request, "Sorry — this event is full.")
-        return redirect(event)
+    status = existing.status if existing else RSVP.Status.CANCELLED
 
-    if existing is None:
-        RSVP.objects.create(event=event, user=request.user, status=RSVP.Status.GOING)
-    else:
-        existing.status = (
-            RSVP.Status.GOING if turning_on else RSVP.Status.CANCELLED
-        )
+    if status == RSVP.Status.GOING:
+        existing.status = RSVP.Status.CANCELLED
         existing.save(update_fields=["status", "updated_at"])
-
-    if turning_on:
-        messages.success(request, f"You're going to “{event.title}”. See you there!")
-    else:
+        _tell_promoted(request, event, event.promote_waitlist())
         messages.info(request, "No problem — you're no longer marked as going.")
+    elif status == RSVP.Status.WAITING:
+        existing.status = RSVP.Status.CANCELLED
+        existing.save(update_fields=["status", "updated_at"])
+        messages.info(request, "You've left the waitlist.")
+    else:
+        new_status = RSVP.Status.WAITING if event.is_full else RSVP.Status.GOING
+        if existing is None:
+            RSVP.objects.create(event=event, user=request.user, status=new_status)
+        else:
+            existing.status = new_status
+            existing.save(update_fields=["status", "updated_at"])
+        if new_status == RSVP.Status.GOING:
+            messages.success(request, f"You're going to “{event.title}”. See you there!")
+        else:
+            position = event.waiting_count
+            messages.success(
+                request,
+                f"The event is full, so you're on the waitlist (number {position}). "
+                "If a place frees up you'll be moved on automatically and emailed.",
+            )
     return redirect(event)
 
 
@@ -445,3 +598,82 @@ def tag_edit(request, slug):
         "tag": tag,
         "form": form,
     })
+
+
+# --- add to calendar ------------------------------------------------------------
+
+
+def ics(request, slug):
+    """One event as an .ics file, for the viewer's calendar app."""
+    from .ics import build_calendar
+
+    event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
+    if event.members_only and not request.user.is_authenticated:
+        raise Http404("No event found.")
+    body = build_calendar(
+        [event], "MSS",
+        lambda e: request.build_absolute_uri(e.get_absolute_url()),
+    )
+    response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{event.slug}.ics"'
+    return response
+
+
+# --- duplicate and repeat --------------------------------------------------------
+
+REPEAT_MAX_WEEKS = 12
+COPIED_FIELDS = [
+    "title", "category", "description", "location", "host", "capacity",
+    "members_only", "group_chat_link", "attendee_info", "restaurant",
+]
+
+
+@login_required
+def duplicate(request, slug):
+    """A create form pre-filled from an existing event, a week later."""
+    source = get_object_or_404(Event, slug=slug)
+    if not source.can_edit(request.user):
+        raise PermissionDenied("Only the event's creator or an admin can duplicate it.")
+    shift = datetime.timedelta(days=7)
+    initial = {field: getattr(source, field) for field in COPIED_FIELDS}
+    initial["start"] = timezone.localtime(source.start + shift)
+    initial["end"] = timezone.localtime(source.end + shift) if source.end else None
+    initial["is_official"] = source.is_official
+    form = EventForm(initial=initial, user=request.user, is_create=True)
+    messages.info(request, f"Starting from a copy of “{source.title}”. Nothing is saved until you press Create.")
+    return render(request, "events/form.html", {
+        "nav_active": "calendar",
+        "form": form,
+        "event": None,
+        "cat_ratings": _ratings_map(),
+    })
+
+
+@require_POST
+@login_required
+def repeat(request, slug):
+    """Create weekly copies of an event, up to REPEAT_MAX_WEEKS."""
+    source = get_object_or_404(Event, slug=slug)
+    if not source.can_edit(request.user):
+        raise PermissionDenied("Only the event's creator or an admin can repeat it.")
+    try:
+        weeks = int(request.POST.get("weeks", "0"))
+    except ValueError:
+        weeks = 0
+    if not 1 <= weeks <= REPEAT_MAX_WEEKS:
+        messages.error(request, f"Pick between 1 and {REPEAT_MAX_WEEKS} weeks.")
+        return redirect(source)
+    for n in range(1, weeks + 1):
+        shift = datetime.timedelta(days=7 * n)
+        copy = Event(created_by=request.user, is_official=source.is_official,
+                     start=source.start + shift,
+                     end=source.end + shift if source.end else None,
+                     image=source.image)
+        for field in COPIED_FIELDS:
+            setattr(copy, field, getattr(source, field))
+        copy.save()
+    messages.success(
+        request,
+        f"Created {weeks} more {'copy' if weeks == 1 else 'copies'} of “{source.title}”, one a week.",
+    )
+    return redirect(source)

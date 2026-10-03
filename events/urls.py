@@ -12,6 +12,9 @@ urlpatterns = [
     path("tags/<slug:slug>/edit/", views.tag_edit, name="tag_edit"),
     # Old numeric URLs redirect permanently to the slug form.
     path("<int:pk>/", views.detail_by_pk, name="detail_pk"),
+    path("<slug:slug>.ics", views.ics, name="ics"),
+    path("<slug:slug>/duplicate/", views.duplicate, name="duplicate"),
+    path("<slug:slug>/repeat/", views.repeat, name="repeat"),
     # Event pages, named after the event and its date.
     path("<slug:slug>/", views.detail, name="detail"),
     path("<slug:slug>/edit/", views.edit, name="edit"),

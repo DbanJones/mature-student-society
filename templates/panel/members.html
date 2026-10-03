@@ -20,22 +20,46 @@
   </select>
   <label class="check-inline"><input type="checkbox" name="admin" value="1" {% if only_admins %}checked{% endif %}> Admins only</label>
   <label class="check-inline"><input type="checkbox" name="banned" value="1" {% if only_banned %}checked{% endif %}> Banned only</label>
+  <label class="check-inline"><input type="checkbox" name="incomplete" value="1" {% if only_incomplete %}checked{% endif %}> Unfinished sign-ups</label>
   <button type="submit" class="btn btn-small">Filter</button>
-  {% if q or type_filter or only_admins or only_banned %}
+  {% if q or type_filter or only_admins or only_banned or only_incomplete %}
     <a class="btn btn-small btn-ghost" href="{% url 'panel:members' %}">Clear</a>
   {% endif %}
 </form>
 
+{% if incomplete_count %}
+  <p class="small muted" style="margin:.8rem 0 0">
+    {{ incomplete_count }} account{{ incomplete_count|pluralize }} never finished
+    signing up: they stopped at the terms or profile step, which is why they
+    have no college or mobile.
+    {% if not only_incomplete %}<a href="{% url 'panel:members' %}?incomplete=1">Show them</a> &middot;{% endif %}
+    <a href="{% url 'panel:members_cleanup' %}">Review and remove old ones</a>
+  </p>
+{% endif %}
+
 {% if page.object_list %}
-  <div class="table-scroll" style="margin-top:1rem">
+  <form id="bulk-form" method="post" action="{% url 'panel:members_bulk' %}" class="row-actions" style="margin-top:1rem">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label class="check-inline"><input type="checkbox" id="select-all"> Select all on this page</label>
+    <select name="action" aria-label="Action for ticked members">
+      <option value="">With ticked members…</option>
+      <option value="remind">Send a sign-up reminder</option>
+      <option value="export">Export as CSV</option>
+      <option value="ban">Ban…</option>
+    </select>
+    <button type="submit" class="btn btn-small btn-ghost">Apply</button>
+  </form>
+  <div class="table-scroll" style="margin-top:.6rem">
     <table class="data">
       <thead>
         <tr>
+          <th><span class="visually-hidden">Select</span></th>
           <th>Member</th>
           <th>College</th>
           <th>Type</th>
           <th>Mobile</th>
-          <th>Joined</th>
+          <th>Sign-up</th>
           <th>Flags</th>
           <th>Actions</th>
         </tr>
@@ -43,6 +67,7 @@
       <tbody>
         {% for member in page.object_list %}
           <tr>
+            <td><input type="checkbox" name="ids" value="{{ member.pk }}" form="bulk-form" aria-label="Select {{ member.get_full_name|default:member.username }}"></td>
             <td>
               <span class="avatar-token">{{ member.initials }}</span>
               <strong>{{ member.get_full_name|default:member.username }}</strong><br>
@@ -57,13 +82,22 @@
               {% endif %}
             </td>
             <td class="small">{{ member.mobile|default:"—" }}</td>
-            <td class="small muted">{{ member.created_at|date:"j M Y" }}</td>
+            <td class="small">
+              {% if member.onboarding == 'complete' %}
+                <span class="badge badge-ok">Complete</span>
+              {% elif member.onboarding == 'never_logged_in' %}
+                <span class="badge">Never logged in</span>
+              {% else %}
+                <span class="badge badge-warn">{{ member.onboarding.label }}</span>
+              {% endif %}
+              <br><span class="muted">joined {{ member.created_at|date:"j M Y" }}{% if member.last_login %} &middot; seen {{ member.last_login|date:"j M Y" }}{% endif %}</span>
+            </td>
             <td>
               {% if member.is_super_admin %}<span class="badge badge-official">Super admin</span>{% endif %}
               {% if member.is_portal_admin %}<span class="badge badge-official">Admin</span>{% endif %}
               {% if member.is_banned %}<span class="badge badge-danger">Banned</span>{% endif %}
               {% if member.is_shadow_banned %}<span class="badge badge-danger">Shadow-banned</span>{% endif %}
-              {% if not member.can_send_messages %}<span class="badge badge-danger">Muted</span>{% endif %}
+              {% if member.messaging == 'muted' %}<span class="badge badge-danger">Muted</span>{% elif member.messaging == 'enabled' and not member.is_portal_admin %}<span class="badge badge-ok">Messaging on</span>{% endif %}
             </td>
             <td>
               <div class="row-actions">
@@ -110,6 +144,26 @@
                   <button type="submit" class="btn btn-small btn-ghost"
                           title="Let them view the WhatsApp invite link once more">Reset WA link</button>
                 </form>
+                {% if not member.is_portal_admin %}
+                  <form method="post" action="{% url 'panel:member_messaging' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <select name="level" aria-label="Messaging for {{ member.get_full_name|default:member.username }}">
+                      <option value="default" {% if member.messaging == 'default' %}selected{% endif %}>Messaging: committee only</option>
+                      <option value="enabled" {% if member.messaging == 'enabled' %}selected{% endif %}>Messaging: anyone</option>
+                      <option value="muted" {% if member.messaging == 'muted' %}selected{% endif %}>Messaging: muted</option>
+                    </select>
+                    <button type="submit" class="btn btn-small btn-ghost">Set</button>
+                  </form>
+                {% endif %}
+                {% if member.onboarding != 'complete' and member.email %}
+                  <form method="post" action="{% url 'panel:member_remind' member.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="btn btn-small btn-ghost"
+                            title="Email them a nudge to finish signing up">Remind</button>
+                  </form>
+                {% endif %}
                 <a class="btn btn-small btn-ghost" href="{% url 'panel:member_delete' member.pk %}">Delete…</a>
               </div>
             </td>
@@ -133,4 +187,16 @@
 {% else %}
   <div class="empty" style="margin-top:1rem">No members match that search.</div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var all = document.getElementById("select-all");
+  if (!all) return;
+  all.addEventListener("change", function () {
+    document.querySelectorAll('input[name="ids"]').forEach(function (box) { box.checked = all.checked; });
+  });
+})();
+</script>
 {% endblock %}

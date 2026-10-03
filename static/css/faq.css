@@ -16,7 +16,7 @@
   transition: box-shadow .12s ease, transform .12s ease, border-color .12s ease;
 }
 .faq-portal:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); border-color: var(--sage); color: var(--ink); }
-.faq-portal strong { color: var(--pine-900); font-size: 1.05rem; }
+.faq-portal strong { color: var(--heading); font-size: 1.05rem; }
 .faq-portal-emoji { font-size: 1.5rem; line-height: 1; margin-bottom: .25rem; }
 
 /* --- FAQ accordions ------------------------------------------------- */
@@ -30,7 +30,7 @@
 }
 .faq-item summary {
   cursor: pointer; padding: .75rem 1rem; font-weight: 600;
-  color: var(--pine-900); list-style: none; position: relative;
+  color: var(--heading); list-style: none; position: relative;
   padding-right: 2.4rem;
 }
 .faq-item summary::-webkit-details-marker { display: none; }
@@ -55,7 +55,7 @@
 }
 .flow-crumbs .crumb-sep { color: var(--ink-soft); font-size: .78rem; }
 
-.flow-question { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--pine-900); margin: 0 0 .8rem; }
+.flow-question { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; color: var(--heading); margin: 0 0 .8rem; }
 .flow-options { display: grid; gap: .5rem; }
 .flow-option {
   text-align: left; font: inherit; font-weight: 550; color: var(--ink);
@@ -69,7 +69,7 @@
   background: var(--sage-100); border: 1px solid var(--sage-dark);
   border-radius: var(--radius-small); padding: 1rem 1.1rem;
 }
-.flow-result-who { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; color: var(--pine-900); margin: 0 0 .6rem; }
+.flow-result-who { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; color: var(--heading); margin: 0 0 .6rem; }
 .flow-controls { margin: .9rem 0 0; display: flex; gap: .5rem; }
 
 /* --- the full map: hierarchy (org-chart) diagram ------------------------- */
@@ -157,7 +157,7 @@
   transition: border-color .1s ease, box-shadow .1s ease;
 }
 .college-card:hover { border-color: var(--pine-700); box-shadow: var(--shadow); color: var(--ink); }
-.college-card strong { color: var(--pine-900); }
+.college-card strong { color: var(--heading); }
 
 /* recorded department contacts */
 .dept-contacts { list-style: none; margin: 0; padding: 0; }
@@ -170,7 +170,7 @@
   display: flex; justify-content: space-between; align-items: center;
   gap: 1rem; margin-bottom: .8rem;
 }
-.contact-app-bar strong { font-family: var(--font-display); color: var(--pine-900); font-size: 1.05rem; }
+.contact-app-bar strong { font-family: var(--font-display); color: var(--heading); font-size: 1.05rem; }
 .contact-app:fullscreen {
   background: var(--paper);
   overflow-y: auto;

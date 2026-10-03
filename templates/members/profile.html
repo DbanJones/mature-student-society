@@ -37,7 +37,9 @@
     {% if is_self %}
       <a class="btn" href="{% url 'accounts:profile' %}">Edit my profile</a>
     {% else %}
-      <a class="btn btn-accent" href="{% url 'inbox:thread' member.username %}">Message</a>
+      {% if can_message %}
+        <a class="btn btn-accent" href="{% url 'inbox:thread' member.username %}">Message</a>
+      {% endif %}
       <a class="btn btn-ghost" href="mailto:{{ member.email }}">Email</a>
     {% endif %}
   </div>
@@ -79,7 +81,7 @@
       <h2>Contact</h2>
       <ul class="event-meta">
         <li>✉️ <a href="mailto:{{ member.email }}">{{ member.email }}</a></li>
-        {% if not is_self %}
+        {% if can_message %}
           <li>💬 <a href="{% url 'inbox:thread' member.username %}">Message on the portal</a></li>
         {% endif %}
         {% if user.is_portal_admin and member.mobile %}

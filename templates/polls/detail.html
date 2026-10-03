@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ card.poll.question }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem">
+  {% if card.poll.event %}<a href="{{ card.poll.event.get_absolute_url }}">&larr; {{ card.poll.event.title }}</a>{% else %}<a href="{% url 'dashboard:home' %}">&larr; Dashboard</a>{% endif %}
+</p>
+<div style="max-width:46rem">
+  {% include "polls/_poll_card.html" with poll=card.poll options=card.options choices=card.choices can_manage=card.can_manage show_results=card.show_results has_voted=card.has_voted %}
+</div>
+{% endblock %}

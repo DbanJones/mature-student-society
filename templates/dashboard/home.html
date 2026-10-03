@@ -23,10 +23,24 @@
   </div>
 </div>
 
-{% if not user.photo %}
+{% if show_checklist %}
+  <div class="card checklist">
+    <h3 style="margin-bottom:.2rem">Getting started <span class="small muted">· {{ checklist_done }} of {{ checklist|length }} done</span></h3>
+    <div class="bar-track" style="margin:.4rem 0 .7rem"><div class="bar-fill" style="width:{% widthratio checklist_done checklist|length 100 %}%"></div></div>
+    <ul class="checklist-items">
+      {% for item in checklist %}
+        <li class="{% if item.done %}done{% endif %}">
+          <span aria-hidden="true">{% if item.done %}✅{% else %}⬜{% endif %}</span>
+          {% if item.done %}<span class="muted">{{ item.label }}</span>{% else %}<a href="{{ item.url }}">{{ item.label }}</a>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if show_testimonial_invite and "testimonials" in visible_tabs %}
   <p class="small muted">
-    📷 Your profile has no photo yet — <a href="{% url 'accounts:profile' %}">add one</a> so
-    people recognise you at events.
+    🗣️ Enjoying MSS? <a href="{% url 'testimonials:index' %}#share">Share a few words</a>
+    for the testimonials page.
   </p>
 {% endif %}
 
@@ -72,6 +86,37 @@
   </div>
 {% endif %}
 
+{% if polls_waiting or volunteering %}
+  <div class="grid grid-2" style="margin-top: 1.5rem;">
+    {% if polls_waiting %}
+      <div class="card">
+        <h3>📊 Polls waiting for you</h3>
+        <ul class="small" style="margin:0; padding-left:1.1rem">
+          {% for poll in polls_waiting %}
+            <li>
+              <a href="{% if poll.event %}{{ poll.event.get_absolute_url }}#poll-{{ poll.pk }}{% else %}{{ poll.get_absolute_url }}{% endif %}">{{ poll.question }}</a>
+              <span class="muted">{% if poll.event %}· {{ poll.event.title }} {% endif %}· closes in {{ poll.closes_at|timeuntil }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    {% if volunteering %}
+      <div class="card">
+        <h3>🙋 You're volunteering</h3>
+        <ul class="small" style="margin:0; padding-left:1.1rem">
+          {% for signup in volunteering %}
+            <li>
+              <strong>{{ signup.option.label }}</strong>
+              <span class="muted">· <a href="{% if signup.poll.event %}{{ signup.poll.event.get_absolute_url }}{% else %}{{ signup.poll.get_absolute_url }}{% endif %}">{{ signup.poll.event.title|default:signup.poll.question }}</a>{% if signup.poll.event %} · {{ signup.poll.event.start|date:"D j M" }}{% endif %}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
 <div class="grid grid-2" style="margin-top: 1.5rem;">
   <div class="card">
     <h3>You're going to</h3>
@@ -95,6 +140,14 @@
       </div>
     {% else %}
       <p class="muted">No upcoming RSVPs. <a href="{% url 'events:calendar' %}">See what's on</a>.</p>
+    {% endif %}
+    {% if waiting_events %}
+      <h3 style="margin-top:1rem">On the waitlist</h3>
+      <ul class="small" style="margin:0; padding-left:1.1rem">
+        {% for event in waiting_events %}
+          <li><a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted">· {{ event.start|date:"D j M, H:i" }}</span></li>
+        {% endfor %}
+      </ul>
     {% endif %}
   </div>
 
@@ -160,6 +213,22 @@
 
 <div class="grid grid-2" style="margin-top: 1.5rem;">
   <div class="card">
+    <h3>📆 Your calendar feed</h3>
+    <p class="small muted" style="margin-bottom:.5rem">
+      Subscribe in Google Calendar, Apple Calendar or Outlook and everything
+      you RSVP to or host appears automatically, including changes.
+    </p>
+    <input type="text" readonly value="{{ feed_url }}" id="feed-url" aria-label="Calendar feed address" onclick="this.select()">
+    <p class="row-actions" style="margin:.6rem 0 0">
+      <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="feed-url">Copy link</button>
+      <form method="post" action="{% url 'dashboard:calendar_token_reset' %}" data-confirm="Reset your calendar link? Existing subscriptions will stop updating.">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-small btn-ghost">Reset link</button>
+      </form>
+    </p>
+  </div>
+
+  <div class="card">
     <h3>WhatsApp community</h3>
     {% if user.can_view_whatsapp_link %}
       <p>You have an unused one-time invite to the Open Forum group.</p>
@@ -180,6 +249,23 @@
         — manage its events and promote the official ones.
       </p>
       <a class="btn btn-small" href="{% url 'panel:tagged_events' %}">Manage tagged events</a>
+    </div>
+  {% endif %}
+
+  {% if editable_pages %}
+    <div class="card">
+      <h3>Pages you can edit</h3>
+      <p class="small muted" style="margin-bottom:.5rem">
+        The committee has asked you to look after these pages.
+      </p>
+      <ul class="small" style="margin:0; padding-left:1.1rem">
+        {% for page in editable_pages %}
+          <li>
+            <a href="{{ page.get_absolute_url }}">{{ page.title }}</a>
+            &middot; <a href="{% url 'core:site_page_edit' page.slug %}">edit</a>
+          </li>
+        {% endfor %}
+      </ul>
     </div>
   {% endif %}
 

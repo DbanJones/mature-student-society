@@ -1,0 +1,90 @@
+{% load md %}
+<div class="card poll-card{% if poll.status == 'closed' %} poll-closed{% endif %}" id="poll-{{ poll.pk }}">
+  <p style="margin:0 0 .3rem">
+    <span class="badge">📊 {{ poll.get_kind_display }}</span>
+    {% if poll.status == 'open' %}
+      <span class="small muted">closes {{ poll.closes_at|date:"D j M, H:i" }} · in {{ poll.closes_at|timeuntil }}</span>
+    {% elif poll.needs_decision %}
+      <span class="badge badge-warn">Tie — organiser to decide</span>
+    {% else %}
+      <span class="badge badge-ok">Closed</span>
+      {% if poll.outcome_option %}<span class="small muted">· result: <strong>{{ poll.outcome_option.label }}</strong></span>{% endif %}
+    {% endif %}
+  </p>
+  <h2 style="margin-bottom:.3rem">{{ poll.question }}</h2>
+  {% if poll.description %}<div class="prose small">{{ poll.description|markdown }}</div>{% endif %}
+
+  {% if poll.status == 'open' and user.is_authenticated %}
+    <form method="post" action="{% url 'polls:vote' poll.pk %}" class="poll-form">
+      {% csrf_token %}
+      {% for option in options %}
+        <label class="poll-option{% if option.pk in choices %} chosen{% endif %}{% if poll.is_rota and option.is_full and option.pk not in choices %} full{% endif %}">
+          <input type="{% if poll.allow_multiple %}checkbox{% else %}radio{% endif %}" name="option" value="{{ option.pk }}"
+                 {% if option.pk in choices %}checked{% endif %}
+                 {% if poll.is_rota and option.is_full and option.pk not in choices %}disabled{% endif %}>
+          <span class="poll-option-label">
+            {{ option.label }}
+            {% if option.start and option.label != option.start|date:"D j M, H:i" %}<span class="muted small">· {{ option.start|date:"D j M, H:i" }}</span>{% endif %}
+            {% if poll.is_rota and option.capacity %}
+              <span class="muted small">· {{ option.n }} of {{ option.capacity }} place{{ option.capacity|pluralize }} taken{% if option.is_full %}, full{% endif %}</span>
+            {% endif %}
+          </span>
+          {% if show_results and not poll.is_rota %}
+            <span class="poll-bar"><span class="poll-fill" style="width:{{ option.pct }}%"></span></span>
+            <span class="poll-count small muted">{{ option.n }}</span>
+          {% endif %}
+        </label>
+      {% endfor %}
+      <p class="small muted" style="margin:.4rem 0 .6rem">
+        {% if poll.allow_multiple %}Pick as many as you like.{% else %}Pick one.{% endif %}
+        {% if not show_results %}Results are shown {{ poll.get_show_results_display|lower }}.{% endif %}
+      </p>
+      <button type="submit" class="btn btn-small {% if has_voted %}btn-ghost{% else %}btn-accent{% endif %}">
+        {% if poll.is_rota %}{% if has_voted %}Update my slots{% else %}Sign me up{% endif %}{% elif has_voted %}Update my vote{% else %}Vote{% endif %}
+      </button>
+    </form>
+  {% else %}
+    {% if show_results %}
+      {% for option in options %}
+        <div class="bar-row">
+          <span class="small{% if poll.outcome_option_id == option.pk %} poll-winner{% endif %}">{% if poll.outcome_option_id == option.pk %}★ {% endif %}{{ option.label }}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:{{ option.pct }}%"></div></div>
+          <span class="small muted">{{ option.n }}</span>
+        </div>
+      {% endfor %}
+    {% endif %}
+    {% if poll.status == 'open' and not user.is_authenticated %}
+      <p class="small muted"><a href="{% url 'accounts:login' %}">Log in</a> to vote.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if show_results and user.is_authenticated %}
+    {% for option in options %}{% if option.voters %}
+      <p class="small" style="margin:.3rem 0 0"><span class="muted">{{ option.label }}:</span>
+        {% if poll.is_rota or can_manage %}{% for voter in option.voters %}{{ voter.get_full_name|default:voter.username }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        {% else %}<span class="avatars">{% for voter in option.voters|slice:":8" %}<span class="avatar-token" title="{{ voter.get_full_name|default:voter.username }}">{{ voter.initials }}</span>{% endfor %}</span>{% endif %}
+      </p>
+    {% endif %}{% endfor %}
+  {% endif %}
+
+  {% if can_manage %}
+    <div class="row-actions" style="margin-top:.8rem">
+      {% if poll.status == 'open' %}
+        <form method="post" action="{% url 'polls:close' poll.pk %}" data-confirm="Close the poll now? {% if poll.sets_event %}The leading option will be written to the event.{% endif %}">
+          {% csrf_token %}<button type="submit" class="btn btn-small btn-ghost">Close now</button>
+        </form>
+      {% endif %}
+      {% if poll.needs_decision or poll.status == 'closed' and poll.sets_event and not poll.applied_at %}
+        <form method="post" action="{% url 'polls:close' poll.pk %}" class="row-actions">
+          {% csrf_token %}
+          <select name="option" aria-label="Winning option">{% for option in options %}{% if not option.is_opt_out %}<option value="{{ option.pk }}">{{ option.label }} ({{ option.n }})</option>{% endif %}{% endfor %}</select>
+          <button type="submit" class="btn btn-small btn-accent">Set as the result</button>
+        </form>
+      {% endif %}
+      {% if poll.is_rota %}<a class="btn btn-small btn-ghost" href="{% url 'polls:roster' poll.pk %}">Roster &amp; contacts</a>{% endif %}
+      <form method="post" action="{% url 'polls:delete' poll.pk %}" data-confirm="Delete this poll and its votes?">
+        {% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button>
+      </form>
+    </div>
+  {% endif %}
+</div>

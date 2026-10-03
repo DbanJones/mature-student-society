@@ -1,0 +1,20 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}{% if obj %}Edit {{ label }}{% else %}Add a {{ label }}{% endif %}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{{ back }}">&larr; Back</a></p>
+    <h1>{% if obj %}Edit {{ label }}{% else %}Add a {{ label }}{% endif %}</h1>
+  </div>
+</div>
+<div class="card" style="max-width:40rem">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn btn-accent">Save</button>
+    <a class="btn btn-ghost" href="{{ back }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

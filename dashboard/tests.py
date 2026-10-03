@@ -134,3 +134,42 @@ class KeepyUppyTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.submit(999999).json()["best"], 10000)  # capped
+
+
+class CalendarFeedTests(TestCase):
+    def setUp(self):
+        self.member = make_member("cf001")
+        self.other = make_member("cf002")
+        category = Category.objects.create(name="Walks", slug="walks")
+        start = timezone.now() + datetime.timedelta(days=3)
+        self.going = Event.objects.create(
+            title="River walk", category=category, start=start, created_by=self.other,
+        )
+        self.hosting = Event.objects.create(
+            title="My pub quiz", category=category, start=start, created_by=self.member,
+        )
+        self.not_mine = Event.objects.create(
+            title="Someone else's thing", category=category, start=start, created_by=self.other,
+        )
+        RSVP.objects.create(event=self.going, user=self.member)
+
+    def test_feed_needs_a_valid_token_and_lists_my_events(self):
+        self.assertEqual(self.client.get("/me/calendar.ics").status_code, 404)
+        self.assertEqual(self.client.get("/me/calendar.ics?token=nope").status_code, 404)
+        token = self.member.get_calendar_token()
+        response = self.client.get(f"/me/calendar.ics?token={token}")
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn("SUMMARY:River walk", body)
+        self.assertIn("SUMMARY:My pub quiz", body)
+        self.assertNotIn("Someone else", body)
+
+    def test_dashboard_shows_the_link_and_reset_changes_it(self):
+        token = self.member.get_calendar_token()
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(response, f"calendar.ics?token={token}")
+        self.client.post(reverse("dashboard:calendar_token_reset"))
+        self.member.refresh_from_db()
+        self.assertNotEqual(self.member.calendar_token, token)
+        self.assertEqual(self.client.get(f"/me/calendar.ics?token={token}").status_code, 404)

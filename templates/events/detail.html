@@ -30,9 +30,10 @@
   {% if can_edit %}
     <div class="actions">
       <a class="btn btn-ghost btn-small" href="{% url 'events:edit' event.slug %}">Edit</a>
+      <a class="btn btn-ghost btn-small" href="{% url 'events:duplicate' event.slug %}" title="Start a new event from a copy of this one">Duplicate</a>
       {% if not event.is_cancelled %}
         <form method="post" action="{% url 'events:cancel' event.slug %}"
-              onsubmit="return confirm('Cancel this event for everyone? It will disappear from the calendar.');">
+              data-confirm="Cancel this event for everyone? It will disappear from the calendar.">
           {% csrf_token %}
           <button type="submit" class="btn btn-danger btn-small">Cancel event</button>
         </form>
@@ -91,7 +92,11 @@
               Join the event WhatsApp group
             </a>
           {% endif %}
-          {% if user.is_authenticated %}
+          {% if can_message_host %}
+            <a class="btn btn-ghost btn-small" href="{% url 'inbox:thread' event.effective_host.username %}">
+              💬 Message the host
+            </a>
+          {% elif user.is_authenticated %}
             <a class="btn btn-ghost btn-small" href="{% url 'members:profile' event.effective_host.username %}">
               Contact the organiser
             </a>
@@ -104,6 +109,15 @@
           </p>
         {% endif %}
       </div>
+    {% endif %}
+
+    {% for card in poll_cards %}
+      {% include "polls/_poll_card.html" with poll=card.poll options=card.options choices=card.choices can_manage=card.can_manage show_results=card.show_results has_voted=card.has_voted %}
+    {% endfor %}
+    {% if can_edit and not event.is_cancelled and not event.is_past %}
+      <p class="small" style="margin:0">
+        <a class="btn btn-small btn-ghost" href="{% url 'polls:choose' event.slug %}">📊 Ask members: where, when, or who can help</a>
+      </p>
     {% endif %}
 
     {% if event.map_embed_url %}
@@ -125,7 +139,10 @@
   <div class="event-side stack">
     <div class="card">
       <h2>Who's going</h2>
-      <p><strong>{{ going_count }}</strong> going{% if is_full %} — <span class="badge badge-danger">Event full</span>{% endif %}</p>
+      <p><strong>{{ going_count }}</strong> going{% if is_full %} — <span class="badge badge-danger">Event full</span>{% endif %}{% if waiting_count %} <span class="muted small">· {{ waiting_count }} on the waitlist</span>{% endif %}</p>
+      {% if is_waiting %}
+        <p class="flash flash-info" style="margin:0 0 .8rem">You're number {{ waiting_position }} on the waitlist. If a place frees up you'll be moved on automatically and emailed.</p>
+      {% endif %}
 
       {% if user.is_authenticated %}
         {% if attendees %}
@@ -144,12 +161,20 @@
           {% csrf_token %}
           {% if is_going %}
             <button type="submit" class="btn btn-ghost">Can't make it any more</button>
+          {% elif is_waiting %}
+            <button type="submit" class="btn btn-ghost">Leave the waitlist</button>
           {% elif is_full %}
-            <button type="submit" class="btn" disabled>Event full</button>
+            <button type="submit" class="btn btn-accent">Join the waitlist</button>
           {% else %}
             <button type="submit" class="btn btn-accent">I'm going</button>
           {% endif %}
         </form>
+        <p class="small row-actions" style="margin:.8rem 0 0">
+          <a class="btn btn-ghost btn-small" href="{% url 'events:ics' event.slug %}">📆 Add to calendar</a>
+          {% if user.is_authenticated and not event.is_cancelled %}
+            <a class="btn btn-ghost btn-small" href="{% url 'posters:studio' event.slug %}">🖨️ Make a poster</a>
+          {% endif %}
+        </p>
       {% elif event.is_past and not event.is_cancelled %}
         <p class="muted small">This event has already happened.</p>
       {% endif %}
@@ -178,6 +203,7 @@
           <p class="small" style="margin:0">
             <a href="{% url 'events:export' event.slug %}">Export attendee contacts</a>
             <span class="muted">(organiser &amp; admins only)</span>
+            {% if poster_scans %}<br>📊 {{ poster_scans }} poster scan{{ poster_scans|pluralize }} so far{% endif %}
           </p>
         {% endif %}
       </div>

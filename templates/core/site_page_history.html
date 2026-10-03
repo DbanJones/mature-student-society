@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}History of “{{ page.title }}”{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{{ page_url }}">&larr; {{ page.title }}</a></p>
+    <h1>History of “{{ page.title }}”</h1>
+    <p class="lede">Every save, newest first. Open a version to read it or put it back.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-small" href="{% url 'core:site_page_edit' page.slug %}">Edit page</a>
+  </div>
+</div>
+
+{% if revisions %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>When</th><th>Who</th><th>What</th><th>Change</th><th></th></tr></thead>
+      <tbody>
+        {% for rev in revisions %}
+          <tr>
+            <td class="small">{{ rev.created_at|date:"D j M Y, H:i" }}</td>
+            <td class="small">{% if rev.editor %}{{ rev.editor.get_full_name|default:rev.editor.username }}{% else %}a former member{% endif %}</td>
+            <td class="small">{{ rev.get_action_display }}{% if rev.title != page.title %} · titled “{{ rev.title }}”{% endif %}</td>
+            <td class="small">
+              {% if rev.delta > 0 %}<span class="delta-pos">+{{ rev.delta }}</span>
+              {% elif rev.delta < 0 %}<span class="delta-neg">{{ rev.delta }}</span>
+              {% else %}<span class="muted">0</span>{% endif %} chars
+            </td>
+            <td class="row-actions">
+              <a class="btn btn-small btn-ghost" href="{% url 'core:site_page_revision' page.slug rev.pk %}">{% if forloop.first %}Current{% else %}View{% endif %}</a>
+              {% if not forloop.last %}<a class="btn btn-small btn-ghost" href="{% url 'core:site_page_diff' page.slug rev.pk %}">What changed</a>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No saved versions yet. The first edit will start the history.</div>
+{% endif %}
+{% endblock %}

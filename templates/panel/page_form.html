@@ -5,10 +5,16 @@
 {% block panel_content %}
 <div class="page-head">
   <div>
-    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:content' %}">← Site content</a></p>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:pages' %}">&larr; Pages</a></p>
     <h1>{% if page %}Edit “{{ page.title }}”{% else %}Add a page{% endif %}</h1>
     {% if page %}<p class="muted">Served at /pages/{{ page.slug }}/ (fixed once created).</p>{% endif %}
   </div>
+  {% if page %}
+    <div class="actions">
+      <a class="btn btn-ghost btn-small" href="{{ page.get_absolute_url }}">View</a>
+      <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_history' page.slug %}">History</a>
+    </div>
+  {% endif %}
 </div>
 
 <div class="card" style="max-width: 46rem;">
@@ -30,7 +36,12 @@
       <span class="helptext">{{ form.is_published.help_text }}</span>
     </p>
     <fieldset>
-      <legend>Navigation</legend>
+      <legend>Who sees it</legend>
+      <p>
+        {{ form.nav_visibility.label_tag }} {{ form.nav_visibility }}
+        <span class="helptext">{{ form.nav_visibility.help_text }}</span>
+        {{ form.nav_visibility.errors }}
+      </p>
       <div class="grid grid-2">
         <p>
           {{ form.nav_label.label_tag }} {{ form.nav_label }}
@@ -42,14 +53,18 @@
           <span class="helptext">{{ form.sort_order.help_text }}</span>
         </p>
       </div>
+    </fieldset>
+    <fieldset>
+      <legend>Who can edit it</legend>
       <p>
-        {{ form.nav_visibility.label_tag }} {{ form.nav_visibility }}
-        <span class="helptext">{{ form.nav_visibility.help_text }}</span>
+        <span class="helptext" style="margin-bottom:.4rem">{{ form.editors.help_text }}</span>
+        <span class="owner-checkboxes">{{ form.editors }}</span>
+        {{ form.editors.errors }}
       </p>
     </fieldset>
     <p style="margin-top:1.5rem">
       <button type="submit" class="btn btn-accent">{% if page %}Save page{% else %}Create page{% endif %}</button>
-      <a class="btn btn-ghost" href="{% url 'panel:content' %}">Cancel</a>
+      <a class="btn btn-ghost" href="{% url 'panel:pages' %}">Cancel</a>
     </p>
   </form>
 </div>

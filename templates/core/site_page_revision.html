@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load md %}
+
+{% block title %}“{{ revision.title }}” as of {{ revision.created_at|date:"j M Y, H:i" }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      <a href="{% url 'core:site_page_history' page.slug %}">&larr; History of “{{ page.title }}”</a>
+    </p>
+    <h1>{{ revision.title }}</h1>
+    <p class="muted">
+      {{ revision.get_action_display }} by
+      {% if revision.editor %}{{ revision.editor.get_full_name|default:revision.editor.username }}{% else %}a former member{% endif %}
+      on {{ revision.created_at|date:"D j M Y, H:i" }}
+      {% if is_current %}<span class="badge badge-ok">Current version</span>{% endif %}
+    </p>
+  </div>
+  {% if not is_current %}
+    <div class="actions">
+      <form method="post" action="{% url 'core:site_page_restore' page.slug revision.pk %}"
+            data-confirm="Restore this version? The current text is kept in the history.">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-accent btn-small">Restore this version</button>
+      </form>
+    </div>
+  {% endif %}
+</div>
+
+<div class="card"><div class="prose">{{ revision.content|richtext }}</div></div>
+{% endblock %}

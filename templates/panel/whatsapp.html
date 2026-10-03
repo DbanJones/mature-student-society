@@ -23,7 +23,7 @@
     {{ settings_form.whatsapp_group_link }}
     <button type="submit" class="btn btn-small">Save link</button>
     <button type="submit" name="reset_all" value="1" class="btn btn-small btn-ghost"
-            onclick="return confirm('Reset the one-time invite for every member? All {{ used_count }} used links become viewable again.');">
+            data-confirm="Reset the one-time invite for every member? All {{ used_count }} used links become viewable again.">
       Save &amp; reset for everyone
     </button>
   </form>

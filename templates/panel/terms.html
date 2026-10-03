@@ -87,7 +87,7 @@
                 <div class="row-actions">
                   <a class="btn btn-small btn-ghost" href="{% url 'panel:terms_edit' version.pk %}">Edit</a>
                   <form method="post" action="{% url 'panel:terms_delete' version.pk %}"
-                        onsubmit="return confirm('Delete version {{ version.number }}? The record of who accepted it is kept.');">
+                        data-confirm="Delete version {{ version.number }}? The record of who accepted it is kept.">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-small btn-danger">Delete</button>
                   </form>
@@ -120,7 +120,8 @@
                 {% if revision.editor %}{{ revision.editor.get_full_name|default:revision.editor.username }}
                 {% else %}<span class="muted">(removed)</span>{% endif %}
               </td>
-              <td class="small muted">{{ revision.change_note|default:"—" }}</td>
+              <td class="small muted">{{ revision.change_note|default:"—" }}
+                <a class="small" href="{% url 'panel:terms_diff' revision.pk %}">what changed</a></td>
             </tr>
           {% endfor %}
         </tbody>

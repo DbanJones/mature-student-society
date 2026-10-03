@@ -1,0 +1,13 @@
+<p class="small muted">
+  <span class="delta-pos">+{{ diff_summary.added }}</span> added,
+  <span class="delta-neg">−{{ diff_summary.removed }}</span> removed
+  (lines). Comparing the version from {{ older.created_at|date:"j M Y, H:i" }}
+  with the one from {{ newer.created_at|date:"j M Y, H:i" }}.
+</p>
+<div class="card diff">
+  {% for kind, line in rows %}
+    <div class="diff-line diff-{{ kind }}"><span class="diff-mark" aria-hidden="true">{% if kind == 'ins' %}+{% elif kind == 'del' %}−{% else %}&nbsp;{% endif %}</span>{{ line|default:" " }}</div>
+  {% empty %}
+    <p class="muted" style="margin:0">The two versions are identical.</p>
+  {% endfor %}
+</div>

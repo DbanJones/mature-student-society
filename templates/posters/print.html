@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en-gb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poster: {{ event.title }}</title>
+<style>
+@font-face { font-family: "Libre Caslon Text"; src: url("/static/fonts/LibreCaslonText-Variable.ttf") format("truetype"); font-weight: 400 700; font-display: block; }
+@font-face { font-family: "Source Sans 3"; src: url("/static/fonts/SourceSans3-Variable.ttf") format("truetype"); font-weight: 200 900; font-display: block; }
+@page { size: {{ page_size }}; margin: 0; }
+html, body { margin: 0; padding: 0; background: #e6e6e3; }
+.sheet { background: #fff; margin: 0 auto; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.sheet svg { display: block; width: 100%; height: auto; }
+{% if is_print_size %}
+.sheet { width: {{ page_w }}; height: {{ page_h }}; }
+.sheet svg { width: {{ page_w }}; height: {{ page_h }}; }
+{% else %}
+.sheet { width: min(100vw, 1080px); }
+{% endif %}
+.toolbar { font: 15px/1.4 "Source Sans 3", system-ui, sans-serif; color: #1a2420; background: #fbfaf5; border-bottom: 1px solid #d6ded7; padding: .7rem 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.toolbar a, .toolbar button { font: inherit; color: #fff; background: #14352a; border: 0; border-radius: 8px; padding: .45rem .9rem; text-decoration: none; cursor: pointer; }
+.toolbar .ghost { background: transparent; color: #14352a; border: 1px solid #c9d3cb; }
+.toolbar .hint { color: #5b6a60; }
+@media print { .toolbar { display: none; } html, body { background: #fff; } .sheet { box-shadow: none; margin: 0; } }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="window.print()">Print / Save as PDF</button>
+  <a class="ghost" href="{% url 'posters:studio' event.slug %}?{{ request.GET.urlencode }}">Back to the studio</a>
+  <span class="hint">{% if is_print_size %}Set the printer to {{ settings.get_size_display }}, 100% scale, no margins.{% else %}Use the studio's PNG button for this size; this page is for A4 and A3.{% endif %}</span>
+</div>
+<div class="sheet">{{ svg|safe }}</div>
+{% if auto_print %}<script>document.fonts.ready.then(function () { setTimeout(function () { window.print(); }, 200); });</script>{% endif %}
+</body>
+</html>

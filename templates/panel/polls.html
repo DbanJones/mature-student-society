@@ -1,0 +1,47 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Polls{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Polls</h1>
+    <p class="muted">
+      Venue and date polls set their event when they close; volunteer rotas
+      give the organiser a roster. Organisers start polls from their event
+      page; general polls for the whole membership start here.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-accent" href="{% url 'polls:choose_general' %}">Ask the membership</a>
+  </div>
+</div>
+
+{% if polls %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Poll</th><th>Kind</th><th>Event</th><th>Votes</th><th>Closes</th><th>Result</th></tr></thead>
+      <tbody>
+        {% for poll in polls %}
+          <tr>
+            <td><a href="{{ poll.get_absolute_url }}"><strong>{{ poll.question }}</strong></a><br>
+              <span class="small muted">by {{ poll.created_by.get_full_name|default:poll.created_by.username|default:"a former member" }}</span></td>
+            <td class="small">{{ poll.get_kind_display }}</td>
+            <td class="small">{% if poll.event %}<a href="{{ poll.event.get_absolute_url }}">{{ poll.event.title }}</a>{% else %}<span class="muted">everyone</span>{% endif %}</td>
+            <td>{{ poll.vote_count }}</td>
+            <td class="small">{{ poll.closes_at|date:"j M Y, H:i" }}</td>
+            <td class="small">
+              {% if poll.status == 'open' %}<span class="badge badge-ok">Open</span>
+              {% elif poll.needs_decision %}<span class="badge badge-warn">Tie: needs a decision</span>
+              {% elif poll.outcome_option %}{{ poll.outcome_option.label }}{% if poll.applied_at %} <span class="badge badge-ok">applied</span>{% endif %}
+              {% else %}<span class="muted">closed</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No polls yet.</div>
+{% endif %}
+{% endblock %}

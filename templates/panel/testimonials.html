@@ -1,0 +1,70 @@
+{% extends "panel/base_panel.html" %}
+{% load panel_nav %}
+
+{% block title %}Testimonials{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Testimonials</h1>
+    <p class="muted">
+      Members' words about MSS, shown on the public Testimonials page once
+      approved. Anonymous ones appear as “An MSS member” publicly; you can
+      always see who wrote them here. Notes are shown to the member.
+    </p>
+  </div>
+</div>
+
+<p class="row-actions" style="margin-bottom:1rem">
+  {% for value, label in statuses %}
+    <a class="btn btn-small {% if status == value %}{% else %}btn-ghost{% endif %}"
+       href="{% url 'panel:testimonials' %}?status={{ value }}">{{ label }}{% if counts|get_item:value %} ({{ counts|get_item:value }}){% endif %}</a>
+  {% endfor %}
+</p>
+
+{% if testimonials %}
+  <div class="stack">
+    {% for t in testimonials %}
+      <div class="card">
+        <div class="grid grid-2" style="align-items:start">
+          <div>
+            <p style="white-space:pre-line; margin:0 0 .5rem">{{ t.body }}</p>
+            <p class="small muted" style="margin:0">
+              From <strong>{{ t.author_name|default:"a former member" }}</strong>{% if t.author_college %} ({{ t.author_college }}){% endif %}
+              {% if t.is_anonymous %}&middot; <span class="badge">will show as anonymous</span>{% endif %}
+              &middot; submitted {{ t.submitted_at|date:"j M Y, H:i" }}
+              {% if t.is_featured %}&middot; <span class="badge badge-official">Featured</span>{% endif %}
+              {% if t.reviewed_by %}
+                <br>{{ t.get_status_display }} by {{ t.reviewed_by.get_full_name|default:t.reviewed_by.username }}
+                on {{ t.reviewed_at|date:"j M Y" }}{% if t.review_note %} &middot; note: “{{ t.review_note }}”{% endif %}
+              {% endif %}
+            </p>
+          </div>
+          <form method="post" action="{% url 'panel:testimonial_action' t.pk %}" class="row-actions">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <input type="text" name="review_note" class="note-input" maxlength="200"
+                   placeholder="Note for the member (optional)" value="{{ t.review_note }}">
+            {% if t.status != 'approved' %}
+              <button type="submit" name="action" value="approve" class="btn btn-small btn-accent">Publish</button>
+            {% else %}
+              <button type="submit" name="action" value="{% if t.is_featured %}unfeature{% else %}feature{% endif %}" class="btn btn-small btn-ghost">
+                {% if t.is_featured %}Unfeature{% else %}Feature{% endif %}
+              </button>
+            {% endif %}
+            {% if t.status != 'rejected' %}
+              <button type="submit" name="action" value="reject" class="btn btn-small btn-ghost">
+                {% if t.status == 'approved' %}Unpublish{% else %}Don't publish{% endif %}
+              </button>
+            {% endif %}
+            <button type="submit" name="action" value="delete" class="btn btn-small btn-danger"
+                    data-confirm="Delete this testimonial for good?">Delete</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty">Nothing here right now.</div>
+{% endif %}
+{% endblock %}

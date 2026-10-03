@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Start a poll{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    {% if event %}<p class="small" style="margin-bottom:.4rem"><a href="{{ event.get_absolute_url }}">&larr; {{ event.title }}</a></p>{% endif %}
+    <h1>What do you want to ask?</h1>
+    <p class="lede">{% if event %}Let members decide something about this event, or ask for help running it.{% else %}A question for the whole membership.{% endif %}</p>
+  </div>
+</div>
+<div class="grid grid-2">
+  {% for key, label, blurb in kinds %}
+    <a class="card poll-kind" href="{% if event %}{% url 'polls:create' event.slug key %}{% else %}{% url 'polls:create_general' key %}{% endif %}">
+      <strong>{{ label }}</strong>
+      <span class="small muted">{{ blurb }}</span>
+    </a>
+  {% endfor %}
+</div>
+{% endblock %}

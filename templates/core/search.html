@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Search{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Search</h1>
+    <p class="lede">Events, the Guide, pages{% if user.is_authenticated %} and members{% endif %}.</p>
+  </div>
+</div>
+<form class="guide-search" method="get" action="{% url 'core:search' %}" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search the whole site…" aria-label="Search" autofocus>
+  <button type="submit" class="btn">Search</button>
+</form>
+
+{% if q %}
+  {% if not total %}
+    <div class="empty">Nothing matches “{{ q }}”.</div>
+  {% endif %}
+  {% if results.events %}
+    <h2>Events</h2>
+    <div class="stack">
+      {% for event in results.events %}
+        <div class="card search-hit">
+          <h3><a href="{{ event.get_absolute_url }}">{{ event.category.emoji }} {{ event.title }}</a></h3>
+          <p class="search-snippet">{{ event.start|date:"D j M Y, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}{% if event.is_past %} · past{% endif %}</p>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if results.guide %}
+    <h2>The Guide</h2>
+    <div class="stack">
+      {% for r in results.guide %}
+        <div class="card search-hit">
+          <h3><a href="{{ r.page.get_absolute_url }}">{{ r.title_html }}</a></h3>
+          <p class="search-snippet">{{ r.snippet }}</p>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if results.pages %}
+    <h2>Pages</h2>
+    <div class="stack">
+      {% for page in results.pages %}
+        <div class="card search-hit"><h3><a href="{{ page.get_absolute_url }}">{{ page.title }}</a></h3></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if results.members %}
+    <h2>Members</h2>
+    <div class="stack">
+      {% for member in results.members %}
+        <div class="card search-hit">
+          <h3><a href="{% url 'members:profile' member.username %}">{{ member.get_full_name|default:member.username }}</a></h3>
+          <p class="search-snippet">{% if member.college %}{{ member.get_college_display }}{% endif %}{% if member.course %} · {{ member.course }}{% endif %}</p>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

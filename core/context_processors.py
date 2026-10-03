@@ -1,8 +1,26 @@
+import hashlib
+
+from django.utils import timezone
+
 from core.models import BUILTIN_TABS, SiteConfig, SitePage, visible_to
 
 
+def banner_key(config=None):
+    """A short fingerprint of the current banner text, so dismissing one
+    banner doesn't hide the next."""
+    config = config or SiteConfig.get()
+    return hashlib.sha1(config.banner_text.encode("utf-8")).hexdigest()[:12]
+
+
 def site_config(request):
-    return {"site_config": SiteConfig.get()}
+    config = SiteConfig.get()
+    banner = ""
+    if config.banner_text and (
+        config.banner_until is None or config.banner_until > timezone.now()
+    ):
+        if request.session.get("banner_dismissed") != banner_key(config):
+            banner = config.banner_text
+    return {"site_config": config, "site_banner": banner}
 
 
 def navigation(request):

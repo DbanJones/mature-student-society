@@ -1,0 +1,92 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Pages{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Pages</h1>
+    <p class="muted">
+      Every page on the site, who can see it, and who can edit it. Admins can
+      create, edit and delete any page; the editors you name on a page can
+      change its words without being admins.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-accent" href="{% url 'panel:page_create' %}">Add a page</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Managed pages</h2>
+  {% if pages %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead>
+          <tr><th>Page</th><th>Audience</th><th>Navigation</th><th>Editors</th><th>Last edited</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for page in pages %}
+            <tr>
+              <td>
+                <strong>{{ page.title }}</strong>
+                {% if not page.is_published %}<span class="badge badge-danger">Unpublished</span>{% endif %}
+                <br><a class="small" href="{{ page.get_absolute_url }}">/pages/{{ page.slug }}/</a>
+              </td>
+              <td class="small">
+                <form method="post" action="{% url 'panel:page_toggle' page.pk %}" class="row-actions">
+                  {% csrf_token %}
+                  <select name="nav_visibility" aria-label="Audience for {{ page.title }}">
+                    {% for value, label in visibility_choices %}<option value="{{ value }}" {% if page.nav_visibility == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-small btn-ghost">Set</button>
+                </form>
+                <span class="muted">preview as <a href="{{ page.get_absolute_url }}?as=public">public</a> · <a href="{{ page.get_absolute_url }}?as=member">member</a></span>
+              </td>
+              <td class="small">
+                {% if page.nav_label %}“{{ page.nav_label }}” &middot; order {{ page.sort_order }}{% else %}<span class="muted">not in nav</span>{% endif %}
+              </td>
+              <td class="small">
+                {% for editor in page.editors.all %}{{ editor.get_full_name|default:editor.username }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">admins only</span>{% endfor %}
+              </td>
+              <td class="small muted">
+                {{ page.updated_at|date:"j M Y" }}{% if page.updated_by %}<br>{{ page.updated_by.get_full_name|default:page.updated_by.username }}{% endif %}
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn-small btn-ghost" href="{% url 'panel:page_edit' page.pk %}">Edit</a>
+                  <form method="post" action="{% url 'panel:page_toggle' page.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-ghost">{% if page.is_published %}Unpublish{% else %}Publish{% endif %}</button>
+                  </form>
+                  <a class="btn btn-small btn-ghost" href="{% url 'core:site_page_history' page.slug %}">History</a>
+                  <form method="post" action="{% url 'panel:page_delete' page.pk %}"
+                        data-confirm="Delete “{{ page.title }}”? Its history goes with it.">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted small" style="margin:0">No pages yet.</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:1rem">
+  <h2>Fixed pages</h2>
+  <p class="small muted">Pages that aren't managed above, and where each one is changed.</p>
+  <table class="data">
+    <thead><tr><th>Page</th><th>How it's edited</th></tr></thead>
+    <tbody>
+      {% for fixed in fixed_pages %}
+        <tr><td><a href="{{ fixed.url }}">{{ fixed.title }}</a></td><td class="small">{{ fixed.note }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

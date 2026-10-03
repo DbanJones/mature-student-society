@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ kind_label }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem">
+      {% if event %}<a href="{% url 'polls:choose' event.slug %}">&larr; Other kinds of poll</a>{% else %}<a href="{% url 'polls:choose_general' %}">&larr; Other kinds of poll</a>{% endif %}
+    </p>
+    <h1>{{ kind_label }}</h1>
+    <p class="lede">{{ blurb }}</p>
+  </div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>{{ form.question.label_tag }} {{ form.question }}{{ form.question.errors }}</p>
+    <p>{{ form.description.label_tag }} {{ form.description }}<span class="helptext">{{ form.description.help_text }}</span>{{ form.description.errors }}</p>
+
+    <fieldset>
+      <legend>{% if kind == 'volunteers' %}Slots{% elif kind == 'date' %}Possible dates{% else %}Options{% endif %}</legend>
+      <p class="small muted" style="margin-top:0">
+        {% if kind == 'date' %}Fill in a date and time for each possibility; a label is optional.
+        {% elif kind == 'volunteers' %}One slot per line with how many people you need.
+        {% else %}Leave the rows you don't need blank.{% endif %}
+      </p>
+      {% for row in form.option_rows %}
+        <div class="poll-option-row">
+          {% if row.start %}{{ row.start }}{% endif %}
+          {{ row.label }}
+          {% if row.capacity %}{{ row.capacity }}{% endif %}
+          {{ row.label.errors }}{% if row.start %}{{ row.start.errors }}{% endif %}{% if row.capacity %}{{ row.capacity.errors }}{% endif %}
+        </div>
+      {% endfor %}
+      {% if form.add_opt_out %}
+        <p class="check-row" style="margin-top:.6rem">{{ form.add_opt_out }} <label for="{{ form.add_opt_out.id_for_label }}" style="display:inline">{{ form.add_opt_out.label }}</label></p>
+      {% endif %}
+    </fieldset>
+
+    <div class="grid grid-2">
+      <p>{{ form.closes_at.label_tag }} {{ form.closes_at }}<span class="helptext">{{ form.closes_at.help_text }}</span>{{ form.closes_at.errors }}</p>
+      <p>{{ form.show_results.label_tag }} {{ form.show_results }}{{ form.show_results.errors }}</p>
+    </div>
+    <p class="check-row">{{ form.allow_multiple }} <label for="{{ form.allow_multiple.id_for_label }}" style="display:inline">{{ form.allow_multiple.label }}</label></p>
+
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">Start the poll</button>
+      <a class="btn btn-ghost" href="{% if event %}{{ event.get_absolute_url }}{% else %}{% url 'panel:polls' %}{% endif %}">Cancel</a>
+    </p>
+  </form>
+</div>
+{% endblock %}

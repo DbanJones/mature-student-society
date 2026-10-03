@@ -4,7 +4,8 @@ Moderation model (the "strong admin controls"):
 - every message is stored server-side and admins can review recent traffic
   in the panel (this is disclosed in the UI);
 - admins can remove individual messages (soft-delete: the thread shows a
-  tombstone) and mute members (``User.can_send_messages``);
+  tombstone), mute members, and switch member-to-member messaging on or off
+  (``User.messaging`` and ``SiteConfig.messaging_mode``; see ``policy.py``);
 - members can block each other; blocked pairs cannot exchange messages;
 - shadow-banned members' messages are delivered only to themselves —
   recipients never see them;

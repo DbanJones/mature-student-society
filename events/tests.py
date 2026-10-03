@@ -36,11 +36,17 @@ urlpatterns = [
     ]))),
     path("", include(_stub_patterns("core", [
         "home", "about", "wellbeing", "policies", "terms", "winter_ball",
+        "search", "dismiss_banner",
     ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
     path("faq/", include(_stub_patterns("faq", ["index", "contacts", "colleges", "departments"]))),
     path("me/", include(_stub_patterns("dashboard", ["home"]))),
     path("admin/", include(_stub_patterns("panel", ["home"]))),
+    path("testimonials/", include(_stub_patterns("testimonials", ["index"]))),
+    path("polls/", include("polls.urls")),
+    path("notifications/", include("notifications.urls")),
+    path("posters/", include("posters.urls")),
+    path("p/<slug:slug>/", _stub, name="poster_scan"),
     path("members/", include(([
         path("", _stub, name="directory"),
         path("<str:username>/", _stub, name="profile"),
@@ -230,12 +236,12 @@ class RSVPTests(EventTestCase):
         row.refresh_from_db()
         self.assertEqual(row.status, RSVP.Status.GOING)
 
-    def test_full_event_rejects_new_rsvp(self):
+    def test_full_event_puts_a_new_rsvp_on_the_waitlist(self):
         self.client.force_login(self.other)
         self.client.post(self.rsvp_url(self.full_event))
-        self.assertFalse(
-            RSVP.objects.filter(event=self.full_event, user=self.other).exists()
-        )
+        row = RSVP.objects.get(event=self.full_event, user=self.other)
+        self.assertEqual(row.status, RSVP.Status.WAITING)
+        self.assertEqual(self.full_event.going_count, 1)
 
     def test_full_event_allows_toggling_off_then_frees_a_spot(self):
         self.client.force_login(self.member)  # already going
@@ -461,3 +467,114 @@ class AdditiveFilterTests(EventTestCase):
         response = self.client.get(reverse("events:calendar"), {"cat": "not-a-tag"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Public pub night")  # no filter applied
+
+
+class WaitlistTests(EventTestCase):
+    def test_full_event_offers_the_waitlist_and_promotes_on_cancellation(self):
+        from django.core import mail
+
+        url = reverse("events:rsvp", args=[self.full_event.slug])
+        self.other.email = "other@cam.ac.uk"
+        self.other.save(update_fields=["email"])
+        self.client.force_login(self.other)
+        response = self.client.post(url, follow=True)
+        self.assertContains(response, "on the waitlist (number 1)")
+        waiting = RSVP.objects.get(event=self.full_event, user=self.other)
+        self.assertEqual(waiting.status, RSVP.Status.WAITING)
+        self.assertEqual(self.full_event.going_count, 1)
+
+        # The holder of the only place cancels: the waiter is promoted and told.
+        mail.outbox = []
+        self.client.force_login(self.member)
+        self.client.post(url)
+        waiting.refresh_from_db()
+        self.assertEqual(waiting.status, RSVP.Status.GOING)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("place has opened up", mail.outbox[0].subject)
+        self.assertEqual(mail.outbox[0].to, [self.other.email])
+
+    def test_leaving_the_waitlist(self):
+        RSVP.objects.create(event=self.full_event, user=self.other, status=RSVP.Status.WAITING)
+        self.client.force_login(self.other)
+        response = self.client.get(self.full_event.get_absolute_url())
+        self.assertContains(response, "number 1 on the waitlist")
+        self.client.post(reverse("events:rsvp", args=[self.full_event.slug]))
+        self.assertEqual(
+            RSVP.objects.get(event=self.full_event, user=self.other).status,
+            RSVP.Status.CANCELLED,
+        )
+
+
+class CalendarFileTests(EventTestCase):
+    def test_ics_download_has_the_event(self):
+        response = self.client.get(reverse("events:ics", args=[self.public_event.slug]))
+        self.assertEqual(response["Content-Type"], "text/calendar; charset=utf-8")
+        body = response.content.decode()
+        self.assertIn("BEGIN:VEVENT", body)
+        self.assertIn("SUMMARY:Public pub night", body)
+        self.assertIn("LOCATION:The Free Press", body)
+        self.assertIn(self.public_event.get_absolute_url(), body)
+
+    def test_members_only_ics_needs_login(self):
+        url = reverse("events:ics", args=[self.members_event.slug])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(url).status_code, 200)
+
+    def test_ics_escapes_commas(self):
+        from events.ics import escape
+        self.assertEqual(escape("The Granta, Newnham"), "The Granta" + chr(92) + ", Newnham")
+
+
+class DuplicateAndRepeatTests(EventTestCase):
+    def test_duplicate_prefills_a_create_form_a_week_later(self):
+        self.client.force_login(self.creator)
+        response = self.client.get(reverse("events:duplicate", args=[self.public_event.slug]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="Public pub night"')
+        self.assertContains(response, "copy of")
+        later = timezone.localtime(self.public_event.start + datetime.timedelta(days=7))
+        self.assertContains(response, later.strftime("%Y-%m-%dT%H:%M"))
+
+    def test_repeat_creates_weekly_copies_for_the_creator_only(self):
+        url = reverse("events:repeat", args=[self.public_event.slug])
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.post(url, {"weeks": 2}).status_code, 403)
+        self.client.force_login(self.creator)
+        self.client.post(url, {"weeks": 3})
+        copies = Event.objects.filter(title="Public pub night").exclude(pk=self.public_event.pk)
+        self.assertEqual(copies.count(), 3)
+        self.assertEqual(
+            copies.order_by("start").last().start,
+            self.public_event.start + datetime.timedelta(days=21),
+        )
+        self.assertTrue(all(c.location == "The Free Press" for c in copies))
+
+    def test_repeat_rejects_silly_numbers(self):
+        self.client.force_login(self.creator)
+        self.client.post(reverse("events:repeat", args=[self.public_event.slug]), {"weeks": 40})
+        self.assertEqual(Event.objects.filter(title="Public pub night").count(), 1)
+
+
+class CalendarViewsTests(EventTestCase):
+    def test_agenda_and_grid_both_render_with_a_layout_toggle(self):
+        response = self.client.get(reverse("events:calendar") + "?view=list")
+        self.assertContains(response, 'class="cal-agenda forced"')
+        self.assertContains(response, "Public pub night")
+        response = self.client.get(reverse("events:calendar") + "?view=grid")
+        self.assertContains(response, 'class="cal-grid forced"')
+
+    def test_term_week_labels_appear_when_term_dates_are_set(self):
+        from core.models import SiteConfig
+        config = SiteConfig.get()
+        today = timezone.localdate()
+        config.michaelmas_start = today - datetime.timedelta(days=today.weekday())
+        config.save()
+        response = self.client.get(reverse("events:calendar"))
+        self.assertContains(response, "Michaelmas wk")
+
+    def test_capacity_bar_on_coming_up_rows(self):
+        self.client.force_login(self.member)
+        response = self.client.get(reverse("events:calendar"))
+        self.assertContains(response, "cap-fill")
+        self.assertContains(response, ">full<")

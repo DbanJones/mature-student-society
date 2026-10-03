@@ -1,0 +1,30 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Ban members{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:members' %}">&larr; Members</a></p>
+    <h1>Ban {{ members|length }} member{{ members|length|pluralize }}?</h1>
+    <p class="muted">Their sessions end and they can no longer log in. Admins and already-banned accounts are skipped{% if skipped %} ({{ skipped }} skipped){% endif %}.</p>
+  </div>
+</div>
+{% if members %}
+  <div class="card">
+    <ul class="audit-list">
+      {% for member in members %}<li>{{ member.get_full_name|default:member.username }} <span class="muted small">{{ member.email }}</span></li>{% endfor %}
+    </ul>
+    <form method="post" action="{% url 'panel:members_bulk' %}" style="margin-top:1rem">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="ban">
+      <input type="hidden" name="confirm" value="1">
+      {% for member in members %}<input type="hidden" name="ids" value="{{ member.pk }}">{% endfor %}
+      <button type="submit" class="btn btn-danger">Ban {{ members|length }} member{{ members|length|pluralize }}</button>
+      <a class="btn btn-ghost" href="{% url 'panel:members' %}">Cancel</a>
+    </form>
+  </div>
+{% else %}
+  <div class="empty">Nobody ticked can be banned.</div>
+{% endif %}
+{% endblock %}

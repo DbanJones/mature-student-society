@@ -65,22 +65,50 @@
     <a class="btn btn-ghost btn-small" href="{{ today_query }}">Today</a>
     <a class="btn btn-ghost btn-small" href="{{ next_query }}" aria-label="Next month">Next &rarr;</a>
   </div>
+  <div class="cal-nav cal-view" role="group" aria-label="Layout">
+    <a class="btn btn-small{% if view == 'grid' %} active{% endif %}" href="{{ all_query }}{% if active_slugs %}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}{% endif %}&amp;view=grid">Month</a>
+    <a class="btn btn-small{% if view == 'list' %} active{% endif %}" href="{{ all_query }}{% if active_slugs %}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}{% endif %}&amp;view=list">List</a>
+  </div>
 </div>
 
-<div class="cal-grid">
+<div class="cal-agenda{% if view == 'list' %} forced{% elif view == 'grid' %} hidden-view{% endif %}">
+  {% for day, day_events in agenda %}
+    <div class="agenda-day{% if day == today %} today{% endif %}">
+      <h3 class="agenda-date">{{ day|date:"l j F" }}</h3>
+      <ul class="up-list">
+        {% for event in day_events %}
+          <li class="up-row">
+            <span class="up-main">
+              <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
+              {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
+              {% if event.open_poll_count %}<span class="badge badge-warn">📊 vote</span>{% endif %}
+              <br><a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+              <span class="up-meta">{{ event.start|date:"H:i" }}{% if event.location %} · {{ event.location }}{% endif %}</span>
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% empty %}
+    <div class="empty">Nothing on in {{ month_date|date:"F" }}{% if active_categories %} for those tags{% endif %}.</div>
+  {% endfor %}
+</div>
+
+<div class="cal-grid{% if view == 'list' %} hidden-view{% elif view == 'grid' %} forced{% endif %}">
   <div class="cal-dow">Mon</div><div class="cal-dow">Tue</div><div class="cal-dow">Wed</div>
   <div class="cal-dow">Thu</div><div class="cal-dow">Fri</div><div class="cal-dow">Sat</div>
   <div class="cal-dow">Sun</div>
   {% for week in grid %}
-    {% for cell in week %}
+    {% for cell in week.days %}
       <div class="cal-cell{% if not cell.in_month %} out{% endif %}{% if cell.is_today %} today{% endif %}">
         <span class="cal-daynum" data-full="{{ cell.date|date:'D j F' }}">{{ cell.date.day }}</span>
+        {% if forloop.first and week.label %}<span class="cal-term">{{ week.label }}</span>{% endif %}
         {% for event in cell.events|slice:":3" %}
           <a class="cal-event{% if event.is_super %} super{% elif event.is_official %} official{% endif %}"
              style="--c: {{ event.category.color }};"
              href="{{ event.get_absolute_url }}"
              title="{{ event.title }} — {{ event.start|date:'H:i' }}{% if event.location %} · {{ event.location }}{% endif %}">
-            {% if event.is_super %}<span class="off-star">🌟</span> {% elif event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}</a>
+            {% if event.is_super %}<span class="off-star">🌟</span> {% elif event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}{% if event.open_poll_count %} 📊{% endif %}</a>
         {% endfor %}
         {% if cell.events|length > 3 %}
           <a class="cal-more" href="{{ cell.events.3.get_absolute_url }}">+{{ cell.events|length|add:"-3" }} more</a>
@@ -105,6 +133,7 @@
             {% if event.is_super %}<span class="badge badge-super">Super event</span>
             {% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
             {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
+            {% if event.open_poll_count %}<span class="badge badge-warn">📊 vote</span>{% endif %}
             <br>
             <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
             <span class="up-meta">
@@ -112,7 +141,15 @@
             </span>
           </span>
           <span class="up-going">
-            <span class="muted small">{{ event.going_list|length }} going</span>
+            {% if user.is_authenticated and event.image %}<img class="up-thumb" src="{{ event.image.url }}" alt="">{% endif %}
+            {% if event.capacity %}
+              <span class="cap" title="{{ event.going_list|length }} of {{ event.capacity }} places taken">
+                <span class="cap-track"><span class="cap-fill" style="width:{% widthratio event.going_list|length event.capacity 100 %}%"></span></span>
+                <span class="muted small">{% if event.spots_left %}{{ event.spots_left }} of {{ event.capacity }} left{% else %}full{% endif %}</span>
+              </span>
+            {% else %}
+              <span class="muted small">{{ event.going_list|length }} going</span>
+            {% endif %}
             {% if user.is_authenticated %}
               <span class="avatars">
                 {% for rsvp in event.going_list|slice:":6" %}

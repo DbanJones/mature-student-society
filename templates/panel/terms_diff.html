@@ -1,0 +1,16 @@
+{% extends "panel/base_panel.html" %}
+{% load static %}
+
+{% block title %}Terms v{{ newer.version_number }}: what changed{% endblock %}
+{% block extra_css %}{{ block.super }}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:terms' %}">&larr; Terms</a></p>
+    <h1>Terms v{{ newer.version_number }}: what changed</h1>
+    <p class="muted">{{ newer.get_action_display }} by {{ newer.editor.get_full_name|default:newer.editor.username|default:"a former admin" }} on {{ newer.created_at|date:"D j M Y, H:i" }}.</p>
+  </div>
+</div>
+{% include "core/_diff.html" %}
+{% endblock %}

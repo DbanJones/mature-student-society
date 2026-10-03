@@ -43,3 +43,31 @@ def send_associate_invite(user, request):
         recipient_list=[user.email],
     )
     return url
+
+
+def send_profile_reminder(user, request):
+    """Email a member who logged in but never finished the terms/profile
+    step. Sent from the panel's "Remind" action."""
+    login_url = request.build_absolute_uri(reverse("accounts:login"))
+    first_name = user.first_name or "there"
+    body = f"""Hi {first_name},
+
+You started setting up your account on the University of Cambridge Mature
+Student Society members' portal but didn't quite finish. Completing your
+details takes about a minute, and until then you won't appear in the members
+directory or be able to RSVP to events.
+
+Pick up where you left off:
+
+    {login_url}
+
+If you'd rather not have an account, you can ignore this email.
+
+— The MSS committee
+"""
+    send_mail(
+        subject="Finish setting up your MSS account",
+        message=body,
+        from_email=None,
+        recipient_list=[user.email],
+    )

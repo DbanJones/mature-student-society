@@ -1,0 +1,78 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Navigation{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Navigation</h1>
+    <p class="muted">
+      Who sees each built-in tab. “What's on”, “The Guide”, the dashboard and
+      this admin area are always visible. Admins see everything that isn't
+      hidden, so you can always find your way back here.
+    </p>
+  </div>
+</div>
+
+<div class="grid grid-2" style="align-items:start">
+  <div class="card">
+    <h2>Built-in tabs</h2>
+    <form method="post">
+      {% csrf_token %}
+      {% for field in tabs_form %}
+        <p>
+          {{ field.label_tag }} {{ field }}
+          {{ field.errors }}
+        </p>
+      {% endfor %}
+      <button type="submit" class="btn">Save visibility</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Announcement banner</h2>
+    <p class="small muted">Shown under the header on every page{% if banner_live %}: <span class="badge badge-ok">live now</span>{% else %}: <span class="badge">not showing</span>{% endif %}.</p>
+    <form method="post" action="{% url 'panel:banner' %}">
+      {% csrf_token %}
+      <p>{{ banner_form.banner_text.label_tag }} {{ banner_form.banner_text }}<span class="helptext">{{ banner_form.banner_text.help_text }}</span>{{ banner_form.banner_text.errors }}</p>
+      <p>{{ banner_form.banner_until.label_tag }} {{ banner_form.banner_until }}<span class="helptext">{{ banner_form.banner_until.help_text }}</span>{{ banner_form.banner_until.errors }}</p>
+      <button type="submit" class="btn btn-small">Save banner</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Term dates</h2>
+    <p class="small muted">The Tuesday each Full Term begins. With these set, the calendar labels each week “Michaelmas wk 3” and so on.</p>
+    <form method="post" action="{% url 'panel:term_dates' %}">
+      {% csrf_token %}
+      {{ term_form.as_p }}
+      <button type="submit" class="btn btn-small">Save term dates</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Managed pages in the nav</h2>
+    <p class="small muted">
+      A page appears under “About” when it has a navigation label. Set the
+      label, audience and order on the <a href="{% url 'panel:pages' %}">Pages</a> tab.
+    </p>
+    {% if nav_pages %}
+      <table class="data">
+        <thead><tr><th>Label</th><th>Page</th><th>Audience</th><th>Order</th></tr></thead>
+        <tbody>
+          {% for page in nav_pages %}
+            <tr>
+              <td><strong>{{ page.nav_label }}</strong>{% if not page.is_published %} <span class="badge badge-danger">Unpublished</span>{% endif %}</td>
+              <td class="small"><a href="{% url 'panel:page_edit' page.pk %}">{{ page.title }}</a></td>
+              <td class="small">{{ page.get_nav_visibility_display }}</td>
+              <td class="small">{{ page.sort_order }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted small" style="margin:0">No managed pages in the navigation.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

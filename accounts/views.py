@@ -323,6 +323,7 @@ def member_profile(request, username):
         username=username,
     )
     from events.models import RSVP, Event
+    from inbox.policy import can_message
 
     now = timezone.now()
     hosting = (
@@ -345,6 +346,7 @@ def member_profile(request, username):
         "hosted_count": member.events_created.filter(is_cancelled=False).count(),
         "tags_owned": member.tags_owned.all(),
         "is_self": member == request.user,
+        "can_message": can_message(request.user, member),
     })
 
 
