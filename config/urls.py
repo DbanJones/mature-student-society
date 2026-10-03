@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 
 from config.media import protected_media
+from posters.views import scan as poster_scan
 
 urlpatterns = [
     path("", include("core.urls")),
@@ -13,6 +14,10 @@ urlpatterns = [
     path("testimonials/", include("testimonials.urls")),
     path("polls/", include("polls.urls")),
     path("notifications/", include("notifications.urls")),
+    path("posters/", include("posters.urls")),
+    # The short link printed in poster QR codes: counts the scan, then sends
+    # the phone on to the event page.
+    path("p/<slug:slug>/", poster_scan, name="poster_scan"),
     path("members/", include("accounts.member_urls")),
     path("messages/", include("inbox.urls")),
     path("me/", include("dashboard.urls")),

@@ -144,6 +144,17 @@ class MessagingSettingsForm(forms.Form):
     )
 
 
+class MapSettingsForm(forms.Form):
+    """Super admin: the Geoapify key behind poster maps and venue look-ups."""
+
+    geoapify_api_key = forms.CharField(
+        required=False, label="Geoapify API key",
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        help_text="Free at geoapify.com (3,000 map and geocoding requests a day). "
+                  "Leave blank to keep the current key; type CLEAR to remove it.",
+    )
+
+
 class WhatsAppSettingsForm(forms.Form):
     """Admins: rotate the group invite link (SiteConfig)."""
 

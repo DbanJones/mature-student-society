@@ -46,6 +46,7 @@ Run the test suite:
 | `/notifications/` | A member's notifications |
 | `/search/` | Site-wide search |
 | `/me/calendar.ics?token=…` | A member's personal calendar feed |
+| `/posters/<event>/` | Poster studio: print to PDF, PNG for WhatsApp; `/p/<event>/` is the QR short link |
 | `/me/` | Member dashboard |
 | `/accounts/…` | Login (Raven / associate), profile, waitlist, WhatsApp invite |
 | `/admin/` | Society admin panel (approvals, members, stats, mailer, audit) |

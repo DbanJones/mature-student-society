@@ -52,6 +52,7 @@ from .forms import (
     DepartmentContactForm,
     EmailSettingsForm,
     MailerForm,
+    MapSettingsForm,
     MemberEditForm,
     MessagingSettingsForm,
     SitePageForm,
@@ -1249,8 +1250,33 @@ def superadmin(request):
             "email_tone": config.email_tone,
             "email_ai_engine": config.email_ai_engine,
         }),
+        "map_form": MapSettingsForm(),
         "config": config,
     })
+
+
+@super_admin_required
+@require_POST
+def superadmin_maps(request):
+    config = SiteConfig.get()
+    form = MapSettingsForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Couldn't save the map key.")
+        return redirect("panel:superadmin")
+    key = form.cleaned_data["geoapify_api_key"].strip()
+    if key == "CLEAR":
+        config.geoapify_api_key = ""
+        config.save()
+        AuditLog.record(request.user, "update_map_key", detail="cleared")
+        messages.success(request, "Map key removed. Posters show a directions code instead of a map.")
+    elif key:
+        config.geoapify_api_key = key
+        config.save()
+        AuditLog.record(request.user, "update_map_key", detail="set")
+        messages.success(request, "Map key saved. Posters can now show a map.")
+    else:
+        messages.info(request, "Nothing changed.")
+    return redirect("panel:superadmin")
 
 
 @super_admin_required
@@ -1634,6 +1660,7 @@ def stats(request):
         "heatmap": charts.heatmap(heat_rows, heat_cols),
         "tag_rows": services.tag_performance(),
         "poll_rows": services.poll_turnout(),
+        "scan_rows": services.poster_scans(),
         "summary": services.stats_summary(),
         "by_college": services.members_by_college(),
         "by_category": services.events_by_category(),

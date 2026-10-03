@@ -69,6 +69,7 @@ urlpatterns = [
     # Super admin (webmaster) only.
     path("super/", views.superadmin, name="superadmin"),
     path("super/email/", views.superadmin_email, name="superadmin_email"),
+    path("super/maps/", views.superadmin_maps, name="superadmin_maps"),
     path("super/tags/new/", views.tag_create, name="tag_create"),
     path("super/tags/<int:pk>/", views.tag_admin_edit, name="tag_admin_edit"),
     path("super/tags/<int:pk>/delete/", views.tag_delete, name="tag_delete"),

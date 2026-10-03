@@ -30,6 +30,7 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | testimonials | Testimonial | Members' testimonials, approved by admins before they go public |
 | polls | Poll, PollOption, PollVote | Venue/date polls that set their event on closing, volunteer rotas, general polls |
 | notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
+| posters | EventPoster, PosterScan | One-button event posters: laid out server-side as SVG, printed and exported in the browser, nothing stored |
 | faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
 | panel | MailLog, AuditLog | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
 | dashboard | KeepyUppyScore | Member dashboard |
@@ -180,6 +181,23 @@ feed at `/me/calendar.ics` (reset from the dashboard). A full event puts
 new RSVPs on a waitlist and promotes the first in line when someone drops
 out. Events can be duplicated a week on, or repeated weekly for up to 12
 weeks.
+
+## Event posters
+
+Any logged-in member can make a poster for an event (`/posters/<slug>/`).
+`posters/layout.py` lays it out as a scene of primitives in the poster's own
+units (mm for A4/A3, pixels for square and story), measuring text with the
+bundled fonts (static/fonts, SIL OFL) so line breaks match what prints;
+`templates/posters/_scene.svg` draws it. The browser does the rest: the
+print page uses `@page` sizes so Save as PDF gives vector text, PNGs come
+from a canvas, and a photo chosen on the device is read with FileReader and
+kept in that browser's storage, never uploaded. The QR code (segno) encodes
+`/p/<slug>/`, a redirect that counts scans. The map is a Geoapify static
+image proxied by `posters.views.map_image` so the key (SiteConfig) never
+reaches the browser; venues are geocoded once and cached on the event. The
+organiser's choices live in one `EventPoster` row; other members' tweaks are
+query-string overrides that are never saved. The SRCF stores no poster
+files.
 
 ## Visual layer
 

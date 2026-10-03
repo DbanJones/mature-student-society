@@ -62,6 +62,20 @@
     </div>
 
     <div class="card">
+      <h2>Poster maps</h2>
+      <p class="small muted">
+        Event posters draw a small map of the venue through Geoapify. The key
+        stays on the server
+        {% if config.geoapify_api_key %}(current: <code>{{ config.geoapify_api_key_hint }}</code>){% else %}(none saved: posters show a directions QR code instead){% endif %}.
+      </p>
+      <form method="post" action="{% url 'panel:superadmin_maps' %}">
+        {% csrf_token %}
+        <p>{{ map_form.geoapify_api_key.label_tag }} {{ map_form.geoapify_api_key }}<span class="helptext">{{ map_form.geoapify_api_key.help_text }}</span></p>
+        <button type="submit" class="btn">Save map key</button>
+      </form>
+    </div>
+
+    <div class="card">
       <h2>Email settings</h2>
       <p class="small muted">
         The API key is stored server-side and only ever shown masked

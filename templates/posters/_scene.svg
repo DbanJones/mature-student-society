@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="{{ scene.view_box }}" class="poster-svg" data-w="{{ scene.w }}" data-h="{{ scene.h }}" data-bleed="{{ scene.bleed }}" role="img" aria-label="Poster for {{ event.title }}">
+  <defs>
+    {% for d in scene.defs %}
+      {% if d.t == 'clip' %}<clipPath id="{{ d.id }}"><rect x="{{ d.x }}" y="{{ d.y }}" width="{{ d.w }}" height="{{ d.h }}" rx="{{ d.rx }}"/></clipPath>
+      {% elif d.t == 'grad' %}<linearGradient id="{{ d.id }}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{{ d.colour }}" stop-opacity="1"/><stop offset=".55" stop-color="{{ d.colour }}" stop-opacity=".82"/><stop offset="1" stop-color="#14352a" stop-opacity=".95"/></linearGradient>
+      {% elif d.t == 'shade' %}<linearGradient id="{{ d.id }}" x1="0" y1="0" x2="0" y2="1"><stop offset=".3" stop-color="#0a0804" stop-opacity="0"/><stop offset=".6" stop-color="#0a0804" stop-opacity=".62"/><stop offset="1" stop-color="#0a0804" stop-opacity=".9"/></linearGradient>
+      {% endif %}
+    {% endfor %}
+    <pattern id="grain" width="{{ scene.u|floatformat:3 }}" height="{{ scene.u|floatformat:3 }}" patternUnits="userSpaceOnUse"><circle cx="{{ scene.u|floatformat:3 }}" cy="{{ scene.u|floatformat:3 }}" r="{{ grain_r }}" fill="#ffffff" fill-opacity=".35"/></pattern>
+  </defs>
+  {% for el in scene.items %}
+    {% if el.t == 'rect' %}<rect x="{{ el.x }}" y="{{ el.y }}" width="{{ el.w }}" height="{{ el.h }}" rx="{{ el.rx }}" fill="{{ el.fill }}"{% if el.opacity %} fill-opacity="{{ el.opacity }}"{% endif %}/>
+    {% elif el.t == 'grain' %}<rect x="{{ el.x }}" y="{{ el.y }}" width="{{ el.w }}" height="{{ el.h }}" fill="url(#grain)" clip-path="url(#{{ el.clip }})"/>
+    {% elif el.t == 'photo' %}<image id="photo" data-panel="{{ el.panel.0 }} {{ el.panel.1 }} {{ el.panel.2 }} {{ el.panel.3 }}" href="{{ el.href }}" x="{{ el.x }}" y="{{ el.y }}" width="{{ el.w }}" height="{{ el.h }}" preserveAspectRatio="none" clip-path="url(#{{ el.clip }})"{% if el.hidden %} display="none"{% endif %}/>
+    {% elif el.t == 'image' %}<image href="{{ el.href }}" x="{{ el.x }}" y="{{ el.y }}" width="{{ el.w }}" height="{{ el.h }}" preserveAspectRatio="{% if el.cover %}xMidYMid slice{% else %}xMidYMid meet{% endif %}"{% if el.clip %} clip-path="url(#{{ el.clip }})"{% endif %}/>
+    {% elif el.t == 'qr' %}{{ el.svg|safe }}
+    {% elif el.t == 'line' %}<line x1="{{ el.x1 }}" y1="{{ el.y1 }}" x2="{{ el.x2 }}" y2="{{ el.y2 }}" stroke="#1a2420" stroke-width=".2"/>
+    {% elif el.t == 'text' %}<text x="{{ el.x }}" y="{{ el.y }}" font-family='{{ el.family }}' font-size="{{ el.size }}" font-weight="{{ el.weight }}" fill="{{ el.fill }}" text-anchor="{{ el.anchor }}"{% if el.ls %} letter-spacing="{{ el.ls }}"{% endif %}>{% for line in el.lines %}<tspan x="{{ el.x }}"{% if not forloop.first %} dy="{{ el.dy }}"{% endif %}>{{ line }}</tspan>{% endfor %}</text>
+    {% endif %}
+  {% endfor %}
+</svg>

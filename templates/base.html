@@ -9,7 +9,8 @@
   {% block extra_css %}{% endblock %}
   <link rel="icon" type="image/png" href="{% static 'img/lion-mark.png' %}">
 </head>
-<body class="{% if user.is_authenticated %}has-tab-bar{% endif %}">
+<body class="no-js {% if user.is_authenticated %}has-tab-bar{% endif %}">
+<script>document.body.classList.remove("no-js");</script>
 <a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">

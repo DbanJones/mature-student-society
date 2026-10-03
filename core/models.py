@@ -83,6 +83,12 @@ class SiteConfig(models.Model):
         help_text="Which AI engine drafts society emails (uses the API key "
                   "above).",
     )
+    geoapify_api_key = models.CharField(
+        max_length=80, blank=True,
+        help_text="Geoapify key for the poster map and venue look-ups. "
+                  "Stored server-side; blank means posters show a directions "
+                  "QR code instead of a map.",
+    )
     email_tone = models.TextField(
         blank=True,
         help_text="Tone-of-voice instructions for anyone (or anything) "
@@ -138,6 +144,13 @@ class SiteConfig(models.Model):
     def tab_visibility_for(self, key):
         default = next((d for k, _, d in BUILTIN_TABS if k == key), "public")
         return self.tab_visibility.get(key, default)
+
+    @property
+    def geoapify_api_key_hint(self):
+        key = self.geoapify_api_key
+        if not key:
+            return ""
+        return f"{key[:3]}…{key[-4:]}" if len(key) > 8 else "•" * len(key)
 
     @property
     def email_api_key_hint(self):

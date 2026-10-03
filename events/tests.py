@@ -45,6 +45,8 @@ urlpatterns = [
     path("testimonials/", include(_stub_patterns("testimonials", ["index"]))),
     path("polls/", include("polls.urls")),
     path("notifications/", include("notifications.urls")),
+    path("posters/", include("posters.urls")),
+    path("p/<slug:slug>/", _stub, name="poster_scan"),
     path("members/", include(([
         path("", _stub, name="directory"),
         path("<str:username>/", _stub, name="profile"),

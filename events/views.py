@@ -296,6 +296,7 @@ def detail(request, slug):
     return render(request, "events/detail.html", {
         "poll_cards": poll_cards,
         "can_message_host": can_message_host,
+        "poster_scans": event.poster_scans.count() if event.can_edit(request.user) else 0,
         "nav_active": "calendar",
         "event": event,
         "attendees": attendees,
@@ -311,6 +312,15 @@ def detail(request, slug):
         "can_edit": event.can_edit(request.user),
         "share_url": share_url,
     })
+
+
+def _geocode_quietly(event):
+    """Look the venue up for the poster map; never let it break a save."""
+    try:
+        from posters.geocode import ensure_geocoded
+        ensure_geocoded(event)
+    except Exception:
+        pass
 
 
 def _ratings_map():
@@ -330,6 +340,7 @@ def create(request):
         if not event.host:
             event.host = request.user
         event.save()
+        _geocode_quietly(event)
         messages.success(
             request,
             "Event created — it's on the calendar. Use “Share to WhatsApp” "
@@ -354,8 +365,13 @@ def edit(request, slug):
         instance=event, user=request.user, is_create=False,
     )
     old_start = event.start
+    old_location = event.location
     if request.method == "POST" and form.is_valid():
         form.save()  # created_by untouched: admins editing don't take ownership
+        if event.location != old_location:
+            event.latitude = event.longitude = event.geocoded_at = None
+            event.save(update_fields=["latitude", "longitude", "geocoded_at"])
+            _geocode_quietly(event)
         if event.start != old_start and not event.is_past:
             tell_attendees_moved(event, old_start, actor=request.user)
         messages.success(request, "Event updated.")

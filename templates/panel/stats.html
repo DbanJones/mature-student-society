@@ -83,6 +83,19 @@
       </table>
     {% else %}<p class="muted">No events yet.</p>{% endif %}
   </div>
+  {% if scan_rows %}
+    <div class="card">
+      <h3>Poster scans</h3>
+      <p class="small muted" style="margin-top:-.3rem">QR codes scanned, per event poster.</p>
+      {% for row in scan_rows %}
+        <div class="bar-row">
+          <span class="small" title="{{ row.label }}">{{ row.label|truncatechars:28 }}</span>
+          <div class="bar-track"><div class="bar-fill" style="width:{{ row.pct }}%"></div></div>
+          <span class="small muted">{{ row.count }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
   {% if poll_rows %}
     <div class="card">
       <h3>Poll turnout</h3>

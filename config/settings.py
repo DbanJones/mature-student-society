@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     "testimonials",
     "polls",
     "notifications",
+    "posters",
 ]
 
 MIDDLEWARE = [

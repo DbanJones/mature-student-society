@@ -2,6 +2,7 @@
 Django>=5.2,<5.3
 Markdown>=3.5
 Pillow>=10.0
+segno>=1.6          # QR codes for event posters (pure Python)
 
 # Production on SRCF (uncomment / install there)
 # mozilla-django-oidc>=4.0     # Raven OIDC login — see DEPLOYMENT_SRCF.md

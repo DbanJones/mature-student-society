@@ -172,6 +172,12 @@ class Event(models.Model):
     )
     is_cancelled = models.BooleanField(default=False)
 
+    # Where the venue is, looked up once from ``location`` for the poster
+    # map (posters.geocode). geocoded_at records that a lookup was attempted.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    geocoded_at = models.DateTimeField(null=True, blank=True)
+
     # Supper Club: which restaurant this outing is to (enables ratings).
     restaurant = models.ForeignKey(
         "supper.Restaurant", null=True, blank=True, on_delete=models.SET_NULL,

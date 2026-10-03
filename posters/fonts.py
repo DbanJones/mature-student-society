@@ -1,0 +1,79 @@
+"""Text measuring for the poster layout, using the same font files the
+browser renders with (static/fonts), so line breaks decided here match
+what is printed."""
+
+from functools import lru_cache
+from pathlib import Path
+
+from django.conf import settings
+from PIL import ImageFont
+
+FONT_DIR = Path(settings.BASE_DIR) / "static" / "fonts"
+FILES = {
+    "display": "LibreCaslonText-Variable.ttf",
+    "body": "SourceSans3-Variable.ttf",
+}
+FAMILIES = {
+    "display": '"Libre Caslon Text", "Iowan Old Style", Palatino, Georgia, serif',
+    "body": '"Source Sans 3", "Segoe UI", system-ui, sans-serif',
+}
+MEASURE_PX = 100
+
+
+@lru_cache(maxsize=16)
+def _font(key, weight):
+    try:
+        font = ImageFont.truetype(str(FONT_DIR / FILES[key]), MEASURE_PX)
+        try:
+            font.set_variation_by_axes([weight])
+        except Exception:
+            pass
+        return font
+    except OSError:
+        return None
+
+
+def width(text, key="body", size=1.0, weight=400, letter_spacing=0.0):
+    """Width of ``text`` at ``size`` (any unit) in the same unit."""
+    font = _font(key, weight)
+    if font is None:
+        # Font file missing: a conservative average glyph width.
+        base = len(text) * (0.56 if key == "body" else 0.6)
+    else:
+        base = font.getlength(text) / MEASURE_PX
+    return base * size + letter_spacing * size * max(0, len(text) - 1)
+
+
+def wrap(text, max_width, key="body", size=1.0, weight=400, max_lines=None):
+    """Greedy word wrap. Returns the lines; a final line may be truncated with
+    an ellipsis when ``max_lines`` is set."""
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if current and width(candidate, key, size, weight) > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    if max_lines and len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last and width(last + "…", key, size, weight) > max_width:
+            last = last.rsplit(" ", 1)[0] if " " in last else last[:-1]
+        lines[-1] = last + "…"
+    return lines
+
+
+def fit(text, max_width, key, size, weight, max_lines, min_size):
+    """Shrink ``size`` in 8% steps until ``text`` wraps within ``max_lines``.
+    Returns (size, lines)."""
+    while True:
+        lines = wrap(text, max_width, key, size, weight)
+        if len(lines) <= max_lines or size <= min_size:
+            if len(lines) > max_lines:
+                lines = wrap(text, max_width, key, size, weight, max_lines=max_lines)
+            return size, lines
+        size *= 0.92

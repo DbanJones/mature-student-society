@@ -106,6 +106,8 @@ you were before; your admin rights are unchanged.
   the calendar labels term weeks.
 - **Testimonials** is a new public page under About. Hide the tab on Content
   → Navigation until the first testimonials are approved, if you'd rather.
+- **Poster maps** need a free Geoapify key pasted into the Super admin tab;
+  without one, posters print a "scan for directions" code instead of a map.
 - **Polls close on time** even when nobody visits if this cron line runs on
   `sinkhole` (`crontab -e`):
   ```

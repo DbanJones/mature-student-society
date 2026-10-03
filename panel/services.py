@@ -524,3 +524,12 @@ def member_timeline(member, limit=30):
         {"when": when, "emoji": emoji, "text": text, "url": url}
         for when, emoji, text, url in items[:limit]
     ]
+
+
+def poster_scans(limit=8):
+    """Events whose poster QR codes have been scanned, most first."""
+    rows = (
+        Event.objects.annotate(scans=Count("poster_scans"))
+        .filter(scans__gt=0).order_by("-scans", "-start")[:limit]
+    )
+    return _with_pct([{"label": e.title, "count": e.scans} for e in rows])

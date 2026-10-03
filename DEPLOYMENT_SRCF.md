@@ -265,6 +265,10 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 
 - **Quota**: 2 GB default (`srcf-quota` to check). Profile photos are resized
   on upload, but request more quota from the sysadmins before a big intake.
+- **Poster maps**: create a free Geoapify account (geoapify.com), make an API
+  key and paste it into the portal's Super admin tab. Without it posters
+  print a "scan for directions" code instead of a map. The key never
+  reaches browsers: the server fetches each map image and passes it through.
 - **Cron**: polls close themselves when loaded, but to apply results (and
   email attendees) on time even when nobody visits, add on sinkhole:
   `*/15 * * * * cd /societies/<soc>/portal && set -a && . ./.env && set +a && .venv/bin/python manage.py close_polls`
