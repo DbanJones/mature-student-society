@@ -92,7 +92,7 @@ class StudioTests(PosterTestCase):
         self.assertContains(response, "Make a poster")
         self.assertContains(response, "Quiz night at the Castle Inn")
         self.assertContains(response, 'class="poster-svg"')
-        self.assertNotContains(response, "Save settings for everyone")
+        self.assertNotContains(response, "Save as the default")
         svg = self.client.get(self.svg + "?template=bold&size=square")
         self.assertEqual(svg["Content-Type"], "image/svg+xml; charset=utf-8")
         body = svg.content.decode()

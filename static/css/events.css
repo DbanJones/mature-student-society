@@ -147,3 +147,22 @@
 .cap { display: inline-flex; flex-direction: column; gap: .2rem; min-width: 7rem; }
 .cap-track { display: block; height: 7px; border-radius: 99px; background: var(--sage-100); overflow: hidden; }
 .cap-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--pine-700), var(--brick)); border-radius: 99px; }
+
+/* --- groups index ------------------------------------------------- */
+.group-grid {
+  list-style: none; margin: 1rem 0 0; padding: 0;
+  display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.group-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  border-top: 5px solid var(--tag-color); padding: 1rem 1.1rem;
+  display: flex; flex-direction: column; gap: .45rem;
+}
+.group-card-link {
+  display: flex; align-items: center; gap: .55rem; text-decoration: none;
+  font-family: var(--font-display, inherit); font-size: 1.2rem; color: var(--heading); font-weight: 700;
+}
+.group-card-link:hover .group-card-name { text-decoration: underline; }
+.group-card-emoji { font-size: 1.4rem; line-height: 1; }
+.group-card-blurb { margin: 0; color: var(--ink-soft); }
+.group-card-next { margin: auto 0 0; }

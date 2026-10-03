@@ -5,62 +5,74 @@
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/posters.css' %}">{% endblock %}
 
 {% block content %}
-<div class="page-head">
-  <div>
-    <p class="small" style="margin-bottom:.4rem"><a href="{{ event.get_absolute_url }}">&larr; {{ event.title }}</a></p>
-    <h1>Make a poster</h1>
-    <p class="lede">Pick a look and a size, add a photo if you like, then print it or save it. The poster is made in your browser and saved to your device.</p>
-  </div>
-  {% if scan_count is not None %}
-    <div class="actions"><span class="badge">📊 {{ scan_count }} scan{{ scan_count|pluralize }} so far</span></div>
-  {% endif %}
+<p class="small studio-back"><a href="{{ event.get_absolute_url }}">&larr; {{ event.title }}</a></p>
+<div class="studio-head">
+  <h1>Make a poster</h1>
+  {% if scan_count is not None %}<span class="badge">📊 {{ scan_count }} scan{{ scan_count|pluralize }}</span>{% endif %}
 </div>
 
 <div class="studio">
-  <form id="poster-form" method="get" class="studio-controls card" action="{% url 'posters:studio' event.slug %}">
-    <fieldset><legend>Look</legend><div class="seg">{% for radio in form.template %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
-      <p class="helptext">Classic puts the picture on top. Bold needs no picture. Photo fills the sheet with it.</p></fieldset>
-    <fieldset><legend>Size</legend><div class="seg">{% for radio in form.size %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
-      <p class="helptext">A4 and A3 print to PDF. Square and Story are for WhatsApp and Instagram.</p></fieldset>
-    <fieldset><legend>Picture</legend>
-      <p class="check-row"><input type="hidden" name="use_event_picture" value="">{{ form.use_event_picture }} <label for="{{ form.use_event_picture.id_for_label }}" style="display:inline">Use the event picture{% if not event.image %} <span class="muted">(none uploaded)</span>{% endif %}</label></p>
-      <p><label for="device-photo">Or choose a photo from this device</label><input type="file" id="device-photo" accept="image/*"><span class="helptext">Stays on your device; never uploaded. Click the picture in the preview to set where it's centred.</span></p>
-      <p class="small"><button type="button" class="linklike" id="clear-photo" hidden>Remove the device photo</button></p>
+  <form id="poster-form" method="get" class="studio-controls" action="{% url 'posters:studio' event.slug %}">
+    <div class="studio-step">
+      <h2>Look</h2>
+      <div class="seg">{% for radio in form.template %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
+    </div>
+    <div class="studio-step">
+      <h2>Size</h2>
+      <div class="seg">{% for radio in form.size %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
+    </div>
+    <div class="studio-step">
+      <h2>Photo</h2>
+      <label class="btn btn-ghost btn-small file-btn">📷 Choose a photo<input type="file" id="device-photo" accept="image/*"></label>
+      <button type="button" class="linklike" id="clear-photo" hidden>Remove photo</button>
+      {% if event.image %}
+        <p class="check-row"><input type="hidden" name="use_event_picture" value="">{{ form.use_event_picture }} <label for="{{ form.use_event_picture.id_for_label }}">Use the event picture</label></p>
+      {% endif %}
+      <p class="studio-hint">Your photo stays on this device. Click it in the preview to move the centre.</p>
       {{ form.focal_x }}{{ form.focal_y }}
-    </fieldset>
-    <fieldset><legend>Colour</legend><div class="seg">{% for radio in form.accent %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div></fieldset>
-    <fieldset><legend>Words</legend>
-      <p>{{ form.headline.label_tag }} {{ form.headline }}<span class="helptext">{{ form.headline.help_text }}</span></p>
-      <p>{{ form.extra_line.label_tag }} {{ form.extra_line }}<span class="helptext">{{ form.extra_line.help_text }}</span></p>
-    </fieldset>
-    <fieldset><legend>Show</legend>
-      <p class="check-row"><input type="hidden" name="show_qr" value="">{{ form.show_qr }} <label for="{{ form.show_qr.id_for_label }}" style="display:inline">QR code</label></p>
-      <p class="check-row"><input type="hidden" name="show_map" value="">{{ form.show_map }} <label for="{{ form.show_map.id_for_label }}" style="display:inline">Map{% if not has_map_key %} <span class="muted">(no map key yet: a directions code is used)</span>{% endif %}</label></p>
-      <p class="check-row"><input type="hidden" name="show_description" value="">{{ form.show_description }} <label for="{{ form.show_description.id_for_label }}" style="display:inline">Description</label></p>
-      <p class="check-row"><input type="hidden" name="show_host" value="">{{ form.show_host }} <label for="{{ form.show_host.id_for_label }}" style="display:inline">Host and places</label></p>
-      <p class="check-row"><input type="hidden" name="print_marks" value="">{{ form.print_marks }} <label for="{{ form.print_marks.id_for_label }}" style="display:inline">Bleed and crop marks</label><span class="helptext">{{ form.print_marks.help_text }}</span></p>
-    </fieldset>
-    <p><button type="submit" class="btn btn-ghost btn-small no-js-only">Update preview</button></p>
+    </div>
+    <div class="studio-step">
+      <h2><label for="{{ form.extra_line.id_for_label }}">Extra line</label></h2>
+      {{ form.extra_line }}
+      <p class="studio-hint">Optional, e.g. “Tickets £5 · all welcome”.</p>
+    </div>
+
+    <details class="studio-more">
+      <summary>More options</summary>
+      <div class="studio-step">
+        <h3>Colour</h3>
+        <div class="seg">{% for radio in form.accent %}<label class="seg-opt">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>{% endfor %}</div>
+      </div>
+      <div class="studio-step">
+        <h3><label for="{{ form.headline.id_for_label }}">Headline</label></h3>
+        {{ form.headline }}
+        <p class="studio-hint">Leave blank to use the event title.</p>
+      </div>
+      <div class="studio-step">
+        <h3>Show</h3>
+        <p class="check-row"><input type="hidden" name="show_qr" value="">{{ form.show_qr }} <label for="{{ form.show_qr.id_for_label }}">QR code</label></p>
+        <p class="check-row"><input type="hidden" name="show_map" value="">{{ form.show_map }} <label for="{{ form.show_map.id_for_label }}">Map</label></p>
+        <p class="check-row"><input type="hidden" name="show_description" value="">{{ form.show_description }} <label for="{{ form.show_description.id_for_label }}">Description</label></p>
+        <p class="check-row"><input type="hidden" name="show_host" value="">{{ form.show_host }} <label for="{{ form.show_host.id_for_label }}">Host and places</label></p>
+        <p class="check-row"><input type="hidden" name="print_marks" value="">{{ form.print_marks }} <label for="{{ form.print_marks.id_for_label }}">Crop marks for a print shop</label></p>
+      </div>
+      <p class="studio-hint"><a id="svg-link" href="{{ svg_url }}&download=1">Download as SVG</a> for design software.</p>
+    </details>
+    <p class="no-js-only"><button type="submit" class="btn btn-ghost btn-small">Update preview</button></p>
   </form>
 
   <div class="studio-preview">
     <div id="preview" class="preview-sheet" data-svg-url="{% url 'posters:svg' event.slug %}" data-print-url="{% url 'posters:print' event.slug %}" data-slug="{{ event.slug }}">{{ svg|safe }}</div>
     <div class="preview-actions">
-      <a id="print-link" class="btn btn-accent" href="{{ print_url }}&print=1" target="_blank" rel="noopener">Print / Save as PDF</a>
-      <button type="button" id="png-btn" class="btn" hidden>Save PNG</button>
-      <a id="svg-link" class="btn btn-ghost" href="{{ svg_url }}&download=1">SVG</a>
+      <a id="print-link" class="btn btn-accent" href="{{ print_url }}&print=1" target="_blank" rel="noopener">🖨️ Print or save PDF</a>
+      <button type="button" id="png-btn" class="btn btn-ghost" hidden>Save image</button>
       {% if can_save %}
         <form method="post" id="save-form" action="{% url 'posters:studio' event.slug %}">{% csrf_token %}
           {% for field in form %}{% if field.name != 'focal_x' and field.name != 'focal_y' %}<input type="hidden" name="{{ field.name }}" value="{{ field.value|default_if_none:'' }}">{% else %}<input type="hidden" name="{{ field.name }}" value="{{ field.value|default_if_none:'0.5' }}">{% endif %}{% endfor %}
-          <button type="submit" class="btn btn-ghost">Save settings for everyone</button>
+          <button type="submit" class="btn btn-ghost" title="Everyone who opens this poster starts from these choices">Save as the default</button>
         </form>
       {% endif %}
     </div>
-    <p class="small muted">
-      {% if saved %}Saved by {{ saved.saved_by.get_full_name|default:"an organiser" }} on {{ saved.saved_at|date:"j M Y" }}.{% else %}Not saved yet: the organiser can save these settings so everyone starts from them.{% endif %}
-      {% if not can_save %}Your changes here apply to your own print only.{% endif %}
-      PNG export needs JavaScript; printing does not.
-    </p>
   </div>
 </div>
 {% endblock %}

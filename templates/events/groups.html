@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Groups{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Groups</h1>
+    <p class="lede">Clubs and regular meet-ups run by members. Each group has its own page with what's coming up and who runs it.</p>
+  </div>
+  <a class="btn btn-ghost" href="{% url 'events:calendar' %}">📅 Event Calendar</a>
+</div>
+
+<ul class="group-grid">
+  {% for group in groups %}
+    <li class="group-card" style="--tag-color: {{ group.color }};">
+      <a class="group-card-link" href="{{ group.get_absolute_url }}">
+        <span class="group-card-emoji" aria-hidden="true">{{ group.emoji|default:"•" }}</span>
+        <span class="group-card-name">{{ group.name }}</span>
+      </a>
+      {% if group.description %}<p class="group-card-blurb">{{ group.description }}</p>{% endif %}
+      <p class="group-card-next small">
+        {% if group.next_event %}
+          Next: <a href="{{ group.next_event.get_absolute_url }}">{{ group.next_event.title }}</a>, {{ group.next_event.start|date:"D j M" }}
+          {% if group.upcoming_count > 1 %}<span class="muted">· {{ group.upcoming_count }} coming up</span>{% endif %}
+        {% else %}
+          <span class="muted">Nothing scheduled just yet</span>
+        {% endif %}
+      </p>
+    </li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -554,8 +554,35 @@ def export(request, slug):
 # --- tag subpages -----------------------------------------------------------------
 
 
+def groups(request):
+    """PUBLIC. Every group (event tag) with its next event."""
+    now = timezone.now()
+    tags = list(Category.objects.all())
+    upcoming = (
+        Event.objects.visible_to(request.user)
+        .filter(start__gte=now, category__isnull=False)
+        .order_by("start")
+        .only("title", "slug", "start", "category_id")
+    )
+    next_event, counts = {}, {}
+    for event in upcoming:
+        next_event.setdefault(event.category_id, event)
+        counts[event.category_id] = counts.get(event.category_id, 0) + 1
+    for tag in tags:
+        tag.next_event = next_event.get(tag.pk)
+        tag.upcoming_count = counts.get(tag.pk, 0)
+    return render(request, "events/groups.html", {
+        "nav_active": "groups",
+        "groups": tags,
+    })
+
+
+def tag_page_moved(request, slug):
+    return redirect("events:tag_page", slug=slug, permanent=True)
+
+
 def tag_page(request, slug):
-    """PUBLIC. A tag's own page: blurb, owners, and its upcoming events."""
+    """PUBLIC. A group's own page: blurb, owners, and its upcoming events."""
     tag = get_object_or_404(Category, slug=slug)
     upcoming = list(
         Event.objects.visible_to(request.user)
@@ -572,7 +599,7 @@ def tag_page(request, slug):
         .order_by("-start")[:5]
     )
     return render(request, "events/tag_page.html", {
-        "nav_active": "calendar",
+        "nav_active": "groups",
         "tag": tag,
         "owners": tag.owners.filter(is_banned=False),
         "upcoming": upcoming,
@@ -594,7 +621,7 @@ def tag_edit(request, slug):
         messages.success(request, f"The {tag.name} page has been updated.")
         return redirect(tag)
     return render(request, "events/tag_form.html", {
-        "nav_active": "calendar",
+        "nav_active": "groups",
         "tag": tag,
         "form": form,
     })

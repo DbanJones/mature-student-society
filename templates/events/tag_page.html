@@ -7,7 +7,7 @@
 
 {% block content %}
 <div class="tag-hero" style="--tag-color: {{ tag.color }};">
-  <p class="small" style="margin:0 0 .3rem"><a href="{% url 'events:calendar' %}">← What's on</a></p>
+  <p class="small" style="margin:0 0 .3rem"><a href="{% url 'events:groups' %}">← All groups</a></p>
   <h1><span class="tag-hero-emoji">{{ tag.emoji }}</span> {{ tag.name }}</h1>
   {% if tag.description %}<p class="lede">{{ tag.description }}</p>{% endif %}
   {% if owners %}
@@ -15,6 +15,9 @@
       Run by
       {% for owner in owners %}{% if not forloop.first %}{% if forloop.last %} and {% else %}, {% endif %}{% endif %}{% if user.is_authenticated %}<a href="{% url 'members:profile' owner.username %}">{{ owner.get_full_name|default:owner.username }}</a>{% else %}{{ owner.get_full_name|default:owner.username }}{% endif %}{% endfor %}
     </p>
+  {% endif %}
+  {% if tag.has_restaurant_ratings and "supper" in visible_tabs %}
+    <p style="margin:.6rem 0 0"><a class="btn btn-small" href="{% url 'supper:index' %}">🍽️ Restaurants and ratings</a></p>
   {% endif %}
   {% if can_edit %}
     <p style="margin:.6rem 0 0">
@@ -30,7 +33,7 @@
       <div class="card"><div class="prose">{{ tag.page_content|richtext }}</div></div>
     {% elif can_edit %}
       <div class="empty">
-        This tag doesn't have a page yet —
+        This group doesn't have a page yet —
         <a href="{% url 'events:tag_edit' tag.slug %}">write one</a>.
       </div>
     {% endif %}

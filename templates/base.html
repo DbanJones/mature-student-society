@@ -19,17 +19,10 @@
       <img class="brand-lockup" src="{% static 'img/lion.png' %}"
            alt="{{ site_config.society_name }}">
     </a>
-    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1">
+    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1" hidden>
     <label for="nav-toggle" class="nav-burger" aria-label="Menu" role="button">☰</label>
     <nav class="site-nav" aria-label="Main">
-      <details class="nav-group">
-        <summary class="{% if nav_active == 'calendar' or nav_active == 'supper' or nav_active == 'ball' %}active{% endif %}">What's on</summary>
-        <div class="nav-menu">
-          <a href="{% url 'events:calendar' %}">📅 Calendar</a>
-          {% if "supper" in visible_tabs %}<a href="{% url 'supper:index' %}">🍽️ Supper Club</a>{% endif %}
-          {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">❄️ Winter Ball</a>{% endif %}
-        </div>
-      </details>
+      <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}">Event Calendar</a>
       <details class="nav-group">
         <summary class="{% if nav_active == 'guide' %}active{% endif %}">Guide</summary>
         <div class="nav-menu">
@@ -40,15 +33,24 @@
         </div>
       </details>
       <details class="nav-group">
-        <summary class="{% if nav_active == 'about' or nav_active == 'testimonials' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
-        <div class="nav-menu">
+        <summary class="{% if nav_active == 'about' or nav_active == 'testimonials' or nav_active == 'groups' or nav_active == 'supper' or nav_active == 'ball' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
+        <div class="nav-menu nav-menu-wide">
           {% if "about" in visible_tabs %}<a href="{% url 'core:about' %}">🦁 About MSS</a>{% endif %}
+          {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">❄️ Winter Ball</a>{% endif %}
           <a href="{% url 'core:wellbeing' %}">💙 Wellbeing</a>
           {% if "testimonials" in visible_tabs %}<a href="{% url 'testimonials:index' %}">🗣️ Testimonials</a>{% endif %}
           <a href="{% url 'core:policies' %}">🤝 Community policies</a>
           {% for page in nav_pages %}
             <a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>
           {% endfor %}
+          {% if nav_groups %}
+            <a class="nav-menu-heading" href="{% url 'events:groups' %}">Groups <span aria-hidden="true">→</span></a>
+            <div class="nav-menu-groups">
+              {% for group in nav_groups %}
+                <a href="{{ group.get_absolute_url }}">{{ group.emoji }} {{ group.name }}</a>
+              {% endfor %}
+            </div>
+          {% endif %}
         </div>
       </details>
       <form class="nav-search" method="get" action="{% url 'core:search' %}" role="search">
@@ -108,7 +110,7 @@
 {% if user.is_authenticated %}
   <nav class="tab-bar" aria-label="Quick links">
     <a href="{% url 'dashboard:home' %}" class="{% if nav_active == 'dashboard' %}active{% endif %}"><span aria-hidden="true">🏠</span><span>Home</span></a>
-    <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>What's on</span></a>
+    <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>Calendar</span></a>
     <a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>
     <a href="{% url 'notifications:index' %}" class="{% if nav_active == 'notifications' %}active{% endif %}"><span aria-hidden="true">🔔</span><span>Alerts{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</span></a>
   </nav>
@@ -121,7 +123,8 @@
       <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
     </div>
     <div class="footer-links">
-      <a href="{% url 'events:calendar' %}">What's on</a>
+      <a href="{% url 'events:calendar' %}">Event Calendar</a>
+      <a href="{% url 'events:groups' %}">Groups</a>
       {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">Winter Ball</a>{% endif %}
       <a href="{% url 'guide:index' %}">Mature Students Guide</a>
       <a href="{% url 'faq:contacts' %}">Who to contact</a>

@@ -110,6 +110,12 @@ you were before; your admin rights are unchanged.
   without one, posters print a "scan for directions" code instead of a map.
   The first poster for each event takes a few seconds longer while the
   venue is looked up.
+- **The menu changed.** "What's on" is now a plain Event Calendar link.
+  Supper Club and every other tag are listed under About → Groups, and the
+  Winter Ball moved under About. Old tag-page links redirect.
+- **Run collectstatic on every upgrade.** Stylesheet links now carry a
+  version stamp, so browsers fetch the new CSS as soon as it is collected.
+  If the menu shows a stray checkbox, collectstatic was skipped.
 - **Polls close on time** even when nobody visits if this cron line runs on
   `sinkhole` (`crontab -e`):
   ```

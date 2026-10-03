@@ -578,3 +578,45 @@ class CalendarViewsTests(EventTestCase):
         response = self.client.get(reverse("events:calendar"))
         self.assertContains(response, "cap-fill")
         self.assertContains(response, ">full<")
+
+
+class GroupsTests(EventTestCase):
+    def test_groups_page_lists_every_tag_with_its_next_event(self):
+        response = self.client.get(reverse("events:groups"))
+        self.assertContains(response, "Pub Nights")
+        self.assertContains(response, "Supper Club")
+        self.assertContains(response, "Next: <a")
+        self.assertContains(response, "Public pub night")
+        self.assertNotContains(response, "Secret members social")  # members only, logged out
+        self.assertContains(response, "Nothing scheduled just yet")  # Supper Club
+
+    def test_group_pages_live_under_groups_and_old_links_redirect(self):
+        url = reverse("events:tag_page", args=["pub-nights"])
+        self.assertEqual(url, "/events/groups/pub-nights/")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        old = self.client.get("/events/tags/pub-nights/")
+        self.assertEqual(old.status_code, 301)
+        self.assertEqual(old["Location"], url)
+
+    def test_menu_has_event_calendar_and_groups_under_about(self):
+        body = self.client.get(reverse("events:calendar")).content.decode()
+        self.assertIn(">Event Calendar</a>", body)
+        self.assertNotIn(">What's on</summary>", body)
+        about = body[body.index(">About</summary>"):]
+        about = about[:about.index("</details>")]
+        self.assertIn(reverse("events:groups"), about)
+        self.assertIn("/events/groups/supper-club/", about)
+        self.assertIn('id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1" hidden', body)
+
+    def test_supper_club_page_links_to_the_restaurants(self):
+        body = self.client.get(reverse("events:tag_page", args=["supper-club"])).content.decode()
+        self.assertIn("Restaurants and ratings", body)
+
+
+class StaticVersionTests(TestCase):
+    def test_static_urls_carry_a_content_version(self):
+        from django.templatetags.static import static
+
+        url = static("css/base.css")
+        self.assertRegex(url, r"css/base\.css\?v=[0-9a-f]{10}$")
+        self.assertEqual(static("css/no-such-file.css"), "/static/css/no-such-file.css")

@@ -9,7 +9,7 @@
     <h1>{% if tag %}Edit tag: {{ tag.emoji }} {{ tag.name }}{% else %}Add a tag{% endif %}</h1>
     <p class="muted">
       Owners can mark their events as official and edit the tag's public page
-      (at /events/tags/{% if tag %}{{ tag.slug }}{% else %}…{% endif %}/) without being site admins.
+      (at /events/groups/{% if tag %}{{ tag.slug }}{% else %}…{% endif %}/) without being site admins.
     </p>
   </div>
 </div>

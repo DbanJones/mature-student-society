@@ -42,6 +42,8 @@ urlpatterns = [
     )),
     path("events/", include(([
         path("", _stub_view, name="calendar"),
+        path("groups/", _stub_view, name="groups"),
+        path("groups/<slug:slug>/", _stub_view, name="tag_page"),
         path("<slug:slug>/", _stub_view, name="detail"),
     ], "events"))),
     path("guide/", _namespace("guide", ["index"])),

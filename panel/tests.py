@@ -72,8 +72,9 @@ urlpatterns = [
     ])),
     path("events/", _ns("events", [
         ("", "calendar"),
-        ("tags/<slug:slug>/", "tag_page"),
-        ("tags/<slug:slug>/edit/", "tag_edit"),
+        ("groups/", "groups"),
+        ("groups/<slug:slug>/", "tag_page"),
+        ("groups/<slug:slug>/edit/", "tag_edit"),
         ("<slug:slug>/", "detail"),
         ("<slug:slug>/edit/", "edit"),
     ])),
@@ -771,9 +772,10 @@ class TaggedEventsTests(PanelTestCase):
         self.assertEqual(self.client.get(url).status_code, 200)
         self.assertRedirects(self.client.get(reverse("panel:home")), url)
         # Owners see their tags only; admins see all.
-        self.assertNotContains(self.client.get(url), "History Club")
+        # (Every group is named in the About menu, so check the events.)
+        self.assertNotContains(self.client.get(url), "Battlefield walk")
         self.client.force_login(self.admin)
-        self.assertContains(self.client.get(url), "History Club")
+        self.assertContains(self.client.get(url), "Battlefield walk")
 
     def _action(self, event, **data):
         return self.client.post(

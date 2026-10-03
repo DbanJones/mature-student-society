@@ -38,7 +38,8 @@ Run the test suite:
 | URL | What |
 |---|---|
 | `/` | Public homepage |
-| `/events/` | Calendar (public; members-only events hidden when logged out) |
+| `/events/` | Event Calendar (public; members-only events hidden when logged out) |
+| `/events/groups/` | Groups: every event tag, each with its own page at `/events/groups/<tag>/` (old `/events/tags/<tag>/` links redirect) |
 | `/guide/` | The Mature Students Guide (public read, member edit) |
 | `/supper-club/` | Supper Club restaurant leaderboard |
 | `/testimonials/` | Members' testimonials (public once approved; members submit) |

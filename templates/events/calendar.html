@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}What's on — {{ month_date|date:"F Y" }}{% endblock %}
+{% block title %}Event Calendar — {{ month_date|date:"F Y" }}{% endblock %}
 
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>What's on</h1>
+    <h1>Event Calendar</h1>
     <p class="lede">Suppers, socials, talks and walks — all welcome, partners included.</p>
   </div>
   <div class="actions">

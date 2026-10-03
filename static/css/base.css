@@ -598,3 +598,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .nav-burger:f
   code { background: var(--sage-100); }
   .diff-del { text-decoration-color: rgba(255, 255, 255, .5); }
 }
+
+/* --- About menu: groups section ------------------------------------ */
+.site-nav .nav-menu .nav-menu-heading {
+  margin-top: .35rem; padding-top: .55rem; border-top: 1px solid var(--line);
+  border-radius: 0; font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.nav-menu-groups { display: grid; grid-template-columns: 1fr; }
+@media (min-width: 721px) {
+  .nav-menu-wide { min-width: 30rem; }
+  .nav-menu-groups { grid-template-columns: 1fr 1fr; }
+}

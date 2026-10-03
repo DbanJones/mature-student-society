@@ -29,6 +29,7 @@ def navigation(request):
     ``visible_tabs`` — set of built-in tab keys (supper, ball, about,
     members, messages) after applying the admin-controlled visibility.
     ``nav_pages`` — published CMS pages that ask for a nav slot.
+    ``nav_groups`` — every event tag, listed under About as Groups.
     Admins always see everything that isn't 'hidden', so they can check the
     site without logging out.
     """
@@ -47,4 +48,7 @@ def navigation(request):
             visible.add(key)
     nav_pages = SitePage.objects.filter(is_published=True).exclude(nav_label="")
     nav_pages = [p for p in nav_pages if visible_to(p.nav_visibility, user)]
-    return {"visible_tabs": visible, "nav_pages": nav_pages}
+    from events.models import Category
+
+    nav_groups = list(Category.objects.only("name", "slug", "emoji"))
+    return {"visible_tabs": visible, "nav_pages": nav_pages, "nav_groups": nav_groups}

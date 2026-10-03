@@ -23,7 +23,7 @@
   function updateLinks() {
     var q = query();
     printLink.href = printUrl + "?" + q + "&print=1";
-    svgLink.href = svgUrl + "?" + q + "&download=1";
+    if (svgLink) svgLink.href = svgUrl + "?" + q + "&download=1";
     if (saveForm) {
       saveForm.querySelectorAll("input[type=hidden]").forEach(function (h) {
         var el = form.elements[h.name];
@@ -134,7 +134,7 @@
   function exportPng() {
     var svg = preview.querySelector("svg");
     if (!svg) return;
-    pngBtn.disabled = true; pngBtn.textContent = "Making the PNG…";
+    pngBtn.disabled = true; pngBtn.textContent = "Making the image…";
     var clone = svg.cloneNode(true);
     var images = Array.prototype.slice.call(clone.querySelectorAll("image"));
     var work = images.map(function (im) {
@@ -166,10 +166,10 @@
           a.download = slug + "-" + sizeKey + ".png";
           document.body.appendChild(a); a.click(); a.remove();
           setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
-          pngBtn.disabled = false; pngBtn.textContent = "Save PNG";
+          pngBtn.disabled = false; pngBtn.textContent = "Save image";
         }, "image/png");
       };
-      img.onerror = function () { pngBtn.disabled = false; pngBtn.textContent = "Save PNG (failed, try again)"; };
+      img.onerror = function () { pngBtn.disabled = false; pngBtn.textContent = "Save image (failed, try again)"; };
       img.src = url;
     });
   }

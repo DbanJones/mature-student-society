@@ -7,9 +7,12 @@ app_name = "events"
 urlpatterns = [
     path("", views.calendar_view, name="calendar"),
     path("new/", views.create, name="create"),
-    # Tag subpages (Supper Club, History Club, …).
-    path("tags/<slug:slug>/", views.tag_page, name="tag_page"),
-    path("tags/<slug:slug>/edit/", views.tag_edit, name="tag_edit"),
+    # Groups: one page per tag (Supper Club, History Club, …).
+    path("groups/", views.groups, name="groups"),
+    path("groups/<slug:slug>/", views.tag_page, name="tag_page"),
+    path("groups/<slug:slug>/edit/", views.tag_edit, name="tag_edit"),
+    # Tag pages used to live under tags/; keep old links working.
+    path("tags/<slug:slug>/", views.tag_page_moved, name="tag_page_moved"),
     # Old numeric URLs redirect permanently to the slug form.
     path("<int:pk>/", views.detail_by_pk, name="detail_pk"),
     path("<slug:slug>.ics", views.ics, name="ics"),

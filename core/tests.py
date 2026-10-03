@@ -134,16 +134,20 @@ class TabVisibilityAndPagesTests(TestCase):
             college="darwin", mobile="+44 7700 900002", is_portal_admin=True,
         )
 
-    NAV_SUPPER = "Supper Club</a>"
+    NAV_SUPPER = "Restaurants and ratings"
     NAV_BALL = "Winter Ball</a>"
 
     def test_hidden_tab_disappears_for_members_but_not_admins(self):
+        from events.models import Category
+
+        Category.objects.create(name="Supper Club", slug="supper-club", has_restaurant_ratings=True)
+        group = reverse("events:tag_page", args=["supper-club"])
         self.config.tab_visibility = {"supper": "admins"}
         self.config.save()
         self.client.force_login(self.member)
-        self.assertNotContains(self.client.get(reverse("core:home")), self.NAV_SUPPER)
+        self.assertNotContains(self.client.get(group), self.NAV_SUPPER)
         self.client.force_login(self.admin)
-        self.assertContains(self.client.get(reverse("core:home")), self.NAV_SUPPER)
+        self.assertContains(self.client.get(group), self.NAV_SUPPER)
 
     def test_members_only_tab_hidden_from_public(self):
         self.config.tab_visibility = {"ball": "members"}
