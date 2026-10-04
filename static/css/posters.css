@@ -16,10 +16,13 @@
 .studio-step .check-row { margin: 0 0 .3rem; display: flex; gap: .45rem; align-items: center; }
 .studio-step .check-row label { margin: 0; font-weight: 500; }
 .studio-hint { margin: .35rem 0 0; font-size: .85rem; color: var(--ink-soft); }
+.studio-warn { color: var(--brick-dark, #8e1e12); font-weight: 600; }
 .studio-controls .linklike { padding: 0 0 0 .5rem; color: var(--brick); font-size: .85rem; }
 .file-btn { position: relative; cursor: pointer; overflow: hidden; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .file-btn:focus-within { outline: 3px solid var(--gold); outline-offset: 2px; }
+.studio-note { margin: 0 0 .8rem; padding: .55rem .8rem; border-radius: 10px; background: var(--gold-soft, #f6eedb); color: var(--ink); font-size: .92rem; }
+.studio-note::before { content: "📍 "; }
 .studio-more { border-top: 1px solid var(--line); padding-top: .8rem; }
 .studio-more > summary { cursor: pointer; font-weight: 650; color: var(--heading); margin-bottom: .8rem; }
 .seg { display: flex; gap: .35rem; flex-wrap: wrap; }

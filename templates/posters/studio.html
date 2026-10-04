@@ -29,7 +29,9 @@
         <p class="check-row"><input type="hidden" name="use_event_picture" value="">{{ form.use_event_picture }} <label for="{{ form.use_event_picture.id_for_label }}">Use the event picture</label></p>
       {% endif %}
       <p class="studio-hint">Your photo stays on this device. Click it in the preview to move the centre.</p>
+      <p class="studio-hint studio-warn" id="photo-note" role="status" hidden></p>
       {{ form.focal_x }}{{ form.focal_y }}
+      <input type="hidden" name="device_photo" id="device-photo-flag" value="">
     </div>
     <div class="studio-step">
       <h2><label for="{{ form.extra_line.id_for_label }}">Extra line</label></h2>
@@ -62,6 +64,7 @@
   </form>
 
   <div class="studio-preview">
+    <p class="studio-note" id="map-note" role="status"{% if not map_note %} hidden{% endif %}>{{ map_note }}</p>
     <div id="preview" class="preview-sheet" data-svg-url="{% url 'posters:svg' event.slug %}" data-print-url="{% url 'posters:print' event.slug %}" data-slug="{{ event.slug }}">{{ svg|safe }}</div>
     <div class="preview-actions">
       <a id="print-link" class="btn btn-accent" href="{{ print_url }}&print=1" target="_blank" rel="noopener">🖨️ Print or save PDF</a>

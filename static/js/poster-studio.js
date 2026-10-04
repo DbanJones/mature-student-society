@@ -14,15 +14,20 @@
   var saveForm = document.getElementById("save-form");
   var fileInput = document.getElementById("device-photo");
   var clearBtn = document.getElementById("clear-photo");
+  var photoFlag = document.getElementById("device-photo-flag");
+  var mapNote = document.getElementById("map-note");
+  var photoNote = document.getElementById("photo-note");
   var storeKey = "poster-photo:" + slug;
   var devicePhoto = null;   // {dataUrl, w, h}
+  var photoKept = true;     // false: the photo is in the preview but not saved for printing
   var timer = null;
 
   function query() { return new URLSearchParams(new FormData(form)).toString(); }
 
   function updateLinks() {
     var q = query();
-    printLink.href = printUrl + "?" + q + "&print=1";
+    var printQuery = photoKept ? q : q.replace(/(^|&)device_photo=1(?=&|$)/, "$1device_photo=");
+    printLink.href = printUrl + "?" + printQuery + "&print=1";
     if (svgLink) svgLink.href = svgUrl + "?" + q + "&download=1";
     if (saveForm) {
       saveForm.querySelectorAll("input[type=hidden]").forEach(function (h) {
@@ -40,8 +45,10 @@
     var img = preview.querySelector("#photo");
     if (!img || !devicePhoto) return;
     var p = img.dataset.panel.split(" ").map(Number);
-    var fx = parseFloat(form.elements.focal_x.value) || 0.5;
-    var fy = parseFloat(form.elements.focal_y.value) || 0.5;
+    var fx = parseFloat(form.elements.focal_x.value);
+    var fy = parseFloat(form.elements.focal_y.value);
+    if (isNaN(fx)) fx = 0.5;
+    if (isNaN(fy)) fy = 0.5;
     var scale = Math.max(p[2] / devicePhoto.w, p[3] / devicePhoto.h);
     var w = devicePhoto.w * scale, h = devicePhoto.h * scale;
     var x = p[0] + p[2] / 2 - fx * w, y = p[1] + p[3] / 2 - fy * h;
@@ -53,12 +60,47 @@
     img.removeAttribute("display");
   }
 
+  /* Geoapify can take a while to draw a map the first time: if the map
+     fails to arrive, ask again a few times before giving up. */
+  function watchMap() {
+    preview.querySelectorAll("image[data-map]").forEach(function (im) {
+      var tries = 0;
+      im.addEventListener("error", function () {
+        if (tries >= 4 || !im.isConnected) return;
+        tries += 1;
+        setTimeout(function () {
+          if (!im.isConnected) return;  // a refresh has replaced it
+          var href = (im.getAttribute("href") || "").replace(/&retry=\d+$/, "");
+          im.setAttribute("href", href + "&retry=" + tries);
+        }, 4000);
+      });
+    });
+  }
+
+  function showNote(note) {
+    if (!mapNote) return;
+    mapNote.textContent = note;
+    mapNote.hidden = !note;
+  }
+
   function refresh() {
     preview.classList.add("busy");
     fetch(svgUrl + "?" + query(), { credentials: "same-origin" })
-      .then(function (r) { return r.text(); })
-      .then(function (svg) { preview.innerHTML = svg; placePhoto(); bindFocal(); })
+      .then(function (r) {
+        var note = r.headers.get("X-Map-Note");
+        showNote(note ? decodeURIComponent(note) : "");
+        return r.text();
+      })
+      .then(function (svg) { preview.innerHTML = svg; placePhoto(); bindFocal(); watchMap(); })
       .finally(function () { preview.classList.remove("busy"); updateLinks(); });
+  }
+
+  /* The layout keeps a picture panel when there's a photo from this
+     device (otherwise the map would take the panel). */
+  function setPhotoFlag(on) {
+    if (!photoFlag || photoFlag.value === (on ? "1" : "")) return false;
+    photoFlag.value = on ? "1" : "";
+    return true;
   }
   function scheduleRefresh() { clearTimeout(timer); timer = setTimeout(refresh, 250); }
 
@@ -82,15 +124,53 @@
     img.addEventListener("pointerup", function () { dragging = false; });
   }
 
+  /* A phone photo can be several megabytes, more than the browser will
+     keep: hold a copy no longer than 2000 px on its long edge instead. */
+  function shrink(im, dataUrl) {
+    var longest = Math.max(im.naturalWidth, im.naturalHeight);
+    if (longest <= 2000 && dataUrl.length <= 1500000) {
+      return { dataUrl: dataUrl, w: im.naturalWidth, h: im.naturalHeight };
+    }
+    var scale = Math.min(1, 2000 / longest);
+    var canvas = document.createElement("canvas");
+    canvas.width = Math.round(im.naturalWidth * scale);
+    canvas.height = Math.round(im.naturalHeight * scale);
+    canvas.getContext("2d").drawImage(im, 0, 0, canvas.width, canvas.height);
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.85), w: canvas.width, h: canvas.height };
+  }
+
+  /* Keep the photo for the print page, making room by forgetting photos
+     kept for other posters if need be. */
+  function keep(photo) {
+    var value = JSON.stringify(photo);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try { localStorage.setItem(storeKey, value); return true; } catch (e) {
+        try {
+          Object.keys(localStorage).forEach(function (key) {
+            if (key.indexOf("poster-photo:") === 0 && key !== storeKey) localStorage.removeItem(key);
+          });
+        } catch (e2) { return false; }
+      }
+    }
+    return false;
+  }
+
+  function showPhotoNote(text) {
+    if (!photoNote) return;
+    photoNote.textContent = text;
+    photoNote.hidden = !text;
+  }
+
   function loadPhoto(file) {
     var reader = new FileReader();
     reader.onload = function () {
       var im = new Image();
       im.onload = function () {
-        devicePhoto = { dataUrl: reader.result, w: im.naturalWidth, h: im.naturalHeight };
-        try { localStorage.setItem(storeKey, JSON.stringify(devicePhoto)); } catch (e) { /* no room: fine */ }
+        devicePhoto = shrink(im, reader.result);
+        photoKept = keep(devicePhoto);
+        showPhotoNote(photoKept ? "" : "This photo is too large for this browser to keep, so Print won't include it. Save image will, or choose a smaller photo.");
         clearBtn.hidden = false;
-        placePhoto(); bindFocal();
+        if (setPhotoFlag(true)) refresh(); else { placePhoto(); bindFocal(); updateLinks(); }
       };
       im.src = reader.result;
     };
@@ -99,17 +179,21 @@
   if (fileInput) fileInput.addEventListener("change", function () { if (fileInput.files[0]) loadPhoto(fileInput.files[0]); });
   if (clearBtn) clearBtn.addEventListener("click", function () {
     devicePhoto = null; try { localStorage.removeItem(storeKey); } catch (e) {}
-    clearBtn.hidden = true; fileInput.value = ""; refresh();
+    photoKept = true; showPhotoNote("");
+    clearBtn.hidden = true; fileInput.value = ""; setPhotoFlag(false); refresh();
   });
   try {
     var kept = JSON.parse(localStorage.getItem(storeKey) || "null");
-    if (kept && kept.dataUrl) { devicePhoto = kept; clearBtn.hidden = false; placePhoto(); }
+    if (kept && kept.dataUrl) {
+      devicePhoto = kept; clearBtn.hidden = false;
+      if (setPhotoFlag(true)) refresh(); else placePhoto();
+    }
   } catch (e) { /* ignore */ }
 
   form.addEventListener("input", scheduleRefresh);
   form.addEventListener("change", scheduleRefresh);
   form.addEventListener("submit", function (ev) { ev.preventDefault(); refresh(); });
-  bindFocal(); updateLinks();
+  bindFocal(); watchMap(); updateLinks();
 
   /* PNG export: inline the fonts and every image into a copy of the SVG,
      draw it on a canvas at the output size, and hand the file to the browser. */

@@ -1,4 +1,4 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="en-gb">
 <head>
 <meta charset="utf-8">
@@ -30,7 +30,8 @@ html, body { margin: 0; padding: 0; background: #e6e6e3; }
   <a class="ghost" href="{% url 'posters:studio' event.slug %}?{{ request.GET.urlencode }}">Back to the studio</a>
   <span class="hint">{% if is_print_size %}Set the printer to {{ settings.get_size_display }}, 100% scale, no margins.{% else %}Use the studio's PNG button for this size; this page is for A4 and A3.{% endif %}</span>
 </div>
-<div class="sheet">{{ svg|safe }}</div>
-{% if auto_print %}<script>document.fonts.ready.then(function () { setTimeout(function () { window.print(); }, 200); });</script>{% endif %}
+<div class="sheet" data-slug="{{ event.slug }}" data-focal-x="{{ settings.focal_x }}" data-focal-y="{{ settings.focal_y }}"{% if device_photo %} data-device-photo="1"{% endif %}{% if auto_print %} data-auto-print="1"{% endif %}>{{ svg|safe }}</div>
+<script src="{% static 'js/poster-print.js' %}"></script>
+{% if auto_print %}<noscript><p style="text-align:center">Use your browser's Print command to print or save this poster.</p></noscript>{% endif %}
 </body>
 </html>

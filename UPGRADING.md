@@ -107,9 +107,10 @@ you were before; your admin rights are unchanged.
 - **Testimonials** is a new public page under About. Hide the tab on Content
   → Navigation until the first testimonials are approved, if you'd rather.
 - **Poster maps** need a free Geoapify key pasted into the Super admin tab;
-  without one, posters print a "scan for directions" code instead of a map.
-  The first poster for each event takes a few seconds longer while the
-  venue is looked up.
+  without one, posters have no map and the poster studio says why. The
+  first poster for each event takes a few seconds longer while the venue is
+  looked up. If a map shows the wrong spot, name the college, building or
+  street in the event's location.
 - **The menu changed.** "What's on" is now a plain Event Calendar link.
   Supper Club and every other tag are listed under About → Groups, and the
   Winter Ball moved under About. Old tag-page links redirect.

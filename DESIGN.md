@@ -191,12 +191,25 @@ bundled fonts (static/fonts, SIL OFL) so line breaks match what prints;
 `templates/posters/_scene.svg` draws it. The browser does the rest: the
 print page uses `@page` sizes so Save as PDF gives vector text, PNGs come
 from a canvas, and a photo chosen on the device is read with FileReader and
-kept in that browser's storage, never uploaded. The QR code (segno) encodes
-`/p/<slug>/`, a redirect that counts scans. The map is a Geoapify static
-image proxied by `posters.views.map_image` so the key (SiteConfig) never
-reaches the browser; venues are geocoded once and cached on the event
-(Geoapify answers in seconds, not milliseconds, so a save waits only
-briefly, the studio waits longer, and a failed lookup is retried). The
+kept in that browser's storage, never uploaded (shrunk to 2000 px first so
+a phone photo fits; the print page drops it in too, and waits for every
+picture before printing; if a photo still won't fit, the studio says Print
+won't include it). Print marks add 3 mm of bleed in each sheet's own units,
+so A3 crop marks fall on a true A3 trim. Every layout has
+exactly one QR code (segno), encoding `/p/<slug>/`, a redirect that counts
+scans and lands on the event page with its directions. Every layout also
+has the map when the venue is found: without a photo the map takes the
+picture's place, with one it sits beside the QR code. Each layout is
+measured before it is drawn, and a test checks that no text overlaps the
+QR code or the map. The map is a Geoapify static image (klokantech-basic,
+asked for at the slot's exact shape so the OpenStreetMap credit in its
+corner is never cropped) proxied by `posters.views.map_image` so the key
+(SiteConfig) never reaches the browser. Venues are geocoded once and cached
+on the event; the full location and its broader parts are looked up
+together, a named place beats a street, and a whole-city match counts as
+not found (Geoapify answers in seconds, so a save waits only briefly, the
+studio waits longer, and a failed lookup is retried). When there is no map
+the studio says why. The SVG download carries its pictures inside it. The
 organiser's choices live in one `EventPoster` row; other members' tweaks are
 query-string overrides that are never saved. The SRCF stores no poster
 files.

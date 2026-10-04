@@ -2,6 +2,7 @@
 browser renders with (static/fonts), so line breaks decided here match
 what is printed."""
 
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -47,7 +48,8 @@ def width(text, key="body", size=1.0, weight=400, letter_spacing=0.0):
 def wrap(text, max_width, key="body", size=1.0, weight=400, max_lines=None):
     """Greedy word wrap. Returns the lines; a final line may be truncated with
     an ellipsis when ``max_lines`` is set."""
-    words = text.split()
+    # Ordinary spaces only: a no-break space keeps "7:30 pm" on one line.
+    words = [word for word in re.split(r"[ \t\r\n]+", text) if word]
     lines, current = [], ""
     for word in words:
         candidate = f"{current} {word}".strip()
@@ -63,16 +65,31 @@ def wrap(text, max_width, key="body", size=1.0, weight=400, max_lines=None):
         last = lines[-1]
         while last and width(last + "…", key, size, weight) > max_width:
             last = last.rsplit(" ", 1)[0] if " " in last else last[:-1]
-        lines[-1] = last + "…"
+        lines[-1] = last.rstrip(" .,;:·—–-") + "…"
     return lines
 
 
+def ink_height(text, key="display", weight=700, fallback=0.82):
+    """How far ``text`` rises above its baseline, as a fraction of its size
+    (Libre Caslon's bold digits are about 0.8)."""
+    font = _font(key, weight)
+    if font is None:
+        return fallback
+    try:
+        top = font.getbbox(text, anchor="ls")[1]
+    except Exception:
+        return fallback
+    return max(0.1, -top / MEASURE_PX)
+
+
 def fit(text, max_width, key, size, weight, max_lines, min_size):
-    """Shrink ``size`` in 8% steps until ``text`` wraps within ``max_lines``.
+    """Shrink ``size`` in 8% steps until ``text`` wraps within ``max_lines``
+    and no line (a long unbroken word, say) is wider than ``max_width``.
     Returns (size, lines)."""
     while True:
         lines = wrap(text, max_width, key, size, weight)
-        if len(lines) <= max_lines or size <= min_size:
+        too_wide = any(width(line, key, size, weight) > max_width for line in lines)
+        if (len(lines) <= max_lines and not too_wide) or size <= min_size:
             if len(lines) > max_lines:
                 lines = wrap(text, max_width, key, size, weight, max_lines=max_lines)
             return size, lines

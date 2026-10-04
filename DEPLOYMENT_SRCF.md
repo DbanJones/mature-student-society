@@ -267,10 +267,10 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   on upload, but request more quota from the sysadmins before a big intake.
 - **Poster maps**: create a free Geoapify account (geoapify.com), make an API
   key and paste it into the portal's Super admin tab. Without it posters
-  print a "scan for directions" code instead of a map. The key never
+  have no map (the poster studio says so). The key never
   reaches browsers: the server fetches each map image and passes it through.
   Geoapify takes a few seconds to answer, so the first poster for an event
-  can take up to ten seconds to show its map; the venue is then remembered
+  can take up to twenty seconds to show its map; the venue is then remembered
   on the event. A lookup that fails is simply tried again later.
 - **Cron**: polls close themselves when loaded, but to apply results (and
   email attendees) on time even when nobody visits, add on sinkhole:
