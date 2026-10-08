@@ -117,6 +117,10 @@ you were before; your admin rights are unchanged.
 - **Run collectstatic on every upgrade.** Stylesheet links now carry a
   version stamp, so browsers fetch the new CSS as soon as it is collected.
   If the menu shows a stray checkbox, collectstatic was skipped.
+- **Surveys** are new, under Members portal → Surveys and Admin → People →
+  Surveys. A society admin creates a survey and names the members who run
+  it; they write the questions, open it, see the results and send
+  reminders. The `close_polls` cron line below closes surveys too.
 - **Polls close on time** even when nobody visits if this cron line runs on
   `sinkhole` (`crontab -e`):
   ```

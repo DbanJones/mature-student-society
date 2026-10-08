@@ -1889,6 +1889,25 @@ def polls(request):
     })
 
 
+@portal_admin_required
+def surveys(request):
+    """Every survey on the site, who runs it and how many have answered."""
+    from surveys.models import Survey
+
+    rows = list(
+        Survey.objects.prefetch_related("admins")
+        .annotate(answer_count=Count("participations", distinct=True))
+        .order_by("status", "-created_at")[:200]
+    )
+    for survey in rows:
+        survey.resolve_if_due()
+    return render(request, "panel/surveys.html", {
+        "nav_active": "panel",
+        "panel_tab": "surveys",
+        "surveys": rows,
+    })
+
+
 # --- announcement banner, committee and "what we do" --------------------------------
 
 @portal_admin_required

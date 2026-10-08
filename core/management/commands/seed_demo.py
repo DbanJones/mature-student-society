@@ -138,6 +138,7 @@ class Command(BaseCommand):
         self.seed_waitlist()
         self.seed_messages(users)
         self.seed_polls_and_testimonials(users)
+        self.seed_surveys(users)
         self.stdout.write(self.style.SUCCESS(
             "Demo data seeded. Dev logins: any demo user via the dev login page "
             "(RAVEN_ENABLED=false), or password 'demo-password' for all of them."
@@ -538,6 +539,60 @@ class Command(BaseCommand):
                 connection="Partner of a incoming Hughes Hall MBA student.",
             ),
         )
+
+    def seed_surveys(self, users):
+        """One open survey, run by two members, with a few answers in."""
+        from surveys.models import Answer, Choice, Participation, Question, Response, Survey
+
+        if Survey.objects.exists():
+            return
+        now = timezone.now()
+        survey = Survey.objects.create(
+            title="Michaelmas temperature check",
+            intro="Five minutes on how this term is going, so the committee can plan Lent. "
+                  "Answer with your name or anonymously, whichever you prefer.",
+            created_by=users["dbj25"], status=Survey.Status.OPEN,
+            closes_at=now + datetime.timedelta(days=10),
+            results_visibility=Survey.Results.RESPONDENTS,
+        )
+        survey.admins.set([users["amk67"], users["efw22"]])
+        mood = Question.objects.create(
+            survey=survey, prompt="How are you finding this term so far?", kind="scale",
+            scale_low="Struggling", scale_high="Thriving", sort_order=1,
+        )
+        kinds = Question.objects.create(
+            survey=survey, prompt="Which kinds of event would you come to?", kind="multi",
+            help_text="Tick as many as you like.", sort_order=2,
+        )
+        options = [
+            Choice.objects.create(question=kinds, label=label, sort_order=i)
+            for i, label in enumerate(["Pub nights", "Formals and swaps", "Walks and runs", "Study sessions", "Family-friendly days"])
+        ]
+        fair = Question.objects.create(
+            survey=survey, prompt="Would you volunteer at the Freshers Fair next year?",
+            kind="yesno", required=False, sort_order=3,
+        )
+        more = Question.objects.create(
+            survey=survey, prompt="Anything the committee should know?", kind="long",
+            required=False, sort_order=4,
+        )
+
+        def answer(user, anonymous, score, picks, yes, text):
+            response = Response.objects.create(
+                survey=survey, respondent=None if anonymous else user, is_anonymous=anonymous,
+                submitted_at=None if anonymous else now,
+            )
+            Answer.objects.create(response=response, question=mood, value=score)
+            picked = Answer.objects.create(response=response, question=kinds)
+            picked.choices.set([options[i] for i in picks])
+            Answer.objects.create(response=response, question=fair, value=yes)
+            if text:
+                Answer.objects.create(response=response, question=more, text=text)
+            Participation.objects.create(survey=survey, user=user)
+
+        answer(users["sc777"], False, "4", [0, 2], "yes", "More daytime events for those of us with children, please.")
+        answer(users["pn315"], True, "2", [3], "no", "The WhatsApp group is a lot. A weekly digest would help.")
+        answer(users["jm901"], False, "5", [0, 1, 4], "yes", "")
 
     def seed_polls_and_testimonials(self, users):
         """A venue poll, a Freshers Fair volunteer rota, a general poll, a few

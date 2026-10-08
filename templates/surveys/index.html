@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Surveys{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/surveys.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Surveys</h1>
+    <p class="lede">The committee asks, you answer. Each survey is run by a named member, and you choose whether to answer with your name or anonymously.</p>
+  </div>
+  {% if user.is_portal_admin %}
+    <div class="actions"><a class="btn btn-accent" href="{% url 'surveys:create' %}">New survey</a></div>
+  {% endif %}
+</div>
+
+{% if drafts %}
+  <section class="survey-section">
+    <h2>Drafts</h2>
+    <p class="small muted">Only the people running these can see them, until they are opened.</p>
+    <div class="survey-grid">{% for survey in drafts %}{% include "surveys/_card.html" %}{% endfor %}</div>
+  </section>
+{% endif %}
+
+<section class="survey-section">
+  <h2>Open now</h2>
+  {% if live %}
+    <div class="survey-grid">{% for survey in live %}{% include "surveys/_card.html" %}{% endfor %}</div>
+  {% else %}
+    <div class="empty">No survey is open at the moment.</div>
+  {% endif %}
+</section>
+
+{% if soon %}
+  <section class="survey-section">
+    <h2>Opening soon</h2>
+    <div class="survey-grid">{% for survey in soon %}{% include "surveys/_card.html" %}{% endfor %}</div>
+  </section>
+{% endif %}
+
+<section class="survey-section">
+  <h2>Closed</h2>
+  {% if closed %}
+    <div class="survey-grid">{% for survey in closed %}{% include "surveys/_card.html" %}{% endfor %}</div>
+  {% else %}
+    <div class="empty">No survey has closed yet.</div>
+  {% endif %}
+</section>
+{% endblock %}

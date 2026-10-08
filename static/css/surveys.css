@@ -1,0 +1,50 @@
+/* Surveys: the list, the answer sheet, the results and the builder. */
+
+[hidden] { display: none !important; }  /* the question form hides fields by kind; .grid must not win */
+
+.survey-section { margin-top: 1.6rem; }
+.survey-section h2 { margin-bottom: .5rem; }
+.survey-section > .small { margin: -.2rem 0 .7rem; }
+.survey-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.survey-card { border-left: 4px solid var(--gold); display: flex; flex-direction: column; gap: .4rem; }
+.survey-card.survey-closed { border-left-color: var(--line); }
+.survey-card h3 { margin: 0; }
+.survey-card p { margin: 0; }
+.survey-status { margin: 0 0 .3rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.survey-actions { margin-top: auto; padding-top: .3rem; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.survey-manage { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+.survey-manage form { margin: 0; }
+.survey-intro { margin-bottom: 1rem; }
+
+/* the answer sheet */
+.survey-sheet fieldset { margin: 0 0 1.1rem; padding: .8rem 1rem 1rem; }
+.survey-sheet legend { font-weight: 650; color: var(--heading); font-size: 1.02rem; }
+.survey-sheet .has-error { border-color: var(--brick); }
+.survey-sheet input[type="text"], .survey-sheet textarea, .survey-sheet select { width: 100%; max-width: 40rem; }
+.survey-sheet .identity { background: var(--gold-soft); border-color: transparent; }
+.choice-list { display: grid; gap: .2rem; }
+.choice { display: flex; gap: .55rem; align-items: flex-start; padding: .35rem .5rem; border-radius: var(--radius-small); cursor: pointer; }
+.choice:hover { background: var(--sage-100); }
+.choice input { width: auto; margin: .25rem 0 0; flex: none; }
+.choice small { display: block; color: var(--ink-soft); font-weight: 400; }
+.scale { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.scale-step { display: inline-flex; flex-direction: column; align-items: center; gap: .15rem; padding: .35rem .7rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--card); cursor: pointer; }
+.scale-step:has(input:checked) { background: var(--pine-800); color: #fff; border-color: var(--pine-800); }
+.scale-step input { margin: 0; }
+.scale-end { font-size: .85rem; color: var(--ink-soft); }
+
+/* the builder */
+.question-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; counter-reset: q; }
+.question-row { display: flex; gap: 1rem; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: .8rem 1rem; }
+.question-row::before { counter-increment: q; content: counter(q) "."; font-weight: 700; color: var(--ink-soft); }
+.question-main { flex: 1 1 18rem; min-width: 0; }
+.question-row .row-actions { display: flex; gap: .3rem; align-items: center; }
+.question-row .row-actions form { margin: 0; }
+.admin-pick { max-height: 16rem; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-small); padding: .4rem; display: grid; gap: .1rem; }
+@media (min-width: 640px) { .admin-pick { grid-template-columns: 1fr 1fr; } }
+.admin-pick .choice { padding: .2rem .4rem; }
+
+/* results */
+.result h2 { font-size: 1.15rem; margin-bottom: .2rem; }
+.result .bar-row { grid-template-columns: minmax(120px, 220px) 1fr 3rem; }
+.answers { margin: .4rem 0 0; padding-left: 1.1rem; display: grid; gap: .45rem; }

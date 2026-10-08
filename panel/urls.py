@@ -25,6 +25,7 @@ urlpatterns = [
     path("events/", views.events_admin, name="events"),
     path("events/<int:pk>/action/", views.event_action, name="event_action"),
     path("polls/", views.polls, name="polls"),
+    path("surveys/", views.surveys, name="surveys"),
     path("messages/", views.messages_admin, name="messages"),
     path("messages/<int:pk>/remove/", views.message_remove, name="message_remove"),
     path("messages/settings/", views.messaging_settings, name="messaging_settings"),

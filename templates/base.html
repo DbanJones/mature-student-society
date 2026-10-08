@@ -60,11 +60,12 @@
         <a href="{% url 'notifications:index' %}" class="nav-bell{% if nav_active == 'notifications' %} active{% endif %}"
            aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Notifications">🔔{% if unread_notifications %}<span class="nav-badge">{{ unread_notifications }}</span>{% endif %}</a>
         <details class="nav-group">
-          <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
+          <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' or nav_active == 'surveys' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
           <div class="nav-menu">
             <a href="{% url 'dashboard:home' %}">🏠 Dashboard</a>
             {% if "members" in visible_tabs %}<a href="{% url 'members:directory' %}">👥 Members</a>{% endif %}
             {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>{% endif %}
+            <a href="{% url 'surveys:index' %}">📋 Surveys</a>
             <a href="{% url 'accounts:profile' %}">✏️ My profile</a>
             <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
               {% csrf_token %}

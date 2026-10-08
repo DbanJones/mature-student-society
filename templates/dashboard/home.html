@@ -86,6 +86,31 @@
   </div>
 {% endif %}
 
+{% if surveys_waiting or surveys_run %}
+  <div class="grid grid-2" style="margin-top: 1.5rem;">
+    {% if surveys_waiting %}
+      <div class="card">
+        <h3>📋 Surveys waiting for you</h3>
+        <ul class="small" style="margin:0; padding-left:1.1rem">
+          {% for survey in surveys_waiting %}
+            <li><a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a>{% if survey.closes_at %} <span class="muted">· closes in {{ survey.closes_at|timeuntil }}</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    {% if surveys_run %}
+      <div class="card">
+        <h3>📋 Surveys you run</h3>
+        <ul class="small" style="margin:0; padding-left:1.1rem">
+          {% for survey in surveys_run %}
+            <li><a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a> <span class="muted">· {% if survey.is_draft %}draft{% elif survey.is_scheduled %}opens {{ survey.opens_at|date:"j M" }}{% elif survey.is_live %}open{% else %}closed{% endif %} · {{ survey.answer_count }} answered</span></li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if polls_waiting or volunteering %}
   <div class="grid grid-2" style="margin-top: 1.5rem;">
     {% if polls_waiting %}

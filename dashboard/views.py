@@ -103,6 +103,18 @@ def home(request):
 
     # Polls this member can still vote in, and rota slots they've taken.
     polls_waiting = list(Poll.objects.for_dashboard(user)[:5])
+    from django.db.models import Count as _Count
+
+    from surveys.models import Survey
+
+    for due in Survey.objects.due():
+        due.close()
+    surveys_waiting = list(Survey.objects.for_dashboard(user)[:5])
+    surveys_run = list(
+        user.surveys_run.exclude(status=Survey.Status.CLOSED)
+        .annotate(answer_count=_Count("participations", distinct=True))
+        .order_by("-created_at")[:5]
+    )
     volunteering = list(
         PollVote.objects.filter(user=user, poll__kind=Poll.Kind.VOLUNTEERS)
         .filter(Q(poll__event__isnull=True) | Q(poll__event__start__gte=now))
@@ -131,6 +143,8 @@ def home(request):
         "show_testimonial_invite": not user.testimonials.exists(),
         "polls_waiting": polls_waiting,
         "volunteering": volunteering,
+        "surveys_waiting": surveys_waiting,
+        "surveys_run": surveys_run,
         "waiting_events": waiting_events,
         "checklist": checklist,
         "checklist_done": checklist_done,

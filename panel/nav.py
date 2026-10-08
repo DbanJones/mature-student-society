@@ -19,6 +19,7 @@ PANEL_GROUPS = [
         ("members", "Members", "panel:members"),
         ("waitlist", "Waitlist", "panel:waitlist"),
         ("whatsapp", "WhatsApp", "panel:whatsapp_requests"),
+        ("surveys", "Surveys", "panel:surveys"),
     ]),
     ("events", "Events", [
         ("events", "All events", "panel:events"),

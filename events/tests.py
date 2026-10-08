@@ -44,6 +44,7 @@ urlpatterns = [
     path("admin/", include(_stub_patterns("panel", ["home"]))),
     path("testimonials/", include(_stub_patterns("testimonials", ["index"]))),
     path("polls/", include("polls.urls")),
+    path("surveys/", include("surveys.urls")),
     path("notifications/", include("notifications.urls")),
     path("posters/", include("posters.urls")),
     path("p/<slug:slug>/", _stub, name="poster_scan"),

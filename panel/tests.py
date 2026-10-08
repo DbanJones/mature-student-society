@@ -94,6 +94,7 @@ urlpatterns = [
         ("", "index"), ("submit/", "submit"), ("<int:pk>/withdraw/", "withdraw"),
     ])),
     path("polls/", include("polls.urls")),
+    path("surveys/", include("surveys.urls")),
     path("notifications/", include("notifications.urls")),
 ]
 
@@ -162,7 +163,7 @@ class PermissionTests(PanelTestCase):
         for name in ["home", "waitlist", "members", "members_cleanup", "events",
                      "messages", "whatsapp_requests", "content", "contact_map",
                      "pages", "navigation", "testimonials", "terms", "stats",
-                     "mailer", "audit", "superadmin", "polls", "about"]:
+                     "mailer", "audit", "superadmin", "polls", "about", "surveys"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 

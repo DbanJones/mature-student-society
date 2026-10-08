@@ -331,6 +331,25 @@ def build_whats_on_email(request):
                 ),
                 "",
             ]
+    from surveys.models import Survey
+
+    live_surveys = list(Survey.objects.live().order_by("-created_at"))
+    if live_surveys:
+        if not open_polls:
+            lines += ["📊 HAVE YOUR SAY", "---------------", ""]
+        for survey in live_surveys:
+            closes = (
+                f"  closes {date_format(timezone.localtime(survey.closes_at), 'D j M, H:i')}"
+                if survey.closes_at else "  open until the committee closes it"
+            )
+            lines += [
+                f"• Survey: {survey.title}",
+                closes,
+                "  Answer: " + _absolute_url(
+                    request, "surveys:detail", args=[survey.slug], fallback=f"/surveys/{survey.slug}/"
+                ),
+                "",
+            ]
     lines += [
         "Full calendar (and where to add your own events):",
         _absolute_url(request, "events:calendar", fallback="/events/"),

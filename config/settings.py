@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     "polls",
     "notifications",
     "posters",
+    "surveys",
 ]
 
 MIDDLEWARE = [

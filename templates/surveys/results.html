@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Results: {{ survey.title }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/surveys.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{{ survey.get_absolute_url }}">&larr; {{ survey.title }}</a></p>
+<div class="survey-page">
+  <div class="page-head">
+    <div>
+      <h1>Results</h1>
+      <p class="small muted">
+        {{ total }} response{{ total|pluralize }}{% if total %}: {{ named }} with a name, {{ anonymous }} anonymous{% endif %}
+        · {% if survey.is_live %}still open{% elif survey.is_closed %}closed{% if survey.ended_at %} {{ survey.ended_at|date:"j M Y" }}{% endif %}{% else %}not open yet{% endif %}
+      </p>
+    </div>
+    {% if can_manage %}
+      <div class="actions">
+        {% if survey.is_closed %}<a class="btn btn-small btn-ghost" href="{% url 'surveys:results' survey.slug %}?format=csv">Download as CSV</a>
+        {% else %}<span class="small muted">The CSV download is available once the survey closes.</span>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+  {% for item in results %}
+    <div class="card result">
+      <h2>{{ forloop.counter }}. {{ item.question.prompt }}</h2>
+      <p class="small muted">{{ item.answered }} answered{% if item.mean %} · average {{ item.mean }} out of 5{% endif %}{% if item.kind == 'multi' %} · members could pick more than one{% endif %}</p>
+      {% if item.options %}
+        {% for option in item.options %}
+          <div class="bar-row">
+            <span class="small">{{ option.label }}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:{{ option.pct }}%"></div></div>
+            <span class="small muted">{{ option.n }}</span>
+          </div>
+        {% endfor %}
+        {% if item.kind == 'scale' and item.question.scale_low %}<p class="small muted" style="margin:.3rem 0 0">1 = {{ item.question.scale_low }} · 5 = {{ item.question.scale_high }}</p>{% endif %}
+      {% elif item.texts %}
+        <ul class="answers">
+          {% for text, who in item.texts %}
+            <li><span class="answer-text">{{ text|linebreaksbr }}</span> <span class="small muted">· {% if who %}{{ who.get_full_name|default:who.username }}{% else %}Anonymous{% endif %}</span></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="small muted" style="margin:0">No answers yet.</p>
+      {% endif %}
+    </div>
+  {% empty %}
+    <div class="empty">This survey has no questions.</div>
+  {% endfor %}
+
+  {% if can_manage %}
+    <p class="small muted">{{ answered }} member{{ answered|pluralize }} answered and {{ not_answered }} haven't. Reminders go to those who haven't; the site never says who.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -15,6 +15,7 @@ urlpatterns = [
     path("polls/", include("polls.urls")),
     path("notifications/", include("notifications.urls")),
     path("posters/", include("posters.urls")),
+    path("surveys/", include("surveys.urls")),
     # The short link printed in poster QR codes: counts the scan, then sends
     # the phone on to the event page.
     path("p/<slug:slug>/", poster_scan, name="poster_scan"),

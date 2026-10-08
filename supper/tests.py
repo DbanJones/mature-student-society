@@ -52,6 +52,7 @@ urlpatterns = [
     path("panel/", _namespace("panel", ["home"])),
     path("testimonials/", _namespace("testimonials", ["index"])),
     path("notifications/", include("notifications.urls")),
+    path("surveys/", include("surveys.urls")),
     path("members/", include(([
         path("", _stub_view, name="directory"),
         path("<str:username>/", _stub_view, name="profile"),

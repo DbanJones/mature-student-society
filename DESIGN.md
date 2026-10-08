@@ -214,6 +214,38 @@ organiser's choices live in one `EventPoster` row; other members' tweaks are
 query-string overrides that are never saved. The SRCF stores no poster
 files.
 
+## Surveys
+
+`surveys` is a sibling of `polls` rather than an extension of it: a poll
+is one question with named votes that settles an event's venue or date; a
+survey is several questions with answers grouped per member, optionally
+anonymous. A society admin creates a `Survey` and names its `admins`, the
+members who run it: they write `Question`s (short answer, paragraph,
+choose one, choose any, dropdown, 1 to 5 scale, yes or no), open and
+close it, see the results, download a CSV and send reminders. `/surveys/`
+lists live, opening-soon and closed surveys for every member, and drafts
+for the people running them; closed surveys stay there with their results
+when `results_visibility` allows.
+
+Anonymity is in the data. Who has answered lives in `Participation` (one
+answer per member, reminders to the rest); what they said lives in
+`Response`. An anonymous response has no respondent and no time at all,
+and every row of it (`Response`, `Answer`, `AnswerChoice`) is keyed by a
+random UUID rather than a running number, so neither a sequence nor a
+timestamp lines the two tables up; a deleted member's named responses
+become anonymous. Named responses carry the member and can be edited,
+anonymous ones are final. The site shows the people running a survey how
+many have answered, never who; anonymous free-text answers are listed in
+a different order for every question, so one member's answers can't be
+lined up; and the row-by-row CSV (which guards against spreadsheet
+formulas) is only offered once the survey has closed.
+(SQLite keeps a hidden row number per table, so only the live MySQL
+database meets the promise completely.)
+Once anyone has answered, questions and choices can be reworded but not
+added or removed, since existing answers point at them. Surveys close on
+their date lazily (the first page load) and from the `close_polls` cron
+command. The What's On mailer lists live surveys under "Have your say".
+
 ## Visual layer
 
 Stats charts are inline SVG from `panel/charts.py` (no JavaScript, no
