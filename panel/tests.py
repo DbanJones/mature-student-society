@@ -1395,3 +1395,4 @@ class MailerDeliveryTests(TestCase):
             page = self.client.get(reverse("panel:mailer"))
         self.assertContains(page, "leaves this server")
         self.assertContains(page, "mss-webmaster@srcf.net")
+        self.assertContains(page, "Sender filters")  # how to get Mailman to accept the From address

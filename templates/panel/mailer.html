@@ -24,6 +24,14 @@
     UPGRADING.md explains the fix.
   </div>
 {% endif %}
+<p class="small muted" style="margin:0 0 1rem">
+  <strong>Getting it to the list:</strong> “Sent” means the SRCF mail server took the message; the
+  list then decides. “To” must be the list's exact address (check it at
+  <a href="https://control.srcf.net">control.srcf.net</a>), and Mailman holds posts from senders it
+  doesn't know, so the list must accept mail from <strong>{{ email_from }}</strong>: subscribe that
+  address to the list (delivery off) or add it under Privacy options → Sender filters at
+  <a href="https://lists.srcf.net">lists.srcf.net</a>, then approve anything it is already holding.
+</p>
 
 {% if site_config.email_tone %}
   <div class="card" style="margin-bottom:1rem">

@@ -128,8 +128,12 @@ you were before; your admin rights are unchanged.
   server on localhost); without it "Send" only writes to the log. Set
   `DEFAULT_FROM_EMAIL` to an srcf.net address the society owns, such as
   `MSS <mss-webmaster@srcf.net>`: mail from the SRCF claiming to come from
-  another domain is likely to be refused or junked by Gmail and Outlook,
-  and the Mailman list must accept posts from that address.
+  another domain is likely to be refused or junked by Gmail and Outlook.
+  The Mailman list must accept posts from that address: subscribe it to
+  the list with delivery off, or add it under Privacy options → Sender
+  filters at lists.srcf.net; a post from an unknown sender is held for
+  moderation, which looks like nothing happening. The Mailer tab repeats
+  this under “Getting it to the list”.
 - **Pictures on pages.** Admin → Content → Pictures takes uploads (shrunk
   on the way in, served to everyone) and shows the line to paste into a
   page. Every Markdown box now has a toolbar and a live preview.

@@ -1869,7 +1869,11 @@ def mailer(request):
                     f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to the list.",
                 )
             elif ok:
-                messages.success(request, f"What's On sent to {recipient}.")
+                messages.success(
+                    request,
+                    f"What's On handed to the mail server for {recipient}. If it hasn't reached the list "
+                    "in a few minutes, the list is holding it: see “Getting it to the list” below.",
+                )
             else:
                 messages.error(request, f"Sending failed: {error}")
             if not is_test:
