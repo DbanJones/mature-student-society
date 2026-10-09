@@ -1331,37 +1331,62 @@ class SiteHealthTests(TestCase):
         )
         self.client.force_login(self.admin)
 
-    def test_the_super_admin_tab_says_whether_static_files_are_current(self):
+    def test_the_super_admin_tab_checks_the_served_static_files_only_when_asked(self):
+        import urllib.error
         from io import BytesIO
 
         from django.contrib.staticfiles import finders
-        from django.core.cache import cache
 
         from panel import health
 
-        cache.delete(health.CACHE_KEY)
-        page = self.client.get(reverse("panel:superadmin"))
-        self.assertContains(page, "Check now")  # nothing is fetched until asked
         with open(finders.find("css/base.css"), "rb") as handle:
             current = handle.read()
 
         def fake_open(request, timeout=0):
-            body = current if request.full_url.split("?")[0].endswith("css/base.css") else b"old bytes"
-            return BytesIO(body)
+            url = request.full_url.split("?")[0]
+            if url.endswith("css/base.css"):
+                return BytesIO(current)
+            if url.endswith("css/panel.css"):
+                return BytesIO(b"old bytes")
+            if url.endswith("css/posters.css"):
+                raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
 
         with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
-            page = self.client.get(reverse("panel:superadmin") + "?health=1")
+            page = self.client.get(reverse("panel:superadmin"))
+            self.assertContains(page, "Check now")
+            self.assertEqual(opened.call_count, 0)  # nothing is fetched until asked
+            page = self.client.get(reverse("panel:superadmin") + "?health=1", HTTP_HOST="testserver:8443")
         self.assertEqual(opened.call_count, len(health.CHECKED))
-        self.assertContains(page, "up to date")
-        self.assertContains(page, "stale")
+        for call in opened.call_args_list:
+            self.assertTrue(call.args[0].full_url.startswith("http://testserver/static/"))  # the host, never its port
         rows = {row["name"]: row["status"] for row in page.context["static_health"]}
         self.assertEqual(rows["css/base.css"], "ok")
         self.assertEqual(rows["css/panel.css"], "stale")
-        with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
-            page = self.client.get(reverse("panel:superadmin"))
-        self.assertEqual(opened.call_count, 0)  # the last result is kept
-        self.assertContains(page, "Check again now")
-        cache.delete(health.CACHE_KEY)
+        self.assertEqual(rows["css/posters.css"], "HTTP 403")
+        self.assertEqual(rows["js/poster-studio.js"], "missing")
+        self.assertContains(page, "up to date")
+        self.assertContains(page, "HTTP 403")
+        self.assertContains(page, "Check again")
+        # the admin forms go back to the plain tab, so they never re-run the check
+        self.assertContains(page, f'name="next" value="{reverse("panel:superadmin")}"')
+
+    def test_a_source_file_that_cannot_be_read_is_reported_not_raised(self):
+        from io import BytesIO
+
+        from panel import health
+
+        real_find = health.finders.find
+
+        def find(name, *args, **kwargs):
+            return "C:/nowhere/base.css" if name == "css/base.css" else real_find(name, *args, **kwargs)
+
+        with mock.patch.object(health.finders, "find", side_effect=find), \
+                mock.patch.object(health.urllib.request, "urlopen", side_effect=lambda *a, **k: BytesIO(b"x")):
+            page = self.client.get(reverse("panel:superadmin") + "?health=1")
+        self.assertEqual(page.status_code, 200)
+        rows = {row["name"]: row["status"] for row in page.context["static_health"]}
+        self.assertEqual(rows["css/base.css"], "unreadable here")
 
 
 class MailerDeliveryTests(TestCase):
@@ -1395,4 +1420,28 @@ class MailerDeliveryTests(TestCase):
             page = self.client.get(reverse("panel:mailer"))
         self.assertContains(page, "leaves this server")
         self.assertContains(page, "mss-webmaster@srcf.net")
+        self.assertNotContains(page, "not an srcf.net address")
         self.assertContains(page, "Sender filters")  # how to get Mailman to accept the From address
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            DEFAULT_FROM_EMAIL="MSS <maturesoc@cambridgesu.co.uk>",
+        ):
+            self.assertContains(self.client.get(reverse("panel:mailer")), "not an srcf.net address")
+
+    def test_a_test_send_needs_an_email_address_and_a_failed_send_is_recorded(self):
+        self.admin.email = ""
+        self.admin.save()
+        draft = {"recipient": "list@lists.srcf.net", "subject": "What's On", "body": "Hello all"}
+        page = self.client.post(reverse("panel:mailer"), {**draft, "action": "test"}, follow=True)
+        self.assertContains(page, "no email address")
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(MailLog.objects.exists())
+        self.admin.email = "ada@cam.ac.uk"
+        self.admin.save()
+        with mock.patch("panel.views.EmailMessage.send", side_effect=OSError("Connection refused")):
+            page = self.client.post(reverse("panel:mailer"), {**draft, "action": "send"}, follow=True)
+        self.assertContains(page, "Sending failed")
+        log = MailLog.objects.get()
+        self.assertFalse(log.ok)
+        self.assertIn("Connection refused", log.error)
+        self.assertTrue(AuditLog.objects.filter(action="send_mailer", detail__startswith="FAILED").exists())

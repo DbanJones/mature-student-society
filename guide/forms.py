@@ -3,6 +3,8 @@
 from django import forms
 from django.urls import reverse_lazy
 
+from core.richtext import richtext_problem
+
 from .models import GuidePage
 
 
@@ -34,3 +36,10 @@ class GuidePageForm(forms.ModelForm):
                 }
             ),
         }
+
+    def clean_content(self):
+        content = self.cleaned_data["content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content

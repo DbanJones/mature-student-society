@@ -36,10 +36,10 @@
           <strong>{{ picture.alt }}</strong>{% if picture.caption %}<br><span class="small muted">{{ picture.caption }}</span>{% endif %}
           <br><span class="small muted">{{ picture.uploaded_at|date:"j M Y" }}{% if picture.uploaded_by %} · {{ picture.uploaded_by.get_full_name|default:picture.uploaded_by.username }}{% endif %}</span>
           <input type="text" readonly value="{{ picture.markdown }}" id="pic-{{ picture.pk }}" aria-label="Line to paste into a page" onclick="this.select()">
-          <p class="row-actions" style="margin:.4rem 0 0">
+          <div class="row-actions" style="margin:.4rem 0 0">
             <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="pic-{{ picture.pk }}">Copy line</button>
             <form method="post" action="{% url 'panel:picture_delete' picture.pk %}" data-confirm="Delete “{{ picture.alt }}”? Pages that use it will show a broken picture until the line is removed.">{% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button></form>
-          </p>
+          </div>
         </figcaption>
       </figure>
     {% endfor %}

@@ -485,6 +485,23 @@ class MenuPageTests(TestCase):
         self.assertContains(page, "Log out")
         self.assertContains(page, "<span>Menu</span>")  # the fifth tab on phones
 
+    def test_the_tab_bar_honours_the_tab_visibility_setting(self):
+        from django.core.cache import cache
+
+        from core.models import SiteConfig
+
+        member = User.objects.create_user(
+            username="mn002", password="pw", first_name="Tab", last_name="Member",
+            college="wolfson", mobile="+44 7700 900003",
+        )
+        self.client.force_login(member)
+        self.assertContains(self.client.get(reverse("core:menu")), 'href="/messages/"')
+        config = SiteConfig.get()
+        config.tab_visibility = {"messages": "hidden"}
+        config.save()
+        cache.clear()
+        self.assertNotContains(self.client.get(reverse("core:menu")), 'href="/messages/"')
+
 
 class PicturesAndEditorTests(TestCase):
     def setUp(self):
@@ -549,3 +566,25 @@ class PicturesAndEditorTests(TestCase):
         self.assertContains(preview, 'src="/media/public/pictures/a.jpg"')
         self.client.logout()
         self.assertEqual(self.client.post(reverse("core:preview"), {"text": "x"}).status_code, 302)
+
+    def test_markdown_that_would_stall_the_renderer_is_refused(self):
+        from django.core.cache import cache
+
+        from core.models import SitePage
+
+        self.client.force_login(self.member)
+        heavy = "`" * 700
+        refused = self.client.post(reverse("core:preview"), {"text": heavy})
+        self.assertEqual(refused.status_code, 413)
+        self.assertIn("too many", refused.content.decode())
+        page = SitePage.objects.create(title="Sponsors", slug="sponsors-2", content="x")
+        page.editors.add(self.member)
+        saved = self.client.post(reverse("core:site_page_edit", args=[page.slug]), {"title": "Sponsors", "content": heavy})
+        self.assertEqual(saved.status_code, 200)  # shown again with the error
+        self.assertContains(saved, "Not saved")
+        page.refresh_from_db()
+        self.assertEqual(page.content, "x")
+        for _ in range(45):
+            self.client.post(reverse("core:preview"), {"text": "fine"})
+        self.assertEqual(self.client.post(reverse("core:preview"), {"text": "fine"}).status_code, 429)
+        cache.delete(f"preview-rate:{self.member.pk}")

@@ -152,7 +152,7 @@
             {% else %}
               <span class="muted small">{{ event.going_list|length }} going</span>
             {% endif %}
-            {% if user.is_authenticated %}
+            {% if user.is_authenticated and event.show_attendees %}
               <span class="avatars">
                 {% for rsvp in event.going_list|slice:":6" %}
                   <a class="avatar-token" href="{% url 'members:profile' rsvp.user.username %}" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</a>

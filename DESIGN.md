@@ -277,8 +277,9 @@ command. The What's On mailer lists live surveys under "Have your say".
 Stats charts are inline SVG from `panel/charts.py` (no JavaScript, no
 CDN). The calendar labels Cambridge term weeks from term dates on
 SiteConfig and has an agenda view that is the default on phones. Revision
-diffs (`core/diff.py`) cover managed pages and the terms. The header turns
-into a drawer on phones with a bottom tab bar for members; dark mode
+diffs (`core/diff.py`) cover managed pages and the terms. On phones the
+header keeps the lion and a Menu link, and `/menu/` lists every section
+(logged-in members also get a bottom tab bar); dark mode
 re-points the CSS tokens; `data-confirm` forms confirm through a `<dialog>`
 and simply post without JavaScript.
 

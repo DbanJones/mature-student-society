@@ -4,6 +4,7 @@ from django import forms
 from django.urls import reverse_lazy
 
 from .models import SitePage
+from .richtext import richtext_problem
 
 
 class SitePageContentForm(forms.ModelForm):
@@ -24,3 +25,10 @@ class SitePageContentForm(forms.ModelForm):
         widgets = {
             "content": forms.Textarea(attrs={"rows": 18, "data-editor": reverse_lazy("core:preview")}),
         }
+
+    def clean_content(self):
+        content = self.cleaned_data["content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content

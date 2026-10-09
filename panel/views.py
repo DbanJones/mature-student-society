@@ -27,6 +27,7 @@ from accounts.decorators import (
     tag_owner_or_admin_required,
 )
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
+from core.richtext import richtext_problem
 from core.models import (
     VISIBILITY_CHOICES,
     Activity,
@@ -1086,7 +1087,10 @@ def text_edit(request, key):
             return redirect(reverse("panel:pages") + f"#page-{page['key']}")
         if block["format"] == "plain":
             text = " ".join(text.split())
-        if request.POST.get("preview"):
+        problem = richtext_problem(text) if block["format"] == "markdown" else None
+        if problem:
+            messages.error(request, f"Not saved: {problem}.")
+        elif request.POST.get("preview"):
             preview = render_value(block, text)
         else:
             TextBlock.objects.update_or_create(key=key, defaults={"text": text, "updated_by": request.user})
@@ -1361,7 +1365,7 @@ def superadmin(request):
     return render(request, "panel/superadmin.html", {
         "nav_active": "panel",
         "panel_tab": "superadmin",
-        "static_health": static_health(request, fresh="health" in request.GET),
+        "static_health": static_health(request) if "health" in request.GET else None,
         "admins": admins,
         "non_admins": non_admins,
         "tags": tags,
@@ -1897,6 +1901,7 @@ def mailer(request):
         "form": form,
         "email_live": "smtp" in settings.EMAIL_BACKEND,
         "email_from": settings.DEFAULT_FROM_EMAIL,
+        "email_from_ok": settings.DEFAULT_FROM_EMAIL.rstrip("> ").lower().endswith("@srcf.net"),
         "event_count": services.whats_on_events().count(),
         "recent_logs": MailLog.objects.select_related("sent_by")[:5],
     })

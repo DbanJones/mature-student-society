@@ -62,14 +62,24 @@
     preview.hidden = true;
     area.parentNode.insertBefore(preview, area.nextSibling);
 
-    var timer = null;
+    var timer = null, latest = 0;
     function refresh() {
+      var ticket = ++latest;
       fetch(area.dataset.editor, {
         method: "POST",
         credentials: "same-origin",
+        redirect: "error",  // a redirect means the session has gone: never show the login page here
         headers: { "X-CSRFToken": csrfToken(area), "Content-Type": "application/x-www-form-urlencoded" },
         body: "text=" + encodeURIComponent(area.value)
-      }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (html) { preview.innerHTML = html; });
+      }).then(function (r) {
+        return r.text().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+      }).then(function (got) {
+        if (ticket !== latest) return;  // an older render must not overwrite a newer one
+        if (got.ok) { preview.innerHTML = got.body; return; }
+        preview.textContent = got.status === 413 || got.status === 429 ? got.body : "Preview unavailable (are you still logged in?).";
+      }).catch(function () {
+        if (ticket === latest) preview.textContent = "Preview unavailable (are you still logged in?).";
+      });
     }
     toggle.addEventListener("click", function () {
       preview.hidden = !preview.hidden;

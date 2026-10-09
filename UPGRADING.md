@@ -9,7 +9,7 @@ whole page once before starting; the actual work is about fifteen minutes.
 |---|---|---|
 | Members, events, RSVPs, polls, pages, sessions (who is logged in) | The society **MySQL database** (`mss` on host `mysql`) | No. Code files and the database are separate. `migrate` only *adds* tables and columns. |
 | Secrets and settings (`DJANGO_SECRET_KEY`, database password, `RAVEN_MODE=header`, `DJANGO_DEBUG=false`) | `.env` in the portal folder | **Must be kept.** Never overwrite or regenerate. |
-| Member photos and event pictures | `media/` in the portal folder | **Must be kept.** Not in the repository. |
+| Member photos, event pictures and pictures for the pages | `media/` in the portal folder | **Must be kept.** Not in the repository. |
 | Raven login | Apache `.htaccess` files under `public_html` | Not part of the code. Leave alone. |
 | The code | The portal folder (everything else) | Replaced. |
 
@@ -119,15 +119,20 @@ you were before; your admin rights are unchanged.
   release. Stylesheet links carry a version stamp, so browsers fetch new
   CSS as soon as it is collected. The Super admin tab has a "Site health"
   card: press "Check now" and it says whether the web server is serving
-  this version's files.
-- **The ☰ icon is gone.** Phones get a "Menu" link in the header and a
-  Menu tab at the bottom, both opening a page that lists the whole site.
+  this version's files. The boot-time collect runs as the society user, so
+  `staticfiles/` must be writable by it; if it fails the site still starts
+  and the card says so.
+- **The ☰ icon is gone.** Phones get a "Menu" link in the header (and,
+  for logged-in members, a Menu tab at the bottom), both opening a page
+  that lists the whole site.
 - **Check the mailer really sends.** The Mailer tab now says whether mail
   leaves the server and has a "Send a test to me" button. Delivery needs
   `REAL_EMAIL=true` in `.env` (mail then goes through the SRCF's own mail
   server on localhost); without it "Send" only writes to the log. Set
   `DEFAULT_FROM_EMAIL` to an srcf.net address the society owns, such as
-  `MSS <mss-webmaster@srcf.net>`: mail from the SRCF claiming to come from
+  `DEFAULT_FROM_EMAIL="MSS <mss-webmaster@srcf.net>"` (quoted: `.env` is read
+  by bash and an unquoted `<` stops the service from starting; this is also
+  the fallback when the variable is unset): mail from the SRCF claiming to come from
   another domain is likely to be refused or junked by Gmail and Outlook.
   The Mailman list must accept posts from that address: subscribe it to
   the list with delivery off, or add it under Privacy options → Sender
@@ -137,6 +142,12 @@ you were before; your admin rights are unchanged.
 - **Pictures on pages.** Admin → Content → Pictures takes uploads (shrunk
   on the way in, served to everyone) and shows the line to paste into a
   page. Every Markdown box now has a toolbar and a live preview.
+- **Poster text can no longer run off the sheet.** Each line records the
+  width it was laid out for; a viewer whose browser substitutes a font
+  (say, static files missing on the server) gets any overflowing line
+  squeezed to fit, and a line that fits is left exactly as the font draws
+  it. Emoji and non-Latin text are measured honestly, and a long tag
+  name is trimmed before it reaches the lion.
 - **Organisers can hide the RSVP list.** "Show who's going" on the event
   form; the count always shows, and the organiser and admins still see
   the names.

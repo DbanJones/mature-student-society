@@ -480,7 +480,7 @@ pre code { background: none; color: inherit; padding: 0; }
 .search-hit h3 { margin-bottom: .25rem; }
 .search-snippet { color: var(--ink-soft); font-size: .92rem; margin: 0 0 .5rem; }
 
-/* --- mobile: menu drawer and bottom tab bar ----------------------- */
+/* --- mobile: the Menu link and bottom tab bar ---------------------- */
 
 .header-inner { position: relative; }
 /* Phones: the header keeps the lion and a Menu link; the Menu page lists
@@ -495,7 +495,7 @@ pre code { background: none; color: inherit; padding: 0; }
   .nav-menu-link { display: inline-flex; }
   .site-nav { display: none; }
   .tab-bar {
-    display: grid; grid-template-columns: repeat(5, 1fr);
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
     background: var(--card); border-top: 1px solid var(--line);
     padding-bottom: env(safe-area-inset-bottom);
@@ -507,7 +507,11 @@ pre code { background: none; color: inherit; padding: 0; }
   }
   .tab-bar a.active { color: var(--heading); }
   .tab-bar a span:first-child { font-size: 1.15rem; line-height: 1; }
+  .tab-bar a span:last-child { white-space: nowrap; }
   body.has-tab-bar { padding-bottom: 3.8rem; }
+}
+@media (max-width: 360px) {
+  .tab-bar a { font-size: .6rem; }
 }
 
 /* --- confirmation dialog ------------------------------------------- */

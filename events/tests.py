@@ -651,15 +651,25 @@ class AttendeeListTests(EventTestCase):
         member_link = reverse("members:profile", args=[self.member.username])
         self.client.force_login(self.other)
         self.assertContains(self.client.get(url), member_link)
+        self.assertContains(self.client.get(reverse("events:calendar")), member_link)
         self.public_event.show_attendees = False
         self.public_event.save()
         page = self.client.get(url)
         self.assertNotContains(page, member_link)
         self.assertContains(page, "chosen not to show")
-        self.assertContains(page, "going")  # the count stays
+        self.assertContains(page, "<strong>1</strong> going")  # the count stays
+        Event.objects.update(show_attendees=False)  # the member is also going to another fixture event
+        self.assertNotContains(self.client.get(reverse("events:calendar")), member_link)  # the calendar's list hides them too
         self.client.force_login(self.creator)  # organisers still see the list
         page = self.client.get(url)
         self.assertContains(page, member_link)
         self.assertContains(page, "you can still see them")
+        self.client.force_login(self.admin)  # and so do admins
+        self.assertContains(self.client.get(url), member_link)
+        self.client.force_login(self.creator)  # weekly copies keep the choice
+        self.client.post(reverse("events:repeat", args=[self.public_event.slug]), {"weeks": 2})
+        copies = Event.objects.filter(title=self.public_event.title).exclude(pk=self.public_event.pk)
+        self.assertEqual(copies.count(), 2)
+        self.assertFalse(any(copy.show_attendees for copy in copies))
         self.client.force_login(self.member)
         self.assertContains(self.client.get(reverse("events:create")), "Show who")

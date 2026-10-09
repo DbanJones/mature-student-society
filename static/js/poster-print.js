@@ -52,6 +52,7 @@
   var images = Array.prototype.slice.call(svg.querySelectorAll("image"));
   var ready = Promise.all(images.map(settle).concat([document.fonts ? document.fonts.ready : Promise.resolve()]));
   var limit = new Promise(function (resolve) { setTimeout(resolve, 30000); });
+  ready.then(function () { if (window.fitPosterText) window.fitPosterText(svg); });
   if (sheet.dataset.autoPrint) {
     Promise.race([ready, limit]).then(function () { setTimeout(function () { window.print(); }, 300); });
   }

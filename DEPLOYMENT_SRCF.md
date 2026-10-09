@@ -62,10 +62,13 @@ DB_PASSWORD=<from control.srcf.net>
 DB_HOST=postgres
 RAVEN_MODE=header
 REAL_EMAIL=true
-DEFAULT_FROM_EMAIL=MSS <<soc>-webmaster@srcf.net>
+DEFAULT_FROM_EMAIL="MSS <<soc>-webmaster@srcf.net>"
 EOF
 chmod 600 /societies/<soc>/portal/.env
 ```
+
+Quote any value that has spaces or angle brackets (the From address above):
+`.env` is read by bash, and an unquoted `<` stops the service from starting.
 
 ## 4. Gunicorn on a UNIX socket + systemd
 
@@ -88,7 +91,7 @@ cd /societies/<soc>/portal
 [ -r .env ] || { echo "run.sh: .env missing or unreadable" >&2; exit 1; }
 set -a; source .env; set +a
 .venv/bin/python manage.py check          # aborts the boot on unsafe config
-.venv/bin/python manage.py collectstatic --noinput   # the web server serves what this code ships
+.venv/bin/python manage.py collectstatic --noinput || echo "run.sh: collectstatic failed; serving the files already on disk (see Site health)" >&2
 exec .venv/bin/gunicorn -w 2 \
   -b unix:/societies/<soc>/portal/web.sock \
   --log-file - config.wsgi:application
@@ -136,8 +139,9 @@ WhatsApp Open Forum invite link, mailing list address, and promote the first
 committee accounts to portal admins.
 
 **Media/member photos**: `MEDIA_ROOT` stays in private space
-(`/societies/<soc>/portal/media/`) and is served through Django with a
-login check — do **not** symlink it into `public_html` (public space is
+(`/societies/<soc>/portal/media/`) and is served through Django: pictures
+for the pages (`media/public/`) to anyone, everything else to logged-in
+members only — do **not** symlink it into `public_html` (public space is
 world-readable and would publish member photos).
 
 ## 6. Apache routing (.htaccess)

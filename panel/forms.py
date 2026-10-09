@@ -17,6 +17,7 @@ from core.models import (
     SitePage,
     TermsVersion,
 )
+from core.richtext import richtext_problem
 from events.models import Category
 from faq.models import ContactNode, DepartmentContact
 
@@ -217,6 +218,13 @@ class SitePageForm(forms.ModelForm):
 
     def clean_section(self):
         return self.cleaned_data.get("section") or "about"
+
+    def clean_content(self):
+        content = self.cleaned_data["content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content
 
     def save(self, commit=True):
         page = super().save(commit=False)

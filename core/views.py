@@ -8,6 +8,7 @@ events never leak to anonymous visitors.
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse
@@ -18,6 +19,7 @@ from django.utils.formats import date_format
 from django.views.decorators.http import require_POST
 
 from core.forms import SitePageContentForm
+from core.richtext import richtext_problem
 from core.models import (
     Activity,
     CommitteeMember,
@@ -101,14 +103,43 @@ def home(request):
     })
 
 
+PREVIEWS_PER_MINUTE = 40
+
+
 @login_required
 @require_POST
 def preview_markdown(request):
     """Rendered HTML for the live preview in the editors, sanitised exactly
-    as the pages themselves are."""
+    as the pages themselves are. Input that would take the renderer too
+    long is refused, and each member gets a modest number of previews a
+    minute, so the preview can never tie up the server."""
     from .templatetags.md import richtext_filter
 
-    return HttpResponse(richtext_filter(request.POST.get("text", "")[:60000]))
+    text = request.POST.get("text", "")
+    problem = richtext_problem(text)
+    if problem:
+        return HttpResponse(f"Can't preview: {problem}.", status=413, content_type="text/plain; charset=utf-8")
+    key = f"preview-rate:{request.user.pk}"
+    cache.add(key, 0, 60)
+    try:
+        count = cache.incr(key)
+    except ValueError:  # the minute ended between the two calls
+        cache.set(key, 1, 60)
+        count = 1
+    if count > PREVIEWS_PER_MINUTE:
+        return HttpResponse("Too many previews in a minute; wait a moment.", status=429,
+                            content_type="text/plain; charset=utf-8")
+    return HttpResponse(richtext_filter(text))
+
+
+def _preview_text(request):
+    """The POSTed content for a preview, unless rendering it would be unsafe."""
+    text = request.POST.get("content", "")
+    problem = richtext_problem(text)
+    if problem:
+        messages.error(request, f"Can't preview: {problem}.")
+        return ""
+    return text
 
 
 def menu(request):
@@ -291,7 +322,7 @@ def site_page_edit(request, slug):
         "page_url": _page_url(page),
         "form": form,
         "previewing": previewing,
-        "preview_content": request.POST.get("content", "") if previewing else "",
+        "preview_content": _preview_text(request) if previewing else "",
     })
 
 

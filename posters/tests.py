@@ -436,15 +436,21 @@ class FitTests(PosterTestCase):
 
 
 class TextFitTests(PosterTestCase):
-    def test_every_line_is_pinned_to_its_measured_width(self):
+    def test_lines_carry_the_width_they_were_laid_out_for_and_are_never_stretched(self):
         self.client.force_login(self.member)
         body = self.client.get(self.svg).content.decode()
-        self.assertIn('lengthAdjust="spacingAndGlyphs"', body)
-        self.assertRegex(body, r'textLength="[0-9.]+"')
+        self.assertIn('data-max="', body)
+        self.assertNotIn("textLength", body)  # the browser only ever squeezes a line that overflows
+        for name in ("studio", "print"):
+            self.assertContains(self.client.get(reverse(f"posters:{name}", args=[self.event.slug])), "js/poster-fit.js")
 
-    def test_emoji_are_measured_as_the_wide_glyphs_they_are(self):
-        self.assertGreater(layout.fonts.width("🎓", "body", 1, 700), layout.fonts.width("M", "body", 1, 700))
-        self.assertEqual(layout.fonts.width("❄️", "body", 1, 700), layout.fonts.width("❄", "body", 1, 700))
+    def test_one_emoji_is_one_glyph_however_many_code_points_it_takes(self):
+        one = layout.fonts.width("🎓", "body", 1, 700)
+        self.assertGreater(one, layout.fonts.width("M", "body", 1, 700))
+        for sequence in ("👨‍👩‍👧‍👦", "🇬🇧", "👍🏽", "1️⃣", "🏳️‍🌈", "❄️"):
+            self.assertAlmostEqual(layout.fonts.width(sequence, "body", 1, 700), one, places=6, msg=sequence)
+        self.assertLess(layout.fonts.width("✓", "body", 1, 700), 1)  # a text symbol the font has
+        self.assertAlmostEqual(layout.fonts.width("新年", "display", 1, 700), 2.0, places=3)  # a fallback draws these a full em each
 
     def test_a_long_tag_name_never_reaches_the_logo(self):
         from django.test import RequestFactory
@@ -453,12 +459,14 @@ class TextFitTests(PosterTestCase):
         self.category.save()
         self.event.is_official = True
         self.event.save()
-        for template in ("classic", "bold", "photo", "square", "story"):
-            scene = layout.build_scene(self.event, EventPoster(event=self.event, template=template), RequestFactory().get("/"))
+        for template, size in (("classic", "a4"), ("bold", "a4"), ("photo", "a4"), ("classic", "square"), ("classic", "story")):
+            poster = EventPoster(event=self.event, template=template, size=size)
+            scene = layout.build_scene(self.event, poster, RequestFactory().get("/"))
             u = scene.u
-            # the chip: the only rounded rectangle at the top that reaches the right margin
+            lion = next(el for el in scene.items if el["t"] == "image" and "lion" in el["href"])
+            margin = lion["x"]
+            logo_right = lion["x"] + lion["w"] + lion["h"] * 0.18  # the lion and its paper badge
             pill = next(el for el in scene.items if el["t"] == "rect" and el["rx"]
-                        and el["y"] < 10 * u and el["x"] + el["w"] > scene.w - 7 * u)
-            logo_right = 6 * u + 7.5 * u * 500 / 176 + 7.5 * u * 0.18  # the lion and its paper badge
-            self.assertGreaterEqual(pill["x"], logo_right + 1.5 * u, template)
-            self.assertAlmostEqual(pill["x"] + pill["w"], scene.w - 6 * u, places=3)
+                        and el["y"] < 10 * u and el["x"] + el["w"] > scene.w - margin - 0.01)
+            self.assertGreaterEqual(pill["x"], logo_right + 1.5 * u, (template, size))
+            self.assertAlmostEqual(pill["x"] + pill["w"], scene.w - margin, places=3)

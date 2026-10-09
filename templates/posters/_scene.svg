@@ -18,7 +18,7 @@
     {% elif el.t == 'pin' %}<g transform="translate({{ el.x }} {{ el.y }}) scale({{ el.size }})"><ellipse cx="0" cy="0" rx=".2" ry=".055" fill="#000000" fill-opacity=".28"/><path d="M0 0C-.09-.13-.34-.4-.34-.64A.34 .34 0 1 1 .34-.64C.34-.4 .09-.13 0 0Z" fill="{{ el.fill }}" stroke="#ffffff" stroke-width=".045"/><circle cx="0" cy="-.64" r=".13" fill="#ffffff"/></g>
     {% elif el.t == 'qr' %}{{ el.svg|safe }}
     {% elif el.t == 'line' %}<line x1="{{ el.x1 }}" y1="{{ el.y1 }}" x2="{{ el.x2 }}" y2="{{ el.y2 }}" stroke="#1a2420" stroke-width=".2"/>
-    {% elif el.t == 'text' %}<text x="{{ el.x }}" y="{{ el.y }}" font-family='{{ el.family }}' font-size="{{ el.size }}" font-weight="{{ el.weight }}" fill="{{ el.fill }}" text-anchor="{{ el.anchor }}"{% if el.ls %} letter-spacing="{{ el.ls }}"{% endif %}>{% for line, w in el.runs %}<tspan x="{{ el.x }}"{% if not forloop.first %} dy="{{ el.dy }}"{% endif %}{% if w %} textLength="{{ w }}" lengthAdjust="spacingAndGlyphs"{% endif %}>{{ line }}</tspan>{% endfor %}</text>
+    {% elif el.t == 'text' %}<text x="{{ el.x }}" y="{{ el.y }}" font-family='{{ el.family }}' font-size="{{ el.size }}" font-weight="{{ el.weight }}" fill="{{ el.fill }}" text-anchor="{{ el.anchor }}"{% if el.ls %} letter-spacing="{{ el.ls }}"{% endif %}{% if el.max_w %} data-max="{{ el.max_w }}"{% endif %}>{% for line in el.lines %}<tspan x="{{ el.x }}"{% if not forloop.first %} dy="{{ el.dy }}"{% endif %}>{{ line }}</tspan>{% endfor %}</text>
     {% endif %}
   {% endfor %}
 </svg>

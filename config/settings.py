@@ -247,7 +247,7 @@ else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "Cambridge Mature Students Society <soc-maturesoc@srcf.net>"
+    "DEFAULT_FROM_EMAIL", "MSS <mss-webmaster@srcf.net>"
 )
 
 # --- Uploads ------------------------------------------------------------------

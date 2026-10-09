@@ -570,7 +570,7 @@ class Picture(models.Model):
         return self.alt
 
     def markdown(self):
-        """The line to paste into a page (square brackets in the alt text
-        would end it early, so they are escaped)."""
-        alt = self.alt.replace("[", "&#91;").replace("]", "&#93;")
+        """The line to paste into a page (a backslash or square bracket in
+        the alt text would break it, so they are escaped)."""
+        alt = self.alt.replace("\\", "&#92;").replace("[", "&#91;").replace("]", "&#93;")
         return f"![{alt}]({self.image.url})"

@@ -19,12 +19,33 @@ FAMILIES = {
     "body": '"Source Sans 3", "Segoe UI", system-ui, sans-serif',
 }
 MEASURE_PX = 100
-# Emoji come from the viewer's emoji font, not from Source Sans, and are
-# about this many ems wide; the bundled fonts would measure them as a
-# narrow missing-glyph box.
+
+# --- what the bundled fonts cannot measure ----------------------------------------
+# Emoji come from the viewer's emoji font, not from the bundled fonts, and are
+# about this many ems wide. One emoji may be several code points (a flag, a
+# skin tone, a family joined with U+200D); it is still one glyph.
 EMOJI_EM = 1.25
-_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF]")
-_INVISIBLE = re.compile("[\uFE0F\u200D]")  # variation selectors and joiners take no room
+# Pictographs that are emoji on their own (the Emoji_Presentation set).
+_PICTO = (
+    "\U0001F000-\U0001FAFF\u231A\u231B\u23E9-\u23F3\u23F8-\u23FA\u25FD\u25FE\u2614\u2615"
+    "\u2648-\u2653\u267F\u2693\u26A1\u26AA\u26AB\u26BD\u26BE\u26C4\u26C5\u26CE\u26D4\u26EA"
+    "\u26F2-\u26F5\u26FA\u26FD\u2705\u270A\u270B\u2728\u274C\u274E\u2753-\u2755\u2757"
+    "\u2795-\u2797\u27B0\u27BF\u2B1B\u2B1C\u2B50\u2B55"
+)
+# Text symbols (★ ✓ ❄ © …) are emoji only when U+FE0F asks for it.
+_SYMBOL = "\u00A9\u00AE\u2122\u2190-\u2BFF\u3030\u303D\u3297\u3299"
+_ONE = (
+    "(?:[\U0001F1E6-\U0001F1FF]{2}"  # a flag
+    "|[0-9#*]\uFE0F?\u20E3"  # a keycap
+    "|(?:[" + _PICTO + "]|[" + _SYMBOL + "]\uFE0F)"
+    "\uFE0F?[\U0001F3FB-\U0001F3FF]?[\U000E0020-\U000E007F]*)"  # with a skin tone and tags
+)
+_EMOJI = re.compile(_ONE + "(?:\u200D" + _ONE + ")*")
+# Selectors, joiners and tag characters take no room of their own.
+_INVISIBLE = re.compile("[\uFE0E\uFE0F\u200D\u20E3\U000E0020-\U000E007F]")
+# Scripts the viewer's fallback font draws a full em wide.
+_WIDE = re.compile("[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]")
+_PROBE = "\U0010FFFD"  # in no font: how a glyph the font lacks measures
 
 
 @lru_cache(maxsize=16)
@@ -40,17 +61,35 @@ def _font(key, weight):
         return None
 
 
+@lru_cache(maxsize=16)
+def _missing_metrics(key, weight):
+    font = _font(key, weight)
+    return (font.getlength(_PROBE), font.getbbox(_PROBE)) if font else None
+
+
+@lru_cache(maxsize=4096)
+def _missing(key, weight, char):
+    """True when the bundled font has no glyph for ``char`` (it measures
+    exactly like the missing-glyph box), so the viewer sees a fallback."""
+    font = _font(key, weight)
+    return font is not None and (font.getlength(char), font.getbbox(char)) == _missing_metrics(key, weight)
+
+
 def width(text, key="body", size=1.0, weight=400, letter_spacing=0.0):
-    """Width of ``text`` at ``size`` (any unit) in the same unit."""
-    plain = _INVISIBLE.sub("", text)
-    emoji = len(_EMOJI.findall(plain))
-    plain = _EMOJI.sub("", plain)
+    """Width of ``text`` at ``size`` (any unit) in the same unit: the bundled
+    font's own advances for the glyphs it has, an estimate for the rest."""
+    emoji = len(_EMOJI.findall(text))
+    plain = _INVISIBLE.sub("", _EMOJI.sub("", text))
     font = _font(key, weight)
     if font is None:
         # Font file missing: a conservative average glyph width.
         base = len(plain) * (0.56 if key == "body" else 0.6)
     else:
         base = font.getlength(plain) / MEASURE_PX
+        notdef = _missing_metrics(key, weight)[0] / MEASURE_PX
+        for char in plain:
+            if ord(char) >= 0x0250 and _missing(key, weight, char):
+                base += (1.0 if _WIDE.match(char) else 0.75) - notdef
     base += emoji * EMOJI_EM
     return base * size + letter_spacing * size * max(0, len(plain) + emoji - 1)
 

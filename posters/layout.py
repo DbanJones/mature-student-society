@@ -184,21 +184,24 @@ class Scene:
                            "opacity": opacity, "click_through": click_through})
 
     def text(self, x, y, lines, size, key="body", weight=400, fill=INK, anchor="start",
-             lh=1.2, ls=0, upper=False):
+             lh=1.2, ls=0, upper=False, max_w=None):
+        """``max_w`` is the width the lines were wrapped or fitted to; without
+        it, the widest line as measured here. In the browser
+        (static/js/poster-fit.js) a line that turns out wider, for a viewer
+        without the bundled fonts, is squeezed to it; a line that fits is
+        never touched."""
         if isinstance(lines, str):
             lines = [lines]
         if upper:
             lines = [line.upper() for line in lines]
-        # SVG collapses leading and trailing spaces, so measure what is drawn.
-        lines = [line.strip() for line in lines]
-        widths = [fonts.width(line, key, size, weight, letter_spacing=ls) for line in lines]
+        lines = [line.strip() for line in lines]  # SVG collapses the spaces anyway
+        if not max_w and lines:
+            max_w = max(fonts.width(line, key, size, weight, letter_spacing=ls) for line in lines)
         self.items.append({
             "t": "text", "x": x, "y": y + size * 0.78, "lines": lines, "size": size,
             "family": fonts.FAMILIES[key], "weight": weight, "fill": fill, "anchor": anchor,
             "dy": size * lh, "ls": ls * size, "top": y, "key": key,
-            # Each line is pinned to the width it was laid out for, so a
-            # viewer without the bundled fonts never sees text run off.
-            "runs": [(line, round(w, 3)) for line, w in zip(lines, widths)],
+            "max_w": round(max_w, 3) if max_w else None,
         })
         return y + size * lh * len(lines)
 
@@ -207,7 +210,7 @@ class Scene:
         lines = fonts.wrap(text, max_width, key, size, weight, max_lines=max_lines)
         if not lines:
             return y
-        return self.text(x, y, lines, size, key, weight, fill, lh=lh)
+        return self.text(x, y, lines, size, key, weight, fill, lh=lh, max_w=max_width)
 
     def chip(self, x, y, label, fill, size, align="right", text_fill="#ffffff", max_w=None):
         """A pill with the tag name. Given ``max_w`` it shrinks a little for
@@ -223,7 +226,7 @@ class Scene:
         if align == "right":
             x = x - w
         self.rect(x, y, w, h, fill, rx=h / 2)
-        self.text(x + pad, y + (h - size) / 2 - size * 0.08, label, size, "body", 700, text_fill)
+        self.text(x + pad, y + (h - size) / 2 - size * 0.08, label, size, "body", 700, text_fill, max_w=w - pad * 2)
         return w
 
     def logo(self, x, y, h, on_paper=True):
@@ -512,18 +515,20 @@ def _measure_text_block(s, c, w, title_size, with_when=True):
         size * 1.02 * len(lines) + 2.6 * u + (4.3 * u * 1.15 * len(when_lines) + 0.6 * u if when_lines else 0)
         + 3.4 * u * 1.2 * len(where_lines) + (3.4 * u * 1.2 + 1.2 * u if extra_lines else 0)
     )
-    return {"size": size, "lines": lines, "when": when_lines, "where": where_lines, "extra": extra_lines, "height": height}
+    return {"size": size, "lines": lines, "when": when_lines, "where": where_lines, "extra": extra_lines,
+            "height": height, "w": w}
 
 
 def _draw_text_block(s, c, x, y, block):
     u = s.u
-    y = s.text(x, y, block["lines"], block["size"], "display", 700, INK, lh=1.02) + 2.6 * u
+    w = block["w"]
+    y = s.text(x, y, block["lines"], block["size"], "display", 700, INK, lh=1.02, max_w=w) + 2.6 * u
     if block["when"]:
-        y = s.text(x, y, block["when"], 4.3 * u, "body", 700, c.accent, lh=1.15) + 0.6 * u
+        y = s.text(x, y, block["when"], 4.3 * u, "body", 700, c.accent, lh=1.15, max_w=w) + 0.6 * u
     if block["where"]:
-        y = s.text(x, y, block["where"], 3.4 * u, "body", 400, MUTED)
+        y = s.text(x, y, block["where"], 3.4 * u, "body", 400, MUTED, max_w=w)
     if block["extra"]:
-        y = s.text(x, y + 1.2 * u, block["extra"], 3.4 * u, "body", 700, INK)
+        y = s.text(x, y + 1.2 * u, block["extra"], 3.4 * u, "body", 700, INK, max_w=w)
     return y
 
 
@@ -649,7 +654,7 @@ def photo(s, c):
     y = text_bottom
     for lines, size, key, weight, fill, lh in blocks:
         y -= size * lh * len(lines) + 1.2 * u
-        s.text(m, y, lines, size, key, weight, fill, lh=lh)
+        s.text(m, y, lines, size, key, weight, fill, lh=lh, max_w=w)
 
 
 def square(s, c):
@@ -676,7 +681,7 @@ def square(s, c):
     title_h = size * 1.02 * len(lines)
     panel_h = max(18 * u, zone_y - 3 * u - title_h - 3.4 * u - top)
     _visual(s, c, m, top, w, panel_h, 2.4 * u)
-    s.text(m, top + panel_h + 3.4 * u, lines, size, "display", 700, INK, lh=1.02)
+    s.text(m, top + panel_h + 3.4 * u, lines, size, "display", 700, INK, lh=1.02, max_w=w)
     y = s.text(m, zone_y, when, 4 * u, "body", 700, c.accent) + 0.5 * u
     if where:
         y = s.text(m, y, where, 3.4 * u, "body", 400, MUTED)
@@ -721,12 +726,12 @@ def story(s, c):
         lower = max(20 * u, lower - short)
     _visual(s, c, m, top, w, panel_h, 2.4 * u)
     y = top + panel_h + gap
-    y = s.text(m, y, lines, size, "display", 700, INK, lh=1.02) + 3 * u
-    y = s.text(m, y, when, 5.2 * u, "body", 700, c.accent, lh=1.15) + 0.6 * u
+    y = s.text(m, y, lines, size, "display", 700, INK, lh=1.02, max_w=w) + 3 * u
+    y = s.text(m, y, when, 5.2 * u, "body", 700, c.accent, lh=1.15, max_w=w) + 0.6 * u
     if where:
-        y = s.text(m, y, where, 4 * u, "body", 400, MUTED)
+        y = s.text(m, y, where, 4 * u, "body", 400, MUTED, max_w=w)
     if extra:
-        s.text(m, y + 1.5 * u, extra, 4 * u, "body", 700, INK)
+        s.text(m, y + 1.5 * u, extra, 4 * u, "body", 700, INK, max_w=w)
     if lower:
         lower_y = bottom - lower
         if row_map:

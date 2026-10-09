@@ -651,7 +651,7 @@ def ics(request, slug):
 REPEAT_MAX_WEEKS = 12
 COPIED_FIELDS = [
     "title", "category", "description", "location", "host", "capacity",
-    "members_only", "group_chat_link", "attendee_info", "restaurant",
+    "members_only", "show_attendees", "group_chat_link", "attendee_info", "restaurant",
 ]
 
 

@@ -114,7 +114,7 @@
   <nav class="tab-bar" aria-label="Quick links">
     <a href="{% url 'dashboard:home' %}" class="{% if nav_active == 'dashboard' %}active{% endif %}"><span aria-hidden="true">🏠</span><span>Home</span></a>
     <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>Calendar</span></a>
-    <a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>
+    {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>{% endif %}
     <a href="{% url 'notifications:index' %}" class="{% if nav_active == 'notifications' %}active{% endif %}"><span aria-hidden="true">🔔</span><span>Alerts{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</span></a>
     <a href="{% url 'core:menu' %}" class="{% if nav_active == 'menu' %}active{% endif %}"><span aria-hidden="true">▦</span><span>Menu</span></a>
   </nav>

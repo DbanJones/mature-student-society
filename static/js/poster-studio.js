@@ -91,7 +91,10 @@
         showNote(note ? decodeURIComponent(note) : "");
         return r.text();
       })
-      .then(function (svg) { preview.innerHTML = svg; placePhoto(); bindFocal(); watchMap(); })
+      .then(function (svg) {
+        preview.innerHTML = svg; placePhoto(); bindFocal(); watchMap();
+        if (window.fitPosterText) window.fitPosterText(preview);
+      })
       .finally(function () { preview.classList.remove("busy"); updateLinks(); });
   }
 

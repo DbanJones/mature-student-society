@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse_lazy
 from django.utils import timezone
 
+from core.richtext import richtext_problem
 from supper.models import Restaurant
 
 from .models import Category, Event
@@ -213,3 +214,10 @@ class TagPageForm(forms.ModelForm):
             "description": forms.TextInput(),
             "page_content": forms.Textarea(attrs={"rows": 14, "data-editor": reverse_lazy("core:preview")}),
         }
+
+    def clean_page_content(self):
+        content = self.cleaned_data["page_content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content
