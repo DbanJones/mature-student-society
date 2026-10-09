@@ -214,6 +214,21 @@ organiser's choices live in one `EventPoster` row; other members' tweaks are
 query-string overrides that are never saved. The SRCF stores no poster
 files.
 
+## Pages and the words on them
+
+Admin → Content → Pages is a tree: each menu section, the fixed pages in
+it, and the custom `SitePage`s with their controls (edit text, rename and
+settings, move up or down, move to another menu, publish, history,
+delete). A fixed page keeps its layout in its template, but every piece
+of prose on it is a text block registered in `core/blocks.py` (key, page,
+label, format, default wording) and read with `{% text "key" %}`; an
+admin's edit is a `core.TextBlock` row with that key, and deleting the row
+brings the default back. Formats are markdown, plain, and lines (one
+entry per line split on " | ", for the home page numbers, the Winter Ball
+timeline, cards and FAQ). Admins see an "Edit text" link on each fixed
+page that opens the tree at that page. Custom pages carry a `section`
+(About, Guide or Members portal) that decides which menu lists them.
+
 ## Surveys
 
 `surveys` is a sibling of `polls` rather than an extension of it: a poll

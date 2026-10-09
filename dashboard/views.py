@@ -63,7 +63,7 @@ def home(request):
     )
 
     # Past supper-club visits they attended but haven't rated yet.
-    unrated_visits = (
+    unrated_visits = list(
         Event.objects.filter(
             rsvps__user=user,
             rsvps__status=RSVP.Status.GOING,
@@ -134,13 +134,18 @@ def home(request):
         "ratings": Rating.objects.filter(user=user).count(),
     }
 
+    from core.models import SiteConfig, visible_to
+
+    testimonials_tab = SiteConfig.get().tab_visibility_for("testimonials")
+    testimonials_visible = visible_to(testimonials_tab, user) or (testimonials_tab != "hidden" and user.is_portal_admin)
+    show_testimonial_invite = testimonials_visible and not user.testimonials.exists()
     context = {
         "nav_active": "dashboard",
         "next_up": next_up,
         "super_events": super_events,
         "owned_tags": user.tags_owned.all(),
         "editable_pages": user.site_pages_editable.all(),
-        "show_testimonial_invite": not user.testimonials.exists(),
+        "show_testimonial_invite": show_testimonial_invite,
         "polls_waiting": polls_waiting,
         "volunteering": volunteering,
         "surveys_waiting": surveys_waiting,
@@ -157,6 +162,10 @@ def home(request):
         "unrated_visits": unrated_visits,
         "show_guide_invite": guide_edit_count == 0,
         "stats": stats,
+        "attention_count": (
+            sum(1 for item in checklist if not item["done"]) + len(surveys_waiting) + len(polls_waiting)
+            + len(unrated_visits) + int(guide_edit_count == 0) + int(show_testimonial_invite)
+        ),
     }
 
     if user.is_portal_admin:
@@ -168,6 +177,7 @@ def home(request):
                 status=WhatsAppAccessRequest.Status.OPEN
             ).count()
         )
+        context["attention_count"] += int(bool(context["pending_approvals"]))
 
     return render(request, "dashboard/home.html", context)
 

@@ -9,10 +9,11 @@
 <div class="page-head">
   <div>
     <h1>Wellbeing</h1>
-    <p class="lede">You&rsquo;re not alone &mdash; and we can help you find the right door.</p>
+    <p class="lede">{% text "wellbeing.lede" %}</p>
   </div>
   {% if page and can_edit %}
     <div class="actions">
+      {% include "core/_edit_text.html" with page_key="wellbeing" %}
       <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_edit' page.slug %}">✏️ Edit this page</a>
       {% if user.is_portal_admin %}
         <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Settings</a>
@@ -20,6 +21,7 @@
     </div>
   {% elif not page and user.is_authenticated and user.is_portal_admin %}
     <div class="actions">
+      {% include "core/_edit_text.html" with page_key="wellbeing" %}
       <a class="btn btn-ghost btn-small" href="{% url 'panel:page_create' %}">✏️ Create this page</a>
     </div>
   {% endif %}
@@ -63,11 +65,7 @@
 
 <div class="card" style="margin-top: 2rem;">
   <h3>Reach the MSS wellbeing team</h3>
-  <p style="margin-bottom: 0;">
-    Email <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>
-    and mark your message for the wellbeing team. We can point you to the right service, come
-    with you, or speak up on your behalf &mdash; but for clinical or crisis support please use
-    the University and NHS services above.
-  </p>
+  <div class="prose">{% text "wellbeing.team" %}</div>
+  <p style="margin-bottom: 0;">Write to <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.</p>
 </div>
 {% endblock %}

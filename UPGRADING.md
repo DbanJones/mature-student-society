@@ -117,6 +117,12 @@ you were before; your admin rights are unchanged.
 - **Run collectstatic on every upgrade.** Stylesheet links now carry a
   version stamp, so browsers fetch the new CSS as soon as it is collected.
   If the menu shows a stray checkbox, collectstatic was skipped.
+- **Every page is editable from Admin → Content → Pages.** The tab is now
+  a tree of the site's menus; fixed pages list their text blocks (the
+  home page welcome, About, Community policies, the Winter Ball copy, the
+  Guide and group introductions and so on), and custom pages can be moved
+  between menus and re-ordered. The About introduction that used to live
+  in the Django admin is carried across by a migration.
 - **Surveys** are new, under Members portal → Surveys and Admin → People →
   Surveys. A society admin creates a survey and names the members who run
   it; they write the questions, open it, see the results and send

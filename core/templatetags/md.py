@@ -144,3 +144,27 @@ def stars(value):
         return ""
     rounded = round(float(value))
     return "★" * rounded + "☆" * (5 - rounded)
+
+
+def inline_richtext(text):
+    """Rich text for one line: the rendered Markdown without the paragraph
+    that wraps a single line, so it can sit inside a heading or a table."""
+    html = str(richtext_filter(text)).strip()
+    if html.startswith("<p>") and html.endswith("</p>") and html.count("<p>") == 1:
+        html = html[3:-4]
+    return mark_safe(html)
+
+
+@register.simple_tag(name="text", takes_context=True)
+def text_block(context, key):
+    """The current wording of a text block on a fixed page: the admin's
+    edit from the Pages panel, or the built-in default (core/blocks.py).
+    The edited blocks are fetched once per page render."""
+    from core.blocks import BLOCKS, render_value, stored_texts
+
+    texts = context.render_context.get("core.textblocks")
+    if texts is None:
+        texts = stored_texts()
+        context.render_context["core.textblocks"] = texts
+    block = BLOCKS[key]
+    return render_value(block, texts.get(key, block["default"]))

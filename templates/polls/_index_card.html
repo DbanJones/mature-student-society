@@ -1,0 +1,21 @@
+<article class="card survey-card{% if poll.status == 'closed' %} survey-closed{% endif %}">
+  <p class="survey-status">
+    <span class="badge">📊 {{ poll.get_kind_display }}</span>
+    {% if poll.status == 'open' %}<span class="small muted">closes {{ poll.closes_at|date:"D j M, H:i" }} · in {{ poll.closes_at|timeuntil }}</span>
+    {% else %}<span class="badge">Closed {{ poll.closes_at|date:"j M Y" }}</span>{% endif %}
+  </p>
+  <h3><a href="{{ poll.get_absolute_url }}">{{ poll.question }}</a></h3>
+  <p class="small muted">
+    {% if poll.event %}On <a href="{{ poll.event.get_absolute_url }}">{{ poll.event.title }}</a>{% else %}For every member{% endif %}
+    · {{ poll.vote_count }} vote{{ poll.vote_count|pluralize }}
+  </p>
+  <p class="survey-actions">
+    {% if poll.status == 'open' %}
+      {% if poll.voted %}<span class="badge badge-ok">✓ You've voted</span> <a class="btn btn-small btn-ghost" href="{{ poll.get_absolute_url }}">Change</a>
+      {% elif user.is_authenticated %}<a class="btn btn-small btn-accent" href="{{ poll.get_absolute_url }}">Vote</a>
+      {% else %}<a class="btn btn-small btn-accent" href="{% url 'accounts:login' %}?next={{ poll.get_absolute_url|urlencode }}">Log in to vote</a>{% endif %}
+    {% elif poll.outcome_option %}<span class="small">Result: <strong>{{ poll.outcome_option.label }}</strong></span>
+    {% endif %}
+    {% if poll.results_ok %}<a class="btn btn-small btn-ghost" href="{{ poll.get_absolute_url }}">Results</a>{% endif %}
+  </p>
+</article>

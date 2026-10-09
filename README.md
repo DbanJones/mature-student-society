@@ -49,6 +49,8 @@ Run the test suite:
 | `/me/calendar.ics?token=…` | A member's personal calendar feed |
 | `/posters/<event>/` | Poster studio: print to PDF, PNG for WhatsApp; `/p/<event>/` is the QR short link |
 | `/surveys/` | Surveys: live and closed surveys, each run by its own admins; answer with your name or anonymously |
+| `/polls/` | Polls: open polls to vote in and closed ones with results (under About) |
+| `/admin/content/pages/` | The Pages tree: every page under its menu, text blocks on fixed pages, controls on custom pages |
 | `/me/` | Member dashboard |
 | `/accounts/…` | Login (Raven / associate), profile, waitlist, WhatsApp invite |
 | `/admin/` | Society admin panel (approvals, members, stats, mailer, audit) |

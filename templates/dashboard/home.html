@@ -5,7 +5,7 @@
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
 
 {% block content %}
-<div class="page-head">
+<div class="page-head dash-head">
   <div class="dash-greeting">
     <span class="avatar-token avatar-lg">
       {% if user.photo %}<img src="{{ user.photo.url }}" alt="">{% else %}{{ user.initials }}{% endif %}
@@ -19,294 +19,164 @@
     </div>
   </div>
   <div class="actions">
+    <a class="btn btn-small" href="{% url 'events:create' %}">Add an event</a>
     <a class="btn btn-ghost btn-small" href="{% url 'accounts:profile' %}">Edit profile</a>
+    {% if user.is_portal_admin %}<a class="btn btn-ghost btn-small" href="{% url 'panel:home' %}">Admin panel</a>{% endif %}
   </div>
 </div>
 
-{% if show_checklist %}
-  <div class="card checklist">
-    <h3 style="margin-bottom:.2rem">Getting started <span class="small muted">· {{ checklist_done }} of {{ checklist|length }} done</span></h3>
-    <div class="bar-track" style="margin:.4rem 0 .7rem"><div class="bar-fill" style="width:{% widthratio checklist_done checklist|length 100 %}%"></div></div>
-    <ul class="checklist-items">
-      {% for item in checklist %}
-        <li class="{% if item.done %}done{% endif %}">
-          <span aria-hidden="true">{% if item.done %}✅{% else %}⬜{% endif %}</span>
-          {% if item.done %}<span class="muted">{{ item.label }}</span>{% else %}<a href="{{ item.url }}">{{ item.label }}</a>{% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  </div>
-{% endif %}
-{% if show_testimonial_invite and "testimonials" in visible_tabs %}
-  <p class="small muted">
-    🗣️ Enjoying MSS? <a href="{% url 'testimonials:index' %}#share">Share a few words</a>
-    for the testimonials page.
-  </p>
-{% endif %}
+<div class="dash-grid">
+  <div class="dash-main">
 
-{% if next_up %}
-  <div class="card next-up">
-    <div class="date-block">
-      <span class="date-day">{{ next_up.start|date:"j" }}</span>
-      <span class="date-month">{{ next_up.start|date:"M" }}</span>
-    </div>
-    <div>
-      <p class="small muted" style="margin-bottom: .2rem;">Next up for you</p>
-      <h2 style="margin: 0 0 .25rem;"><a href="{{ next_up.get_absolute_url }}">{{ next_up.title }}</a></h2>
-      <p style="margin: 0;">
-        <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
-        {{ next_up.start|date:"D j M, H:i" }}
-        {% if next_up.location %} &middot; {{ next_up.location }}{% endif %}
-      </p>
-    </div>
-  </div>
-{% else %}
-  <div class="empty">
-    <p>Nothing in your diary yet.</p>
-    <a class="btn btn-accent" href="{% url 'events:calendar' %}">Find something on the calendar</a>
-  </div>
-{% endif %}
-
-{% if super_events %}
-  <div class="card" style="margin-top: 1.5rem;">
-    <h3>🌟 Super events</h3>
-    <p class="small muted" style="margin-top:-.3rem">The society's headline events — don't miss these.</p>
-    <div class="stack">
-      {% for event in super_events %}
-        <p style="margin:0">
-          <span class="badge badge-super">Super event</span>
-          <a href="{{ event.get_absolute_url }}"><strong>{{ event.title }}</strong></a>
-          <span class="small muted">
-            — {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
-            {% if event.already_going %} · you're going ✅{% endif %}
-          </span>
-        </p>
-      {% endfor %}
-    </div>
-  </div>
-{% endif %}
-
-{% if surveys_waiting or surveys_run %}
-  <div class="grid grid-2" style="margin-top: 1.5rem;">
-    {% if surveys_waiting %}
-      <div class="card">
-        <h3>📋 Surveys waiting for you</h3>
-        <ul class="small" style="margin:0; padding-left:1.1rem">
-          {% for survey in surveys_waiting %}
-            <li><a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a>{% if survey.closes_at %} <span class="muted">· closes in {{ survey.closes_at|timeuntil }}</span>{% endif %}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-    {% if surveys_run %}
-      <div class="card">
-        <h3>📋 Surveys you run</h3>
-        <ul class="small" style="margin:0; padding-left:1.1rem">
-          {% for survey in surveys_run %}
-            <li><a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a> <span class="muted">· {% if survey.is_draft %}draft{% elif survey.is_scheduled %}opens {{ survey.opens_at|date:"j M" }}{% elif survey.is_live %}open{% else %}closed{% endif %} · {{ survey.answer_count }} answered</span></li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-  </div>
-{% endif %}
-
-{% if polls_waiting or volunteering %}
-  <div class="grid grid-2" style="margin-top: 1.5rem;">
-    {% if polls_waiting %}
-      <div class="card">
-        <h3>📊 Polls waiting for you</h3>
-        <ul class="small" style="margin:0; padding-left:1.1rem">
-          {% for poll in polls_waiting %}
-            <li>
-              <a href="{% if poll.event %}{{ poll.event.get_absolute_url }}#poll-{{ poll.pk }}{% else %}{{ poll.get_absolute_url }}{% endif %}">{{ poll.question }}</a>
-              <span class="muted">{% if poll.event %}· {{ poll.event.title }} {% endif %}· closes in {{ poll.closes_at|timeuntil }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-    {% if volunteering %}
-      <div class="card">
-        <h3>🙋 You're volunteering</h3>
-        <ul class="small" style="margin:0; padding-left:1.1rem">
-          {% for signup in volunteering %}
-            <li>
-              <strong>{{ signup.option.label }}</strong>
-              <span class="muted">· <a href="{% if signup.poll.event %}{{ signup.poll.event.get_absolute_url }}{% else %}{{ signup.poll.get_absolute_url }}{% endif %}">{{ signup.poll.event.title|default:signup.poll.question }}</a>{% if signup.poll.event %} · {{ signup.poll.event.start|date:"D j M" }}{% endif %}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-  </div>
-{% endif %}
-
-<div class="grid grid-2" style="margin-top: 1.5rem;">
-  <div class="card">
-    <h3>You're going to</h3>
-    {% if going_events %}
-      <div class="stack">
-        {% for event in going_events %}
-          <div class="event-row">
-            <div class="date-block">
-              <span class="date-day">{{ event.start|date:"j" }}</span>
-              <span class="date-month">{{ event.start|date:"M" }}</span>
-            </div>
-            <div class="event-row-body">
-              <h3 style="margin-top: 0;"><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></h3>
-              <p class="small muted" style="margin: 0;">
-                {{ event.start|date:"D j M, H:i" }}
-                <span class="cat-chip" style="background: {{ event.category.color }}">{{ event.category.emoji }} {{ event.category.name }}</span>
-              </p>
-            </div>
+    <section class="card dash-card">
+      {% if next_up %}
+        <div class="next-up-row">
+          <div class="date-block">
+            <span class="date-day">{{ next_up.start|date:"j" }}</span>
+            <span class="date-month">{{ next_up.start|date:"M" }}</span>
           </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="muted">No upcoming RSVPs. <a href="{% url 'events:calendar' %}">See what's on</a>.</p>
-    {% endif %}
-    {% if waiting_events %}
-      <h3 style="margin-top:1rem">On the waitlist</h3>
-      <ul class="small" style="margin:0; padding-left:1.1rem">
-        {% for event in waiting_events %}
-          <li><a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted">· {{ event.start|date:"D j M, H:i" }}</span></li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h3>You're running</h3>
-    {% if running_events %}
-      <div class="stack">
-        {% for event in running_events %}
           <div>
-            <strong><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></strong>
-            <p class="small muted" style="margin: 0 0 .2rem;">
-              {{ event.start|date:"D j M, H:i" }} &middot; {{ event.num_going }} going
+            <p class="eyebrow">Next up for you</p>
+            <h2><a href="{{ next_up.get_absolute_url }}">{{ next_up.title }}</a></h2>
+            <p class="small muted" style="margin:0">
+              <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
+              {{ next_up.start|date:"D j M, H:i" }}{% if next_up.location %} &middot; {{ next_up.location }}{% endif %}
             </p>
-            <a class="btn btn-ghost btn-small" href="{% url 'events:edit' event.pk %}">Manage</a>
           </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="muted">You're not hosting anything at the moment.</p>
-    {% endif %}
-    <p style="margin: 1rem 0 0;"><a class="btn btn-small" href="{% url 'events:create' %}">Add an event</a></p>
-  </div>
-</div>
+        </div>
+      {% else %}
+        <p class="eyebrow">Your diary</p>
+        <p style="margin:0">Nothing in your diary yet. <a href="{% url 'events:calendar' %}">Find something on the calendar</a>.</p>
+      {% endif %}
 
-{% if unrated_visits or show_guide_invite %}
-  <h2>Waiting on you</h2>
-  <div class="stack">
-    {% for event in unrated_visits %}
-      <div class="card">
-        🍽️ You went to <strong>{{ event.title }}</strong> on {{ event.start|date:"D j M" }} —
-        how was it?
-        <a class="btn btn-accent btn-small" href="{% url 'supper:rate' event.pk %}">Rate {{ event.restaurant.name }}</a>
-      </div>
-    {% endfor %}
-    {% if show_guide_invite %}
-      <div class="card">
-        📖 You haven't written in the <strong>Mature Students Guide</strong> yet. Know something
-        the next cohort should? <a href="{% url 'guide:index' %}">Add your knowledge</a>.
-      </div>
-    {% endif %}
-  </div>
-{% endif %}
+      {% if going_events|length > 1 or waiting_events %}
+        <h3 class="dash-sub">Also in your diary</h3>
+        <ul class="dash-list">
+          {% for event in going_events %}{% if event != next_up %}
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">{{ event.start|date:"H:i" }}</span></li>
+          {% endif %}{% endfor %}
+          {% for event in waiting_events %}
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="badge">waitlist</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
 
-<h2>Your year in numbers</h2>
-<div class="stat-row">
-  <div class="stat-tile">
-    <div class="stat-num">{{ stats.attended }}</div>
-    <div class="stat-label">events attended</div>
-  </div>
-  <div class="stat-tile">
-    <div class="stat-num">{{ stats.hosted }}</div>
-    <div class="stat-label">events hosted</div>
-  </div>
-  <div class="stat-tile">
-    <div class="stat-num">{{ stats.guide_edits }}</div>
-    <div class="stat-label">guide edits</div>
-  </div>
-  <div class="stat-tile">
-    <div class="stat-num">{{ stats.ratings }}</div>
-    <div class="stat-label">ratings given</div>
-  </div>
-</div>
+      {% if super_events %}
+        <h3 class="dash-sub">Don't miss</h3>
+        <ul class="dash-list">
+          {% for event in super_events %}
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="badge badge-super">Super event</span>{% if event.already_going %} <span class="muted small">you're going ✓</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p class="dash-foot"><a href="{% url 'events:calendar' %}">See the full calendar &rarr;</a></p>
+    </section>
 
-<div class="grid grid-2" style="margin-top: 1.5rem;">
-  <div class="card">
-    <h3>📆 Your calendar feed</h3>
-    <p class="small muted" style="margin-bottom:.5rem">
-      Subscribe in Google Calendar, Apple Calendar or Outlook and everything
-      you RSVP to or host appears automatically, including changes.
-    </p>
-    <input type="text" readonly value="{{ feed_url }}" id="feed-url" aria-label="Calendar feed address" onclick="this.select()">
-    <p class="row-actions" style="margin:.6rem 0 0">
-      <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="feed-url">Copy link</button>
-      <form method="post" action="{% url 'dashboard:calendar_token_reset' %}" data-confirm="Reset your calendar link? Existing subscriptions will stop updating.">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-small btn-ghost">Reset link</button>
-      </form>
-    </p>
-  </div>
-
-  <div class="card">
-    <h3>WhatsApp community</h3>
-    {% if user.can_view_whatsapp_link %}
-      <p>You have an unused one-time invite to the Open Forum group.</p>
-      <a class="btn btn-accent btn-small" href="{% url 'accounts:whatsapp' %}">View your invite</a>
-    {% else %}
-      <p class="muted small" style="margin-bottom: 0;">
-        Need back into the group? <a href="{% url 'accounts:whatsapp' %}">Request access</a>.
-      </p>
-    {% endif %}
-  </div>
-
-  {% if owned_tags and not user.is_portal_admin %}
-    <div class="card">
-      <h3>Your tag{{ owned_tags|length|pluralize }}</h3>
-      <p class="small">
-        You run
-        {% for tag in owned_tags %}<span class="cat-chip" style="background-color: {{ tag.color }};">{{ tag.emoji }} {{ tag.name }}</span>{% if not forloop.last %} {% endif %}{% endfor %}
-        — manage its events and promote the official ones.
-      </p>
-      <a class="btn btn-small" href="{% url 'panel:tagged_events' %}">Manage tagged events</a>
-    </div>
-  {% endif %}
-
-  {% if editable_pages %}
-    <div class="card">
-      <h3>Pages you can edit</h3>
-      <p class="small muted" style="margin-bottom:.5rem">
-        The committee has asked you to look after these pages.
-      </p>
-      <ul class="small" style="margin:0; padding-left:1.1rem">
-        {% for page in editable_pages %}
-          <li>
-            <a href="{{ page.get_absolute_url }}">{{ page.title }}</a>
-            &middot; <a href="{% url 'core:site_page_edit' page.slug %}">edit</a>
-          </li>
-        {% endfor %}
-      </ul>
-    </div>
-  {% endif %}
-
-  {% if user.is_portal_admin %}
-    <div class="card">
-      <h3>Admin</h3>
-      <p>
-        {% if pending_approvals %}
-          <span class="badge badge-danger">{{ pending_approvals }}</span>
-          request{{ pending_approvals|pluralize }} waiting for review.
-        {% else %}
-          Nothing waiting for review.
+    {% if running_events or surveys_run or volunteering or owned_tags or editable_pages %}
+      <section class="card dash-card">
+        <p class="eyebrow">What you look after</p>
+        {% if running_events %}
+          <h3 class="dash-sub">You're running</h3>
+          <ul class="dash-list">
+            {% for event in running_events %}
+              <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">&middot; {{ event.num_going }} going</span> <a class="small" href="{% url 'events:edit' event.pk %}">manage</a></li>
+            {% endfor %}
+          </ul>
         {% endif %}
+        {% if surveys_run %}
+          <h3 class="dash-sub">Surveys you run</h3>
+          <ul class="dash-list">
+            {% for survey in surveys_run %}
+              <li><a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a> <span class="muted small">&middot; {% if survey.is_draft %}draft{% elif survey.is_scheduled %}opens {{ survey.opens_at|date:"j M" }}{% elif survey.is_live %}open{% else %}closed{% endif %} &middot; {{ survey.answer_count }} answered</span></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if volunteering %}
+          <h3 class="dash-sub">You're volunteering</h3>
+          <ul class="dash-list">
+            {% for signup in volunteering %}
+              <li><strong>{{ signup.option.label }}</strong> <span class="muted small">&middot; <a href="{% if signup.poll.event %}{{ signup.poll.event.get_absolute_url }}{% else %}{{ signup.poll.get_absolute_url }}{% endif %}">{{ signup.poll.event.title|default:signup.poll.question }}</a>{% if signup.poll.event %} &middot; {{ signup.poll.event.start|date:"D j M" }}{% endif %}</span></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+        {% if owned_tags %}
+          <h3 class="dash-sub">Your group{{ owned_tags|length|pluralize }}</h3>
+          <p class="small" style="margin:0">
+            {% for tag in owned_tags %}<a class="cat-chip" style="background-color: {{ tag.color }};" href="{{ tag.get_absolute_url }}">{{ tag.emoji }} {{ tag.name }}</a> {% endfor %}
+            <a href="{% url 'panel:tagged_events' %}">Manage tagged events</a>
+          </p>
+        {% endif %}
+        {% if editable_pages %}
+          <h3 class="dash-sub">Pages you can edit</h3>
+          <ul class="dash-list">
+            {% for page in editable_pages %}
+              <li><a href="{{ page.get_absolute_url }}">{{ page.title }}</a> <a class="small" href="{% url 'core:site_page_edit' page.slug %}">edit</a></li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </section>
+    {% endif %}
+  </div>
+
+  <aside class="dash-side">
+    <section class="card dash-card">
+      <p class="eyebrow">Needs your attention</p>
+      {% if attention_count %}
+        <ul class="attention-list">
+          {% for item in checklist %}{% if not item.done %}
+            <li><span aria-hidden="true">⬜</span><span><a href="{{ item.url }}">{{ item.label }}</a> <span class="muted small">&middot; getting started</span></span></li>
+          {% endif %}{% endfor %}
+          {% for survey in surveys_waiting %}
+            <li><span aria-hidden="true">📋</span><span>Answer the survey <a href="{{ survey.get_absolute_url }}">{{ survey.title }}</a>{% if survey.closes_at %} <span class="muted small">&middot; closes in {{ survey.closes_at|timeuntil }}</span>{% endif %}</span></li>
+          {% endfor %}
+          {% for poll in polls_waiting %}
+            <li><span aria-hidden="true">📊</span><span>Vote: <a href="{% if poll.event %}{{ poll.event.get_absolute_url }}#poll-{{ poll.pk }}{% else %}{{ poll.get_absolute_url }}{% endif %}">{{ poll.question }}</a> <span class="muted small">{% if poll.event %}&middot; {{ poll.event.title }} {% endif %}&middot; closes in {{ poll.closes_at|timeuntil }}</span></span></li>
+          {% endfor %}
+          {% for event in unrated_visits %}
+            <li><span aria-hidden="true">🍽️</span><span>How was {{ event.title }}? <a href="{% url 'supper:rate' event.pk %}">Rate {{ event.restaurant.name }}</a></span></li>
+          {% endfor %}
+          {% if show_testimonial_invite %}
+            <li><span aria-hidden="true">🗣️</span><span>Enjoying MSS? <a href="{% url 'testimonials:index' %}#share">Share a few words</a> for the testimonials page.</span></li>
+          {% endif %}
+          {% if show_guide_invite %}
+            <li><span aria-hidden="true">📖</span><span>Know something the next cohort should? <a href="{% url 'guide:index' %}">Add it to the Guide</a>.</span></li>
+          {% endif %}
+          {% if user.is_portal_admin and pending_approvals %}
+            <li><span aria-hidden="true">🛎️</span><span>{{ pending_approvals }} request{{ pending_approvals|pluralize }} waiting for review. <a href="{% url 'panel:home' %}">Open the admin panel</a></span></li>
+          {% endif %}
+        </ul>
+      {% else %}
+        <p class="attention-empty">All caught up. Nothing needs you right now.</p>
+      {% endif %}
+      {% if not user.can_view_whatsapp_link %}
+        <p class="small muted" style="margin:.9rem 0 0">Need back into the WhatsApp group? <a href="{% url 'accounts:whatsapp' %}">Request access</a>.</p>
+      {% endif %}
+    </section>
+
+    <section class="card dash-card">
+      <p class="eyebrow">Your year in numbers</p>
+      <div class="stat-grid">
+        <div><strong>{{ stats.attended }}</strong><span>events attended</span></div>
+        <div><strong>{{ stats.hosted }}</strong><span>events hosted</span></div>
+        <div><strong>{{ stats.guide_edits }}</strong><span>guide edits</span></div>
+        <div><strong>{{ stats.ratings }}</strong><span>ratings given</span></div>
+      </div>
+    </section>
+
+    <details class="card dash-card">
+      <summary>📆 Subscribe in your calendar app</summary>
+      <p class="small muted" style="margin:0 0 .5rem">
+        Google Calendar, Apple Calendar or Outlook: everything you RSVP to or host appears automatically, including changes.
       </p>
-      <a class="btn btn-small" href="{% url 'panel:home' %}">Open the admin panel</a>
-    </div>
-  {% endif %}
+      <input type="text" readonly value="{{ feed_url }}" id="feed-url" aria-label="Calendar feed address" onclick="this.select()">
+      <p class="row-actions" style="margin:.6rem 0 0">
+        <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="feed-url">Copy link</button>
+        <form method="post" action="{% url 'dashboard:calendar_token_reset' %}" data-confirm="Reset your calendar link? Existing subscriptions will stop updating.">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-small btn-ghost">Reset link</button>
+        </form>
+      </p>
+    </details>
+  </aside>
 </div>
 {% endblock %}

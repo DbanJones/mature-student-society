@@ -7,9 +7,10 @@
   <div>
     <h1>Pages</h1>
     <p class="muted">
-      Every page on the site, who can see it, and who can edit it. Admins can
-      create, edit and delete any page; the editors you name on a page can
-      change its words without being admins.
+      Every page on the site, under the menu it sits in. Fixed pages keep
+      their layout, and every piece of text on them is editable here. Pages
+      you add can be edited, renamed, moved between menus, re-ordered,
+      unpublished and deleted.
     </p>
   </div>
   <div class="actions">
@@ -17,76 +18,72 @@
   </div>
 </div>
 
-<div class="card">
-  <h2>Managed pages</h2>
-  {% if pages %}
-    <div class="table-scroll">
-      <table class="data">
-        <thead>
-          <tr><th>Page</th><th>Audience</th><th>Navigation</th><th>Editors</th><th>Last edited</th><th></th></tr>
-        </thead>
-        <tbody>
-          {% for page in pages %}
-            <tr>
-              <td>
+{% for section in tree %}
+  <section class="card page-tree-section" id="section-{{ section.key }}">
+    <div class="page-head" style="margin-bottom:.5rem">
+      <div><h2 style="margin:0">{{ section.title }}</h2></div>
+      {% if section.can_add %}
+        <div class="actions"><a class="btn btn-small btn-ghost" href="{% url 'panel:page_create' %}?section={{ section.key }}">Add a page here</a></div>
+      {% endif %}
+    </div>
+    <ul class="page-tree">
+      {% for row in section.rows %}
+        {% if row.kind == 'fixed' %}
+          <li class="tree-row" id="page-{{ row.key }}">
+            <div class="tree-main">
+              <strong>{{ row.title }}</strong> <span class="badge">fixed page</span>
+              <a class="small" href="{{ row.url }}">view</a>
+              {% if row.note %}<p class="small muted">{{ row.note }}</p>{% endif %}
+              {% if row.blocks %}
+                <ul class="tree-blocks">
+                  {% for block in row.blocks %}
+                    <li><a href="{% url 'panel:text_edit' block.key %}">{{ block.label }}</a>{% if block.edited %} <span class="badge badge-ok">edited</span>{% endif %}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+              {% if row.body %}
+                <p class="small">Body text: <a href="{% url 'core:site_page_edit' row.body.slug %}">edit</a> · <a href="{% url 'panel:page_edit' row.body.pk %}">settings</a> · <a href="{% url 'core:site_page_history' row.body.slug %}">history</a></p>
+              {% elif row.key == 'wellbeing' %}
+                <p class="small"><a href="{% url 'panel:page_create' %}">Create the body page</a> (slug “wellbeing”).</p>
+              {% endif %}
+              {% for label, url in row.links %}<a class="btn btn-small btn-ghost" href="{{ url }}" style="margin-top:.3rem">{{ label }}</a> {% endfor %}
+            </div>
+          </li>
+        {% else %}
+          {% with page=row.page %}
+            <li class="tree-row tree-custom" id="page-custom-{{ page.pk }}">
+              <div class="tree-main">
                 <strong>{{ page.title }}</strong>
                 {% if not page.is_published %}<span class="badge badge-danger">Unpublished</span>{% endif %}
-                <br><a class="small" href="{{ page.get_absolute_url }}">/pages/{{ page.slug }}/</a>
-              </td>
-              <td class="small">
-                <form method="post" action="{% url 'panel:page_toggle' page.pk %}" class="row-actions">
+                {% if page.nav_label %}<span class="small muted">in the menu as “{{ page.nav_label }}”</span>{% else %}<span class="small muted">not in the menu</span>{% endif %}
+                <a class="small" href="{{ page.get_absolute_url }}">/pages/{{ page.slug }}/</a>
+                <p class="small muted">
+                  Audience: {{ page.get_nav_visibility_display|lower }}
+                  · editors: {% for editor in page.editors.all %}{{ editor.get_full_name|default:editor.username }}{% if not forloop.last %}, {% endif %}{% empty %}admins only{% endfor %}
+                  · last edited {{ page.updated_at|date:"j M Y" }}
+                </p>
+              </div>
+              <div class="tree-controls">
+                <form method="post" action="{% url 'panel:page_move' page.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="up"><button type="submit" class="btn btn-small btn-ghost" aria-label="Move up"{% if row.first %} disabled{% endif %}>↑</button></form>
+                <form method="post" action="{% url 'panel:page_move' page.pk %}">{% csrf_token %}<input type="hidden" name="direction" value="down"><button type="submit" class="btn btn-small btn-ghost" aria-label="Move down"{% if row.last %} disabled{% endif %}>↓</button></form>
+                <a class="btn btn-small btn-ghost" href="{% url 'core:site_page_edit' page.slug %}">Edit text</a>
+                <a class="btn btn-small btn-ghost" href="{% url 'panel:page_edit' page.pk %}">Rename &amp; settings</a>
+                <form method="post" action="{% url 'panel:page_section' page.pk %}" class="row-actions">
                   {% csrf_token %}
-                  <select name="nav_visibility" aria-label="Audience for {{ page.title }}">
-                    {% for value, label in visibility_choices %}<option value="{{ value }}" {% if page.nav_visibility == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                  <select name="section" aria-label="Menu for {{ page.title }}">
+                    {% for value, label in sections %}<option value="{{ value }}"{% if page.section == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
                   </select>
-                  <button type="submit" class="btn btn-small btn-ghost">Set</button>
+                  <button type="submit" class="btn btn-small btn-ghost">Move</button>
                 </form>
-                <span class="muted">preview as <a href="{{ page.get_absolute_url }}?as=public">public</a> · <a href="{{ page.get_absolute_url }}?as=member">member</a></span>
-              </td>
-              <td class="small">
-                {% if page.nav_label %}“{{ page.nav_label }}” &middot; order {{ page.sort_order }}{% else %}<span class="muted">not in nav</span>{% endif %}
-              </td>
-              <td class="small">
-                {% for editor in page.editors.all %}{{ editor.get_full_name|default:editor.username }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">admins only</span>{% endfor %}
-              </td>
-              <td class="small muted">
-                {{ page.updated_at|date:"j M Y" }}{% if page.updated_by %}<br>{{ page.updated_by.get_full_name|default:page.updated_by.username }}{% endif %}
-              </td>
-              <td>
-                <div class="row-actions">
-                  <a class="btn btn-small btn-ghost" href="{% url 'panel:page_edit' page.pk %}">Edit</a>
-                  <form method="post" action="{% url 'panel:page_toggle' page.pk %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-small btn-ghost">{% if page.is_published %}Unpublish{% else %}Publish{% endif %}</button>
-                  </form>
-                  <a class="btn btn-small btn-ghost" href="{% url 'core:site_page_history' page.slug %}">History</a>
-                  <form method="post" action="{% url 'panel:page_delete' page.pk %}"
-                        data-confirm="Delete “{{ page.title }}”? Its history goes with it.">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
-                  </form>
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <p class="muted small" style="margin:0">No pages yet.</p>
-  {% endif %}
-</div>
-
-<div class="card" style="margin-top:1rem">
-  <h2>Fixed pages</h2>
-  <p class="small muted">Pages that aren't managed above, and where each one is changed.</p>
-  <table class="data">
-    <thead><tr><th>Page</th><th>How it's edited</th></tr></thead>
-    <tbody>
-      {% for fixed in fixed_pages %}
-        <tr><td><a href="{{ fixed.url }}">{{ fixed.title }}</a></td><td class="small">{{ fixed.note }}</td></tr>
+                <form method="post" action="{% url 'panel:page_toggle' page.pk %}">{% csrf_token %}<button type="submit" class="btn btn-small btn-ghost">{% if page.is_published %}Unpublish{% else %}Publish{% endif %}</button></form>
+                <a class="btn btn-small btn-ghost" href="{% url 'core:site_page_history' page.slug %}">History</a>
+                <form method="post" action="{% url 'panel:page_delete' page.pk %}" data-confirm="Delete “{{ page.title }}”? Its history goes with it.">{% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button></form>
+              </div>
+            </li>
+          {% endwith %}
+        {% endif %}
       {% endfor %}
-    </tbody>
-  </table>
-</div>
+    </ul>
+  </section>
+{% endfor %}
 {% endblock %}

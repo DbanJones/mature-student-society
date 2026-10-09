@@ -30,15 +30,17 @@
           <a href="{% url 'faq:contacts' %}">🧭 Who to contact</a>
           <a href="{% url 'faq:colleges' %}">🏰 Colleges</a>
           <a href="{% url 'faq:departments' %}">🔬 Departments</a>
+          {% for page in nav_pages_guide %}<a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>{% endfor %}
         </div>
       </details>
       <details class="nav-group">
-        <summary class="{% if nav_active == 'about' or nav_active == 'testimonials' or nav_active == 'groups' or nav_active == 'supper' or nav_active == 'ball' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
+        <summary class="{% if nav_active == 'about' or nav_active == 'testimonials' or nav_active == 'groups' or nav_active == 'supper' or nav_active == 'ball' or nav_active == 'polls' or nav_active|slice:':5' == 'page-' %}active{% endif %}">About</summary>
         <div class="nav-menu nav-menu-wide">
           {% if "about" in visible_tabs %}<a href="{% url 'core:about' %}">🦁 About MSS</a>{% endif %}
           {% if "ball" in visible_tabs %}<a href="{% url 'core:winter_ball' %}">❄️ Winter Ball</a>{% endif %}
           <a href="{% url 'core:wellbeing' %}">💙 Wellbeing</a>
           {% if "testimonials" in visible_tabs %}<a href="{% url 'testimonials:index' %}">🗣️ Testimonials</a>{% endif %}
+          <a href="{% url 'polls:index' %}">📊 Polls</a>
           <a href="{% url 'core:policies' %}">🤝 Community policies</a>
           {% for page in nav_pages %}
             <a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>
@@ -66,6 +68,7 @@
             {% if "members" in visible_tabs %}<a href="{% url 'members:directory' %}">👥 Members</a>{% endif %}
             {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>{% endif %}
             <a href="{% url 'surveys:index' %}">📋 Surveys</a>
+            {% for page in nav_pages_members %}<a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>{% endfor %}
             <a href="{% url 'accounts:profile' %}">✏️ My profile</a>
             <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
               {% csrf_token %}

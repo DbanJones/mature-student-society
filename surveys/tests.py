@@ -358,7 +358,7 @@ class AnsweringTests(SurveyTestCase):
     def test_dashboard_menu_and_panel_show_surveys(self):
         self.client.force_login(self.member)
         home = self.client.get(reverse("dashboard:home"))
-        self.assertContains(home, "Surveys waiting for you")
+        self.assertContains(home, "Answer the survey")
         self.assertContains(home, "Term check")
         self.assertContains(home, "📋 Surveys")
         self.assertEqual(self.client.get(reverse("panel:surveys")).status_code, 403)

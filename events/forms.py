@@ -56,7 +56,7 @@ class EventForm(forms.ModelForm):
             "description": "Markdown supported — links, lists, **bold**, *italics*.",
             "image": f"JPEG/PNG, up to {settings.MAX_UPLOAD_SIZE_MB} MB.",
             "host": "Defaults to you.",
-            "end": "Optional.",
+            "end": "Two hours after the start unless you change it. Clear it later to make the event open-ended.",
             "members_only": "Only logged-in members will see it.",
             "group_chat_link": "Shown only to people who have RSVP'd.",
             "attendee_info": "Meeting point, what to bring… shown only after RSVP.",
@@ -136,6 +136,10 @@ class EventForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         start, end = cleaned.get("start"), cleaned.get("end")
+        if self.is_create and start and not end:
+            import datetime
+
+            cleaned["end"] = end = start + datetime.timedelta(hours=2)  # the usual length of an evening
         if start and end and end <= start:
             self.add_error("end", "The end must be after the start.")
         if self.is_create and start and start < timezone.now() and not cleaned.get("allow_past"):

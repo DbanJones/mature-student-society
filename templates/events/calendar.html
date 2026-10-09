@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}Event Calendar — {{ month_date|date:"F Y" }}{% endblock %}
@@ -9,9 +10,10 @@
 <div class="page-head">
   <div>
     <h1>Event Calendar</h1>
-    <p class="lede">Suppers, socials, talks and walks — all welcome, partners included.</p>
+    <p class="lede">{% text "calendar.lede" %}</p>
   </div>
   <div class="actions">
+    {% include "core/_edit_text.html" with page_key="calendar" %}
     {% if user.is_authenticated %}
       <a class="btn btn-accent" href="{% url 'events:create' %}">Add an event</a>
     {% else %}

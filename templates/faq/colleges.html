@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}College-specific information{% endblock %}
@@ -11,13 +12,9 @@
 <div class="page-head">
   <div>
     <h1>College-specific information</h1>
-    <p class="lede">
-      A decision map, not a league table. Descriptions are editorial
-      orientation from our master report; accommodation, eligibility and
-      dining details change — <strong>always verify with the college
-      itself</strong> before relying on anything here.
-    </p>
+    <div class="lede">{% text "colleges.lede" %}</div>
   </div>
+  <div class="actions">{% include "core/_edit_text.html" with page_key="colleges" %}</div>
 </div>
 
 <div class="card" style="margin-bottom:1.25rem">

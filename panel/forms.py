@@ -173,10 +173,11 @@ class SitePageForm(forms.ModelForm):
         model = SitePage
         fields = [
             "title", "content", "is_published",
-            "nav_label", "nav_visibility", "sort_order", "editors",
+            "nav_label", "nav_visibility", "section", "sort_order", "editors",
         ]
         labels = {
             "nav_visibility": "Audience",
+            "section": "Menu",
             "editors": "Editors",
         }
         help_texts = {
@@ -199,6 +200,10 @@ class SitePageForm(forms.ModelForm):
         self.fields["editors"].queryset = User.objects.filter(
             is_banned=False, is_portal_admin=False
         ).order_by("first_name", "last_name")
+        self.fields["section"].required = False  # About unless told otherwise
+
+    def clean_section(self):
+        return self.cleaned_data.get("section") or "about"
 
     def save(self, commit=True):
         page = super().save(commit=False)

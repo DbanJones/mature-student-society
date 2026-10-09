@@ -391,3 +391,77 @@ class PageDiffTests(TestCase):
         self.assertContains(response, "Be kinder.")
         self.assertContains(response, "diff-del")
         self.assertContains(self.client.get(reverse("core:site_page_history", args=["rules"])), "What changed")
+
+
+class TextBlockAndPagesTreeTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="tb001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", is_portal_admin=True,
+        )
+        self.member = User.objects.create_user(
+            username="tb002", password="pw", first_name="Mia", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001",
+        )
+
+    def test_fixed_pages_show_the_built_in_wording_until_an_admin_edits_it(self):
+        from panel.models import AuditLog
+
+        about = reverse("core:about")
+        self.assertContains(self.client.get(about), "Founded in September 2024")
+        edit = reverse("panel:text_edit", args=["about.body"])
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(edit).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.post(edit, {"text": "We are **new** words", "preview": "1"}), "<strong>new</strong>")
+        self.assertContains(self.client.get(about), "Founded in September 2024")  # a preview saves nothing
+        self.client.post(edit, {"text": "We are **new** words"})
+        page = self.client.get(about)
+        self.assertContains(page, "<strong>new</strong>")
+        self.assertNotContains(page, "Founded in September 2024")
+        self.assertTrue(AuditLog.objects.filter(action="edit_text", detail="about.body").exists())
+        self.assertContains(self.client.get(reverse("panel:pages")), "edited")
+        self.client.post(edit, {"text": "", "reset": "1"})
+        self.assertContains(self.client.get(about), "Founded in September 2024")
+        # A "lines" block feeds a loop in the template.
+        self.client.post(reverse("panel:text_edit", args=["home.stats"]), {"text": "7 | dragons\n9 | lives"})
+        home = self.client.get(reverse("core:home"))
+        self.assertContains(home, "dragons")
+        self.assertNotContains(home, "youngest member")
+        self.assertEqual(self.client.get(reverse("panel:text_edit", args=["no.such"])).status_code, 404)
+        self.client.post(reverse("panel:text_edit", args=["ball.timeline"]), {"text": "21:00|Carriages"})
+        self.assertContains(self.client.get(reverse("core:winter_ball")), '<span class="ball-time">21:00</span><span class="ball-what">Carriages</span>')
+
+    def test_the_pages_panel_is_a_tree_with_controls(self):
+        from core.models import SitePage
+
+        first = SitePage.objects.create(title="Sponsors", slug="sponsors", content="x", nav_label="Sponsors", sort_order=10)
+        second = SitePage.objects.create(title="Alumni", slug="alumni", content="x", nav_label="Alumni", sort_order=20)
+        third = SitePage.objects.create(title="Study tips", slug="study-tips", content="x", nav_label="Study tips", section="guide")
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("panel:pages")).content.decode()
+        for expected in ("Winter Ball", "Community policies", "Who to contact", "Sponsors", "Alumni", "Study tips", "Add a page here", "Rename &amp; settings"):
+            self.assertIn(expected, body)
+        self.assertLess(body.index('id="page-custom-%d"' % first.pk), body.index('id="page-custom-%d"' % second.pk))
+        self.client.post(reverse("panel:page_move", args=[second.pk]), {"direction": "up"})
+        body = self.client.get(reverse("panel:pages")).content.decode()
+        self.assertLess(body.index('id="page-custom-%d"' % second.pk), body.index('id="page-custom-%d"' % first.pk))
+        self.client.post(reverse("panel:page_section", args=[third.pk]), {"section": "members"})
+        third.refresh_from_db()
+        self.assertEqual(third.section, "members")
+        # The menus follow the sections.
+        self.client.force_login(self.member)
+        nav = self.client.get(reverse("core:home")).content.decode()
+        members_menu = nav[nav.index("Members portal"):nav.index("Log out")]
+        self.assertIn("Study tips", members_menu)
+        about_start = nav.index(">About</summary>")
+        about_menu = nav[about_start:nav.index("</details>", about_start)]
+        self.assertIn("Alumni", about_menu)
+        self.assertNotIn("Study tips", about_menu)
+
+    def test_edit_text_links_show_for_admins_only(self):
+        for name in ("core:policies", "core:about", "core:winter_ball", "guide:index", "events:groups"):
+            self.client.force_login(self.member)
+            self.assertNotContains(self.client.get(reverse(name)), "Edit text")
+            self.client.force_login(self.admin)
+            self.assertContains(self.client.get(reverse(name)), "Edit text", msg_prefix=name)

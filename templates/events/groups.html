@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}Groups{% endblock %}
@@ -9,9 +10,12 @@
 <div class="page-head">
   <div>
     <h1>Groups</h1>
-    <p class="lede">Clubs and regular meet-ups run by members. Each group has its own page with what's coming up and who runs it.</p>
+    <p class="lede">{% text "groups.lede" %}</p>
   </div>
-  <a class="btn btn-ghost" href="{% url 'events:calendar' %}">📅 Event Calendar</a>
+  <div class="actions">
+    {% include "core/_edit_text.html" with page_key="groups" %}
+    <a class="btn btn-ghost" href="{% url 'events:calendar' %}">📅 Event Calendar</a>
+  </div>
 </div>
 
 <ul class="group-grid">

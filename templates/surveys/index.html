@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}Surveys{% endblock %}
@@ -8,11 +9,12 @@
 <div class="page-head">
   <div>
     <h1>Surveys</h1>
-    <p class="lede">The committee asks, you answer. Each survey is run by a named member, and you choose whether to answer with your name or anonymously.</p>
+    <p class="lede">{% text "surveys.lede" %}</p>
   </div>
-  {% if user.is_portal_admin %}
-    <div class="actions"><a class="btn btn-accent" href="{% url 'surveys:create' %}">New survey</a></div>
-  {% endif %}
+  <div class="actions">
+    {% include "core/_edit_text.html" with page_key="surveys" %}
+    {% if user.is_portal_admin %}<a class="btn btn-accent" href="{% url 'surveys:create' %}">New survey</a>{% endif %}
+  </div>
 </div>
 
 {% if drafts %}

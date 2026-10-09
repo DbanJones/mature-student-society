@@ -246,3 +246,31 @@ def roster(request, pk):
         "slots": slots,
         "paste": paste,
     })
+
+
+def index(request):
+    """Every poll a visitor may see: open ones to vote in, then closed ones
+    with their results. Logged-out visitors see polls on public events."""
+    from django.db.models import Count, Q
+
+    from events.models import Event
+
+    user = request.user
+    for poll in Poll.objects.due().select_related("event"):
+        poll.close()
+    polls = Poll.objects.select_related("event", "outcome_option").annotate(vote_count=Count("votes", distinct=True))
+    visible_events = Event.objects.visible_to(user if user.is_authenticated else None)
+    if user.is_authenticated:
+        polls = polls.filter(Q(event__isnull=True) | Q(event__in=visible_events))
+    else:
+        polls = polls.filter(event__in=visible_events)  # no general polls, no hidden events
+    polls = list(polls.order_by("-closes_at")[:60])
+    voted = set(PollVote.objects.filter(user=user).values_list("poll_id", flat=True)) if user.is_authenticated else set()
+    for poll in polls:
+        poll.voted = poll.pk in voted
+        poll.results_ok = poll.can_see_results(user)
+    return render(request, "polls/index.html", {
+        "nav_active": "polls",
+        "open_polls": sorted((p for p in polls if p.status == Poll.Status.OPEN), key=lambda p: p.closes_at),
+        "closed_polls": [p for p in polls if p.status != Poll.Status.OPEN],
+    })

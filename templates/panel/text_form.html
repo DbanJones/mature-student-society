@@ -1,0 +1,52 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Edit text: {{ text_block.label }}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:pages' %}#page-{{ page.key }}">&larr; Pages</a></p>
+    <h1>{{ page.title }}: {{ text_block.label }}</h1>
+    <p class="muted">
+      {% if text_block.format == 'markdown' %}Markdown and basic HTML work.
+      {% elif text_block.format == 'lines' %}One entry per line, with “ | ” between its two parts. Markdown works inside each part.
+      {% else %}One line of plain text.{% endif %}
+      {% if not is_default %}This wording has been edited; “Use the original wording” puts the built-in text back.{% endif %}
+    </p>
+  </div>
+  <div class="actions"><a class="btn btn-ghost btn-small" href="{{ page_url }}">View the page</a></div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    <p>
+      <label for="id_text">Text</label>
+      {% if text_block.format == 'plain' %}
+        <input type="text" id="id_text" name="text" value="{{ text }}" maxlength="300">
+      {% else %}
+        <textarea id="id_text" name="text" rows="{% if text_block.format == 'lines' %}8{% else %}14{% endif %}">{{ text }}</textarea>
+      {% endif %}
+    </p>
+    <p style="margin-top:1rem">
+      <button type="submit" class="btn btn-accent">Save</button>
+      <button type="submit" class="btn btn-ghost" name="preview" value="1">Preview</button>
+      {% if not is_default %}<button type="submit" class="btn btn-ghost" name="reset" value="1" data-confirm="Put the original wording back?">Use the original wording</button>{% endif %}
+      <a class="btn btn-ghost" href="{% url 'panel:pages' %}#page-{{ page.key }}">Cancel</a>
+    </p>
+  </form>
+</div>
+
+{% if preview is not None %}
+  <div class="card" style="max-width:46rem; margin-top:1rem">
+    <h2>Preview</h2>
+    {% if text_block.format == 'lines' %}
+      <dl>{% for first, second in preview %}<dt><strong>{{ first }}</strong></dt><dd>{{ second }}</dd>{% endfor %}</dl>
+    {% elif text_block.format == 'markdown' %}
+      <div class="prose">{{ preview }}</div>
+    {% else %}
+      <p>{{ preview }}</p>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

@@ -175,6 +175,10 @@ class Command(BaseCommand):
             )
             config.whatsapp_group_link = "https://chat.whatsapp.com/DEMO-OPEN-FORUM-LINK"
             config.save()
+        from core.models import TextBlock
+
+        if config.about_text and not TextBlock.objects.filter(key="about.body").exists():
+            TextBlock.objects.create(key="about.body", text=config.about_text)  # the About page reads the block
 
     def seed_users(self):
         users = {}

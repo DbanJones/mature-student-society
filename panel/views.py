@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.core.mail import EmailMessage
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q
@@ -950,40 +950,119 @@ def message_remove(request, pk):
 
 # --- content: CMS pages, tab visibility, contact map --------------------------------------
 
-# Pages that are not SitePages, and where each one is changed, so the Pages
-# tab shows one map of the whole site.
-FIXED_PAGES = [
-    ("Home", "core:home", "Managed in code (templates/core/home.html)."),
-    ("About MSS", "core:about",
-     "Managed in code; the intro text is the “About text” field of Site "
-     "configuration in the Django admin."),
-    ("Wellbeing", "core:wellbeing",
-     "The body is the “wellbeing” page in the table above; the header and "
-     "the crisis-support panel stay in code so they can't be deleted."),
-    ("Community policies", "core:policies", "Managed in code."),
-    ("Terms and conditions", "core:terms", "Versioned on the Terms tab."),
-    ("The Guide", "guide:index", "Community wiki: any member can edit any page."),
-    ("Calendar", "events:calendar",
-     "Members create events; tag owners and admins promote them."),
-]
-
-
 @portal_admin_required
 def pages(request):
-    """Every page on the site in one table: the admin-managed pages with
-    their audience, navigation slot, publishing state and editors, plus the
-    fixed pages and where each of those is edited."""
+    """Every page on the site as a tree: each menu section, the fixed pages
+    in it with the text blocks an admin can edit, and the custom pages with
+    their controls (edit, rename, move, publish, delete)."""
+    from core.blocks import BLOCKS, PAGES, SECTIONS, blocks_for
+    from core.models import SECTION_CHOICES, TextBlock
+    from core.views import CANONICAL_PAGE_SLUGS
+
+    edited = set(TextBlock.objects.values_list("key", flat=True))
+    custom = list(SitePage.objects.prefetch_related("editors").select_related("updated_by"))
+    bodies = {page.slug: page for page in custom if page.slug in CANONICAL_PAGE_SLUGS}
+    tree = []
+    for section_key, section_title in SECTIONS:
+        rows = []
+        for page in PAGES:
+            if page["section"] != section_key:
+                continue
+            rows.append({
+                "kind": "fixed", "key": page["key"], "title": page["title"], "url": reverse(page["url"]),
+                "note": page.get("note", ""),
+                "links": [(label, reverse(name)) for label, name in page.get("links", [])],
+                "blocks": [{"key": k, "label": BLOCKS[k]["label"], "edited": k in edited} for k in blocks_for(page["key"])],
+                "body": bodies.get(page["key"]),
+            })
+        own = [p for p in custom if p.section == section_key and p.slug not in CANONICAL_PAGE_SLUGS]
+        for i, page in enumerate(own):
+            rows.append({"kind": "custom", "page": page, "first": i == 0, "last": i == len(own) - 1})
+        tree.append({
+            "key": section_key, "title": section_title, "rows": rows,
+            "can_add": section_key in dict(SECTION_CHOICES),
+        })
     return render(request, "panel/pages.html", {
         "nav_active": "panel",
         "panel_tab": "pages",
-        "pages": SitePage.objects.prefetch_related("editors").select_related(
-            "updated_by"
-        ),
-        "fixed_pages": [
-            {"title": title, "url": reverse(name), "note": note}
-            for title, name, note in FIXED_PAGES
-        ],
-        "visibility_choices": VISIBILITY_CHOICES,
+        "tree": tree,
+        "sections": SECTION_CHOICES,
+    })
+
+
+@portal_admin_required
+@require_POST
+def page_move(request, pk):
+    """Swap a page with its neighbour in the same menu section."""
+    from core.views import CANONICAL_PAGE_SLUGS
+
+    page = get_object_or_404(SitePage, pk=pk)
+    siblings = list(
+        SitePage.objects.filter(section=page.section).exclude(slug__in=CANONICAL_PAGE_SLUGS)
+        .order_by("sort_order", "title")
+    )
+    i = next(n for n, p in enumerate(siblings) if p.pk == page.pk)
+    j = i - 1 if request.POST.get("direction") == "up" else i + 1
+    if 0 <= j < len(siblings):
+        siblings[i], siblings[j] = siblings[j], siblings[i]
+        for position, sibling in enumerate(siblings, start=1):
+            if sibling.sort_order != position * 10:
+                sibling.sort_order = position * 10
+                sibling.save(update_fields=["sort_order"])
+        AuditLog.record(request.user, "move_page", target=page.title, detail=request.POST.get("direction", ""))
+    return redirect(reverse("panel:pages") + f"#section-{page.section}")
+
+
+@portal_admin_required
+@require_POST
+def page_section(request, pk):
+    """Move a page to another menu."""
+    from core.models import SECTION_CHOICES
+
+    page = get_object_or_404(SitePage, pk=pk)
+    section = request.POST.get("section")
+    if section in dict(SECTION_CHOICES) and section != page.section:
+        page.section = section
+        page.save(update_fields=["section", "updated_at"])
+        AuditLog.record(request.user, "move_page", target=page.title, detail=f"to {section}")
+        messages.success(request, f"“{page.title}” now sits under {dict(SECTION_CHOICES)[section]}.")
+    return redirect(reverse("panel:pages") + f"#section-{page.section}")
+
+
+@portal_admin_required
+def text_edit(request, key):
+    """Edit one text block on a fixed page (see core/blocks.py)."""
+    from core.blocks import BLOCKS, PAGES_BY_KEY, forget_texts, render_value, value_of
+    from core.models import TextBlock
+
+    block = BLOCKS.get(key)
+    if block is None:
+        raise Http404("No such text.")
+    page = PAGES_BY_KEY[block["page"]]
+    stored = TextBlock.objects.filter(key=key).first()
+    text = stored.text if stored else block["default"]
+    preview = None
+    if request.method == "POST":
+        text = request.POST.get("text", "")
+        if request.POST.get("reset"):
+            TextBlock.objects.filter(key=key).delete()
+            forget_texts()
+            AuditLog.record(request.user, "reset_text", target=f"{page['title']}: {block['label']}", detail=key)
+            messages.success(request, "The original wording is back.")
+            return redirect(reverse("panel:pages") + f"#page-{page['key']}")
+        if block["format"] == "plain":
+            text = " ".join(text.split())
+        if request.POST.get("preview"):
+            preview = render_value(block, text)
+        else:
+            TextBlock.objects.update_or_create(key=key, defaults={"text": text, "updated_by": request.user})
+            AuditLog.record(request.user, "edit_text", target=f"{page['title']}: {block['label']}", detail=key)
+            messages.success(request, "Saved. The new wording is live.")
+            return redirect(reverse("panel:pages") + f"#page-{page['key']}")
+    return render(request, "panel/text_form.html", {
+        "nav_active": "panel", "panel_tab": "pages",
+        "text_block": block, "key": key, "page": page, "page_url": reverse(page["url"]),
+        "text": text, "is_default": stored is None, "preview": preview,
     })
 
 
@@ -1088,7 +1167,12 @@ def dept_contact_delete(request, pk):
 
 @portal_admin_required
 def page_create(request):
-    form = SitePageForm(request.POST or None)
+    from core.models import SECTION_CHOICES
+
+    initial = {}
+    if request.GET.get("section") in dict(SECTION_CHOICES):
+        initial["section"] = request.GET["section"]
+    form = SitePageForm(request.POST or None, initial=initial)
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
         page.updated_by = request.user
@@ -1101,7 +1185,7 @@ def page_create(request):
         )
         return redirect("panel:pages")
     return render(request, "panel/page_form.html", {
-        "nav_active": "panel", "panel_tab": "content",
+        "nav_active": "panel", "panel_tab": "pages",
         "form": form, "page": None,
     })
 
@@ -1127,7 +1211,7 @@ def page_edit(request, pk):
         messages.success(request, f"Saved “{page.title}”.")
         return redirect("panel:pages")
     return render(request, "panel/page_form.html", {
-        "nav_active": "panel", "panel_tab": "content",
+        "nav_active": "panel", "panel_tab": "pages",
         "form": form, "page": page,
     })
 

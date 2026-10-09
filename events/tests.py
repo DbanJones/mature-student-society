@@ -621,3 +621,24 @@ class StaticVersionTests(TestCase):
         url = static("css/base.css")
         self.assertRegex(url, r"css/base\.css\?v=[0-9a-f]{10}$")
         self.assertEqual(static("css/no-such-file.css"), "/static/css/no-such-file.css")
+
+
+class EndTimeDefaultTests(EventTestCase):
+    def test_the_end_follows_the_start_by_two_hours_unless_given(self):
+        self.client.force_login(self.member)
+        start = timezone.now() + datetime.timedelta(days=10)
+        data = {
+            "title": "Open-ended drinks", "category": str(self.category.pk), "description": "",
+            "location": "The Eagle", "start": dt_local(start), "end": "", "capacity": "",
+        }
+        self.client.post(reverse("events:create"), data)
+        event = Event.objects.get(title="Open-ended drinks")
+        self.assertEqual(event.end - event.start, datetime.timedelta(hours=2))
+        data.update(title="Long drinks", end=dt_local(start + datetime.timedelta(hours=5)))
+        self.client.post(reverse("events:create"), data)
+        event = Event.objects.get(title="Long drinks")
+        self.assertEqual(event.end - event.start, datetime.timedelta(hours=5))
+        data["end"] = ""  # on an existing event a blank end means open-ended
+        self.client.post(reverse("events:edit", args=[event.slug]), data)
+        event.refresh_from_db()
+        self.assertIsNone(event.end)

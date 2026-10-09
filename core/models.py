@@ -207,6 +207,13 @@ class Activity(models.Model):
         return self.name
 
 
+SECTION_CHOICES = [
+    ("about", "About"),
+    ("guide", "Guide"),
+    ("members", "Members portal"),
+]
+
+
 class SitePage(models.Model):
     """An admin-managed content page (everything that isn't the calendar or
     the Guide): served at /pages/<slug>/, optionally shown in the nav.
@@ -234,6 +241,10 @@ class SitePage(models.Model):
         max_length=10, choices=VISIBILITY_CHOICES, default="public",
         help_text="Who sees it in the navigation (the page itself follows "
                   "'published' plus this audience).",
+    )
+    section = models.CharField(
+        max_length=10, choices=SECTION_CHOICES, default="about",
+        help_text="Which menu the page sits under, when it has a navigation label.",
     )
     sort_order = models.PositiveSmallIntegerField(default=100)
     editors = models.ManyToManyField(
@@ -507,3 +518,31 @@ class TermsAcceptance(models.Model):
 
     def __str__(self):
         return f"{self.user} accepted v{self.version_number} @ {self.accepted_at:%Y-%m-%d %H:%M}"
+
+
+class TextBlock(models.Model):
+    """An admin's wording for one of the text blocks on the fixed pages
+    (see core/blocks.py). While no row exists the built-in wording shows."""
+
+    key = models.CharField(max_length=60, unique=True)
+    text = models.TextField(blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="text_blocks_edited",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.key
+
+    def save(self, *args, **kwargs):
+        from .blocks import forget_texts
+
+        super().save(*args, **kwargs)
+        forget_texts()
+
+    def delete(self, *args, **kwargs):
+        from .blocks import forget_texts
+
+        super().delete(*args, **kwargs)
+        forget_texts()

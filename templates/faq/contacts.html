@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}Who to contact{% endblock %}
@@ -11,15 +12,11 @@
 <div class="page-head">
   <div>
     <h1>Who do I contact?</h1>
-    <p class="lede">
-      Cambridge is a federation — a timetable problem, a rent problem and a
-      health problem are three different doors. Answer the questions and the
-      map hands you the right person, what to say, what to keep, and a
-      ready-to-fill email.
-    </p>
+    <p class="lede">{% text "contacts.lede" %}</p>
   </div>
   {% if can_edit %}
     <div class="actions">
+      {% include "core/_edit_text.html" with page_key="contacts" %}
       <a class="btn btn-ghost btn-small" href="{% url 'panel:contact_map' %}">✏️ Edit this map</a>
     </div>
   {% endif %}

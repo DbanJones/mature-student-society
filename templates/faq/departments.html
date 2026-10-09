@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}Department-specific information{% endblock %}
@@ -11,12 +12,9 @@
 <div class="page-head">
   <div>
     <h1>Department-specific information</h1>
-    <p class="lede">
-      Your Faculty or Department — not your college — controls lectures,
-      labs, handbooks, placements and coursework rules. What that means day
-      to day differs sharply by School: pick yours.
-    </p>
+    <p class="lede">{% text "departments.lede" %}</p>
   </div>
+  <div class="actions">{% include "core/_edit_text.html" with page_key="departments" %}</div>
 </div>
 
 <div class="faq-portals dept-grid">

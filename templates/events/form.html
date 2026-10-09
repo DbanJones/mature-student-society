@@ -176,5 +176,27 @@
   select.addEventListener("change", sync);
   sync();
 })();
+// The end follows the start by two hours until the organiser sets it themselves.
+(function () {
+  var start = document.getElementById("{{ form.start.id_for_label }}");
+  var end = document.getElementById("{{ form.end.id_for_label }}");
+  if (!start || !end) return;
+  var suggested = end.value ? null : "";
+  if (end.value && start.value && end.value === twoHoursOn(start.value)) suggested = end.value;  // after a server round trip
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function twoHoursOn(value) {
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return "";
+    d.setHours(d.getHours() + 2);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function follow() {
+    if (!start.value || (end.value !== "" && end.value !== suggested)) return;
+    suggested = twoHoursOn(start.value);
+    end.value = suggested;
+  }
+  start.addEventListener("change", follow);
+  start.addEventListener("input", follow);
+})();
 </script>
 {% endblock %}
