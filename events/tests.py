@@ -36,7 +36,7 @@ urlpatterns = [
     ]))),
     path("", include(_stub_patterns("core", [
         "home", "about", "wellbeing", "policies", "terms", "winter_ball",
-        "search", "dismiss_banner",
+        "search", "dismiss_banner", "menu", "preview",
     ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
     path("faq/", include(_stub_patterns("faq", ["index", "contacts", "colleges", "departments"]))),
@@ -607,7 +607,8 @@ class GroupsTests(EventTestCase):
         about = about[:about.index("</details>")]
         self.assertIn(reverse("events:groups"), about)
         self.assertIn("/events/groups/supper-club/", about)
-        self.assertIn('id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1" hidden', body)
+        self.assertNotIn("nav-burger", body)  # no more ☰: phones get a Menu link instead
+        self.assertIn('<a class="nav-menu-link" href="/menu/">Menu</a>', body)
 
     def test_supper_club_page_links_to_the_restaurants(self):
         body = self.client.get(reverse("events:tag_page", args=["supper-club"])).content.decode()
@@ -642,3 +643,23 @@ class EndTimeDefaultTests(EventTestCase):
         self.client.post(reverse("events:edit", args=[event.slug]), data)
         event.refresh_from_db()
         self.assertIsNone(event.end)
+
+
+class AttendeeListTests(EventTestCase):
+    def test_the_organiser_can_hide_who_is_going(self):
+        url = self.public_event.get_absolute_url()
+        member_link = reverse("members:profile", args=[self.member.username])
+        self.client.force_login(self.other)
+        self.assertContains(self.client.get(url), member_link)
+        self.public_event.show_attendees = False
+        self.public_event.save()
+        page = self.client.get(url)
+        self.assertNotContains(page, member_link)
+        self.assertContains(page, "chosen not to show")
+        self.assertContains(page, "going")  # the count stays
+        self.client.force_login(self.creator)  # organisers still see the list
+        page = self.client.get(url)
+        self.assertContains(page, member_link)
+        self.assertContains(page, "you can still see them")
+        self.client.force_login(self.member)
+        self.assertContains(self.client.get(reverse("events:create")), "Show who")

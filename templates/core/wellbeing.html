@@ -33,7 +33,7 @@
       This page is unpublished &mdash; only admins can see it.
     </div>
   {% endif %}
-  <div class="prose">{{ page.content|markdown }}</div>
+  <div class="prose">{{ page.content|richtext }}</div>
 {% else %}
   {# Fallback if an admin has deleted the editable page: the support routes
      below are the part of this page that must never simply vanish. #}

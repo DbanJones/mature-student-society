@@ -62,7 +62,7 @@ DB_PASSWORD=<from control.srcf.net>
 DB_HOST=postgres
 RAVEN_MODE=header
 REAL_EMAIL=true
-DEFAULT_FROM_EMAIL=MSS <maturesoc@cambridgesu.co.uk>
+DEFAULT_FROM_EMAIL=MSS <<soc>-webmaster@srcf.net>
 EOF
 chmod 600 /societies/<soc>/portal/.env
 ```
@@ -88,6 +88,7 @@ cd /societies/<soc>/portal
 [ -r .env ] || { echo "run.sh: .env missing or unreadable" >&2; exit 1; }
 set -a; source .env; set +a
 .venv/bin/python manage.py check          # aborts the boot on unsafe config
+.venv/bin/python manage.py collectstatic --noinput   # the web server serves what this code ships
 exec .venv/bin/gunicorn -w 2 \
   -b unix:/societies/<soc>/portal/web.sock \
   --log-file - config.wsgi:application
@@ -242,7 +243,11 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 
 - The "What's On" mailer sends via local SMTP (`REAL_EMAIL=true`,
   `EMAIL_HOST=localhost`); group web scripts' mail appears from
-  `<soc>-webmaster@srcf.net` by default. Keep volumes low — announcements go
+  `<soc>-webmaster@srcf.net` by default; use that (or another srcf.net
+  address the society owns) as `DEFAULT_FROM_EMAIL`, since mail sent from
+  the SRCF in another domain's name tends to fail SPF/DMARC checks and the
+  Mailman list must accept posts from it. The Mailer tab says whether
+  `REAL_EMAIL` is on and has a "Send a test to me" button. Keep volumes low — announcements go
   to one Mailman list address, not to individual members.
 - Create the newsletter list via https://control.srcf.net (Mailman, managed at
   https://lists.srcf.net), and put its posting address into Site configuration

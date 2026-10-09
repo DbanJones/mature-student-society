@@ -31,6 +31,7 @@ from core.models import (
     VISIBILITY_CHOICES,
     Activity,
     CommitteeMember,
+    Picture,
     SiteConfig,
     SitePage,
     SitePageRevision,
@@ -43,6 +44,7 @@ from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
 from . import ai, services
+from .health import static_health
 from .forms import (
     ActivityForm,
     BannerForm,
@@ -55,6 +57,7 @@ from .forms import (
     MapSettingsForm,
     MemberEditForm,
     MessagingSettingsForm,
+    PictureForm,
     SitePageForm,
     TabVisibilityForm,
     TermsVersionForm,
@@ -991,6 +994,37 @@ def pages(request):
 
 
 @portal_admin_required
+def pictures(request):
+    """Pictures for the pages: upload one, copy its line into any page."""
+    form = PictureForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        picture = form.save(commit=False)
+        picture.uploaded_by = request.user
+        picture.save()
+        AuditLog.record(request.user, "upload_picture", target=picture.alt[:200])
+        messages.success(request, "Picture added. Copy its line into a page to show it.")
+        return redirect("panel:pictures")
+    return render(request, "panel/pictures.html", {
+        "nav_active": "panel",
+        "panel_tab": "pictures",
+        "form": form,
+        "pictures": Picture.objects.select_related("uploaded_by"),
+    })
+
+
+@portal_admin_required
+@require_POST
+def picture_delete(request, pk):
+    picture = get_object_or_404(Picture, pk=pk)
+    alt = picture.alt
+    picture.image.delete(save=False)
+    picture.delete()
+    AuditLog.record(request.user, "delete_picture", target=alt[:200])
+    messages.success(request, f"Deleted the picture “{alt}”. Any page that used it shows a broken picture until its line is removed.")
+    return redirect("panel:pictures")
+
+
+@portal_admin_required
 @require_POST
 def page_move(request, pk):
     """Swap a page with its neighbour in the same menu section."""
@@ -1327,6 +1361,7 @@ def superadmin(request):
     return render(request, "panel/superadmin.html", {
         "nav_active": "panel",
         "panel_tab": "superadmin",
+        "static_health": static_health(request, fresh="health" in request.GET),
         "admins": admins,
         "non_admins": non_admins,
         "tags": tags,
@@ -1773,14 +1808,16 @@ def mailer(request):
             else:
                 try:
                     new_body = services.ai_draft_mailer(
-                        config, form.cleaned_data["subject"], form.cleaned_data["body"]
+                        config, form.cleaned_data["subject"], form.cleaned_data["body"],
+                        form.cleaned_data.get("instructions", ""),
                     )
                 except ai.AIDraftError as exc:
                     messages.error(request, f"AI drafting failed: {exc}")
                 else:
                     AuditLog.record(
                         request.user, "ai_draft_mailer",
-                        detail=f"engine={config.email_ai_engine}",
+                        detail=f"engine={config.email_ai_engine}"
+                        + ("; with instructions" if form.cleaned_data.get("instructions") else ""),
                     )
                     messages.success(
                         request, "Draft rewritten by AI — review it before sending."
@@ -1789,11 +1826,20 @@ def mailer(request):
                         "recipient": form.cleaned_data["recipient"],
                         "subject": form.cleaned_data["subject"],
                         "body": new_body,
+                        "instructions": form.cleaned_data.get("instructions", ""),
                     })
             # fall through to render with the (re-drafted or unchanged) form
         elif form.is_valid():
-            recipient = form.cleaned_data["recipient"]
+            # "Send a test to me" goes to the admin alone, so the whole path
+            # (server, From address, spam filters) is checked before the list.
+            is_test = request.POST.get("action") == "test"
+            recipient = request.user.email if is_test else form.cleaned_data["recipient"]
+            if is_test and not recipient:
+                messages.error(request, "Your account has no email address to send a test to.")
+                return redirect("panel:mailer")
             subject = form.cleaned_data["subject"][:200]
+            if is_test:
+                subject = f"[Test] {subject}"[:200]
             body = form.cleaned_data["body"]
             ok, error = True, ""
             try:
@@ -1814,14 +1860,25 @@ def mailer(request):
                 error=error,
             )
             AuditLog.record(
-                request.user, "send_mailer", target=recipient,
+                request.user, "test_mailer" if is_test else "send_mailer", target=recipient,
                 detail=(f"{'sent' if ok else 'FAILED'}: {subject}")[:300],
             )
-            if ok:
+            if ok and is_test:
+                messages.success(
+                    request,
+                    f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to the list.",
+                )
+            elif ok:
                 messages.success(request, f"What's On sent to {recipient}.")
             else:
                 messages.error(request, f"Sending failed: {error}")
-            return redirect("panel:mailer")
+            if not is_test:
+                return redirect("panel:mailer")
+            # keep the draft on screen after a test, ready to send for real
+            form = MailerForm(initial={
+                key: form.cleaned_data.get(key, "")
+                for key in ("recipient", "subject", "body", "instructions")
+            })
     else:
         subject, body = services.build_whats_on_email(request)
         form = MailerForm(initial={
@@ -1834,6 +1891,8 @@ def mailer(request):
         "nav_active": "panel",
         "panel_tab": "mailer",
         "form": form,
+        "email_live": "smtp" in settings.EMAIL_BACKEND,
+        "email_from": settings.DEFAULT_FROM_EMAIL,
         "event_count": services.whats_on_events().count(),
         "recent_logs": MailLog.objects.select_related("sent_by")[:5],
     })

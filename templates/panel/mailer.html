@@ -12,6 +12,18 @@
     <a class="btn btn-ghost" href="{% url 'panel:mailer' %}">Refresh draft</a>
   </div>
 </div>
+{% if email_live %}
+  <p class="small muted" style="margin:-.8rem 0 1rem">
+    Mail leaves this server by SMTP, from <strong>{{ email_from }}</strong>.
+    Send yourself a test before sending to the list.
+  </p>
+{% else %}
+  <div class="flash flash-warning" style="margin:0 0 1rem">
+    Mail is <strong>not being delivered</strong> from this server: <code>REAL_EMAIL</code>
+    is off in its <code>.env</code>, so “Send” only writes the message to the server log.
+    UPGRADING.md explains the fix.
+  </div>
+{% endif %}
 
 {% if site_config.email_tone %}
   <div class="card" style="margin-bottom:1rem">
@@ -38,6 +50,7 @@
               {% if not site_config.email_api_key %}disabled title="Set an AI API key on the Super admin tab first"{% endif %}>
         ✨ Draft with AI
       </button>
+      <button type="submit" name="action" value="test" class="btn btn-ghost"{% if not user.email %} disabled title="Your account has no email address"{% endif %}>Send a test to me</button>
       <button type="submit" name="action" value="send" class="btn btn-accent">Send mailer</button>
     </div>
     <p class="small muted" style="margin:.5rem 0 0">

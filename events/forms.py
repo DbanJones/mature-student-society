@@ -1,6 +1,7 @@
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.urls import reverse_lazy
 from django.utils import timezone
 
 from supper.models import Restaurant
@@ -37,7 +38,7 @@ class EventForm(forms.ModelForm):
         model = Event
         fields = [
             "title", "category", "description", "image", "location",
-            "start", "end", "host", "capacity", "members_only", "is_official",
+            "start", "end", "host", "capacity", "members_only", "show_attendees", "is_official",
             "is_super", "group_chat_link", "attendee_info", "restaurant",
         ]
         labels = {
@@ -45,6 +46,7 @@ class EventForm(forms.ModelForm):
             "image": "Event picture (optional)",
             "host": "Who's running it",
             "members_only": "Hide from the public calendar",
+            "show_attendees": "Show who's going",
             "is_official": "Tagged event (official for its tag)",
             "is_super": "Super event",
             "group_chat_link": "WhatsApp group link (optional)",
@@ -209,5 +211,5 @@ class TagPageForm(forms.ModelForm):
         }
         widgets = {
             "description": forms.TextInput(),
-            "page_content": forms.Textarea(attrs={"rows": 14}),
+            "page_content": forms.Textarea(attrs={"rows": 14, "data-editor": reverse_lazy("core:preview")}),
         }

@@ -1,6 +1,7 @@
 """Forms for the public site: the editors' view of an admin-managed page."""
 
 from django import forms
+from django.urls import reverse_lazy
 
 from .models import SitePage
 
@@ -21,5 +22,5 @@ class SitePageContentForm(forms.ModelForm):
                        "lists, images, tables.",
         }
         widgets = {
-            "content": forms.Textarea(attrs={"rows": 18}),
+            "content": forms.Textarea(attrs={"rows": 18, "data-editor": reverse_lazy("core:preview")}),
         }

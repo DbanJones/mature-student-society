@@ -25,7 +25,7 @@
       {% if text_block.format == 'plain' %}
         <input type="text" id="id_text" name="text" value="{{ text }}" maxlength="300">
       {% else %}
-        <textarea id="id_text" name="text" rows="{% if text_block.format == 'lines' %}8{% else %}14{% endif %}">{{ text }}</textarea>
+        <textarea id="id_text" name="text" rows="{% if text_block.format == 'lines' %}8{% else %}14{% endif %}"{% if text_block.format == 'markdown' %} data-editor="{% url 'core:preview' %}" data-pictures="{% url 'panel:pictures' %}"{% endif %}>{{ text }}</textarea>
       {% endif %}
     </p>
     <p style="margin-top:1rem">

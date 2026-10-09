@@ -546,3 +546,31 @@ class TextBlock(models.Model):
 
         super().delete(*args, **kwargs)
         forget_texts()
+
+
+class Picture(models.Model):
+    """A picture for the pages: uploaded on the Pictures tab, shrunk on the
+    way in, and served to everyone (it lives under media/public/)."""
+
+    image = models.ImageField(upload_to="public/pictures/")
+    alt = models.CharField(
+        max_length=140, help_text="What the picture shows, for people who can't see it.",
+    )
+    caption = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="pictures_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return self.alt
+
+    def markdown(self):
+        """The line to paste into a page (square brackets in the alt text
+        would end it early, so they are escaped)."""
+        alt = self.alt.replace("[", "&#91;").replace("]", "&#93;")
+        return f"![{alt}]({self.image.url})"

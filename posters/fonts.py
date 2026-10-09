@@ -19,6 +19,12 @@ FAMILIES = {
     "body": '"Source Sans 3", "Segoe UI", system-ui, sans-serif',
 }
 MEASURE_PX = 100
+# Emoji come from the viewer's emoji font, not from Source Sans, and are
+# about this many ems wide; the bundled fonts would measure them as a
+# narrow missing-glyph box.
+EMOJI_EM = 1.25
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF]")
+_INVISIBLE = re.compile("[\uFE0F\u200D]")  # variation selectors and joiners take no room
 
 
 @lru_cache(maxsize=16)
@@ -36,13 +42,17 @@ def _font(key, weight):
 
 def width(text, key="body", size=1.0, weight=400, letter_spacing=0.0):
     """Width of ``text`` at ``size`` (any unit) in the same unit."""
+    plain = _INVISIBLE.sub("", text)
+    emoji = len(_EMOJI.findall(plain))
+    plain = _EMOJI.sub("", plain)
     font = _font(key, weight)
     if font is None:
         # Font file missing: a conservative average glyph width.
-        base = len(text) * (0.56 if key == "body" else 0.6)
+        base = len(plain) * (0.56 if key == "body" else 0.6)
     else:
-        base = font.getlength(text) / MEASURE_PX
-    return base * size + letter_spacing * size * max(0, len(text) - 1)
+        base = font.getlength(plain) / MEASURE_PX
+    base += emoji * EMOJI_EM
+    return base * size + letter_spacing * size * max(0, len(plain) + emoji - 1)
 
 
 def wrap(text, max_width, key="body", size=1.0, weight=400, max_lines=None):

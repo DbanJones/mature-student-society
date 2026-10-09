@@ -62,6 +62,33 @@
     </div>
 
     <div class="card">
+      <h2>Site health</h2>
+      <p class="small muted">
+        Checks that the web server is serving the stylesheets and scripts this
+        version of the site ships with. If any are stale or missing, run
+        <code>collectstatic</code> on the server (UPGRADING.md has the line)
+        and check the <code>public_html/static</code> link.
+      </p>
+      {% if static_health %}
+        <table class="data">
+          <thead><tr><th>File</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in static_health %}
+              <tr><td class="small">{{ row.name }}</td><td>
+                {% if row.status == 'ok' %}<span class="badge badge-ok">up to date</span>
+                {% elif row.status == 'stale' %}<span class="badge badge-danger">stale</span>
+                {% elif row.status == 'missing' %}<span class="badge badge-danger">missing</span>
+                {% else %}<span class="badge">{{ row.status }}</span>{% endif %}
+              </td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="small" style="margin:.6rem 0 0"><a href="?health=1">Check again now</a></p>
+      {% else %}
+        <p style="margin:0"><a class="btn btn-small" href="?health=1">Check now</a></p>
+      {% endif %}
+    </div>
+    <div class="card">
       <h2>Poster maps</h2>
       <p class="small muted">
         Event posters draw a small map of the venue through Geoapify. The key

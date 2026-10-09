@@ -19,8 +19,7 @@
       <img class="brand-lockup" src="{% static 'img/lion.png' %}"
            alt="{{ site_config.society_name }}">
     </a>
-    <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true" tabindex="-1" hidden>
-    <label for="nav-toggle" class="nav-burger" aria-label="Menu" role="button">☰</label>
+    <a class="nav-menu-link" href="{% url 'core:menu' %}">Menu</a>
     <nav class="site-nav" aria-label="Main">
       <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}">Event Calendar</a>
       <details class="nav-group">
@@ -117,6 +116,7 @@
     <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>Calendar</span></a>
     <a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>
     <a href="{% url 'notifications:index' %}" class="{% if nav_active == 'notifications' %}active{% endif %}"><span aria-hidden="true">🔔</span><span>Alerts{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</span></a>
+    <a href="{% url 'core:menu' %}" class="{% if nav_active == 'menu' %}active{% endif %}"><span aria-hidden="true">▦</span><span>Menu</span></a>
   </nav>
 {% endif %}
 
@@ -202,7 +202,8 @@ document.addEventListener("click", function (e) {
   });
 })();
 </script>
-{% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>{% endif %}
+{% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>
+<script src="{% static 'js/editor.js' %}" defer></script>{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

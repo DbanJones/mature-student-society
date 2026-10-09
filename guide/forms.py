@@ -1,6 +1,7 @@
 """Forms for the Mature Students Guide wiki."""
 
 from django import forms
+from django.urls import reverse_lazy
 
 from .models import GuidePage
 
@@ -27,6 +28,7 @@ class GuidePageForm(forms.ModelForm):
             "content": forms.Textarea(
                 attrs={
                     "rows": 18,
+                    "data-editor": reverse_lazy("core:preview"),
                     "placeholder": "Write in Markdown — the cheatsheet alongside "
                                    "covers everything you need.",
                 }

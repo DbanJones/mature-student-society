@@ -465,3 +465,87 @@ class TextBlockAndPagesTreeTests(TestCase):
             self.assertNotContains(self.client.get(reverse(name)), "Edit text")
             self.client.force_login(self.admin)
             self.assertContains(self.client.get(reverse(name)), "Edit text", msg_prefix=name)
+
+
+class MenuPageTests(TestCase):
+    def test_the_menu_page_lists_the_site_and_the_header_has_no_burger(self):
+        page = self.client.get(reverse("core:menu"))
+        self.assertContains(page, "Event Calendar")
+        self.assertContains(page, "Member login")
+        self.assertNotContains(page, "nav-burger")
+        self.assertNotContains(page, "☰")
+        self.assertContains(page, 'class="nav-menu-link"')
+        member = User.objects.create_user(
+            username="mn001", password="pw", first_name="Mia", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001",
+        )
+        self.client.force_login(member)
+        page = self.client.get(reverse("core:menu"))
+        self.assertContains(page, "Dashboard")
+        self.assertContains(page, "Log out")
+        self.assertContains(page, "<span>Menu</span>")  # the fifth tab on phones
+
+
+class PicturesAndEditorTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="pc001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", is_portal_admin=True,
+        )
+        self.member = User.objects.create_user(
+            username="pc002", password="pw", first_name="Mia", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001",
+        )
+
+    def _png(self):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buffer = BytesIO()
+        Image.new("RGB", (40, 30), "green").save(buffer, format="PNG")
+        return SimpleUploadedFile("garden.png", buffer.getvalue(), content_type="image/png")
+
+    def test_admins_upload_pictures_that_everyone_can_see(self):
+        import os
+        import tempfile
+
+        from django.test import override_settings
+
+        from core.models import Picture
+
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            self.client.force_login(self.member)
+            self.assertEqual(self.client.get(reverse("panel:pictures")).status_code, 403)
+            self.client.force_login(self.admin)
+            response = self.client.post(reverse("panel:pictures"), {"image": self._png(), "alt": "The garden", "caption": ""})
+            self.assertRedirects(response, reverse("panel:pictures"))
+            picture = Picture.objects.get()
+            self.assertTrue(picture.image.name.startswith("public/pictures/"))
+            self.assertTrue(os.path.exists(os.path.join(media, picture.image.name)))
+            self.assertContains(self.client.get(reverse("panel:pictures")), picture.markdown())
+            self.client.logout()
+            served = self.client.get(picture.image.url)
+            self.assertEqual(served.status_code, 200)  # public pages need public pictures
+            served.close()  # Windows cannot delete a file that is still open
+            self.assertEqual(self.client.get("/media/profiles/nope.jpg").status_code, 302)  # the rest stays members-only
+            self.assertEqual(self.client.get("/media/public/../profiles/nope.jpg").status_code, 302)
+            self.client.force_login(self.admin)
+            self.client.post(reverse("panel:picture_delete", args=[picture.pk]))
+            self.assertFalse(Picture.objects.exists())
+            self.assertFalse(os.path.exists(os.path.join(media, picture.image.name)))
+
+    def test_the_editor_has_a_toolbar_hook_and_a_live_preview_endpoint(self):
+        from core.models import SitePage
+
+        page = SitePage.objects.create(title="Sponsors", slug="sponsors", content="x")
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("core:site_page_edit", args=[page.slug])), 'data-editor="/preview/"')
+        self.assertContains(self.client.get(reverse("panel:page_edit", args=[page.pk])), 'data-editor="/preview/"')
+        preview = self.client.post(reverse("core:preview"), {"text": "**bold** <script>alert(1)</script> ![a](/media/public/pictures/a.jpg)"})
+        self.assertContains(preview, "<strong>bold</strong>")
+        self.assertNotContains(preview, "<script>")
+        self.assertContains(preview, 'src="/media/public/pictures/a.jpg"')
+        self.client.logout()
+        self.assertEqual(self.client.post(reverse("core:preview"), {"text": "x"}).status_code, 302)

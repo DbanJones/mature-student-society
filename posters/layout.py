@@ -189,10 +189,16 @@ class Scene:
             lines = [lines]
         if upper:
             lines = [line.upper() for line in lines]
+        # SVG collapses leading and trailing spaces, so measure what is drawn.
+        lines = [line.strip() for line in lines]
+        widths = [fonts.width(line, key, size, weight, letter_spacing=ls) for line in lines]
         self.items.append({
             "t": "text", "x": x, "y": y + size * 0.78, "lines": lines, "size": size,
             "family": fonts.FAMILIES[key], "weight": weight, "fill": fill, "anchor": anchor,
             "dy": size * lh, "ls": ls * size, "top": y, "key": key,
+            # Each line is pinned to the width it was laid out for, so a
+            # viewer without the bundled fonts never sees text run off.
+            "runs": [(line, round(w, 3)) for line, w in zip(lines, widths)],
         })
         return y + size * lh * len(lines)
 
@@ -203,8 +209,15 @@ class Scene:
             return y
         return self.text(x, y, lines, size, key, weight, fill, lh=lh)
 
-    def chip(self, x, y, label, fill, size, align="right", text_fill="#ffffff"):
+    def chip(self, x, y, label, fill, size, align="right", text_fill="#ffffff", max_w=None):
+        """A pill with the tag name. Given ``max_w`` it shrinks a little for
+        a long name, then trims the name, so it never reaches the logo."""
         pad = size * 0.9
+        if max_w:
+            while size > 1.9 * self.u and fonts.width(label, "body", size, 700) + pad * 2 > max_w:
+                size *= 0.94
+                pad = size * 0.9
+            label = (fonts.wrap(label, max_w - pad * 2, "body", size, 700, max_lines=1) or [label])[0]
         w = fonts.width(label, "body", size, 700) + pad * 2
         h = size * 1.75
         if align == "right":
@@ -530,7 +543,7 @@ def classic(s, c):
     bottom = s.h - footer_h - m
     s.paper()
     s.logo(m, m, 7.5 * u)
-    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u)
+    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u, max_w=w - 25 * u)
     block = _measure_text_block(s, c, w, 9.2 * u)
     map_on_top = bool(c.map_href) and not c.has_photo
     row_map = bool(c.map_href) and not map_on_top
@@ -557,7 +570,7 @@ def bold(s, c):
     s.rect(-s.bleed, -s.bleed, s.w + 2 * s.bleed, block_h + s.bleed, c.accent)
     logo_h = 7.5 * u
     s.logo(m, m, logo_h, on_paper=False)
-    s.chip(s.w - m, m + 0.8 * u, c.chip, "#ffffff", 2.6 * u, text_fill=INK)
+    s.chip(s.w - m, m + 0.8 * u, c.chip, "#ffffff", 2.6 * u, text_fill=INK, max_w=w - 25 * u)
     start = timezone.localtime(c.event.start)
     day = str(start.day)
     # The numerals stand on a baseline just above the date line and must
@@ -596,7 +609,7 @@ def photo(s, c):
     # Clicks pass through the shade to the photo, to move its centre.
     s.rect(-b, -b, s.w + 2 * b, s.h + 2 * b, "url(#shade)", click_through=True)
     s.logo(m, m, 7 * u, on_paper=False)
-    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u)
+    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u, max_w=w - 25 * u)
     # The card of QR code and map, bottom right, then the text bottom-up.
     pad = 2.4 * u
     qr = ROW_QR * u if c.settings.show_qr else 0
@@ -645,7 +658,7 @@ def square(s, c):
     bottom = s.h - m
     s.paper()
     s.logo(m, m, 7.5 * u)
-    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u)
+    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u, max_w=w - 25 * u)
     top = m + 10 * u
     # Bottom zone: the details on the left, the QR code on the right, the
     # site address under the details. Measured first; the picture (or the
@@ -681,7 +694,7 @@ def story(s, c):
     bottom = s.h - footer_h - 6 * u
     s.paper()
     s.logo(m, m, 7.5 * u)
-    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u)
+    s.chip(s.w - m, m + 0.8 * u, c.chip, c.accent, 2.6 * u, max_w=w - 25 * u)
     top = m + 10 * u
     map_on_top = bool(c.map_href) and not c.has_photo
     row_map = bool(c.map_href) and not map_on_top

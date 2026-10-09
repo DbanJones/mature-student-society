@@ -90,3 +90,9 @@ details.dash-card[open] > summary { margin-bottom: .5rem; }
 /* "Edit text" link admins see on fixed pages */
 .edit-text { white-space: nowrap; }
 .hero .edit-text { margin-top: .8rem; color: #fff; border-color: rgba(255,255,255,.5); }
+
+/* the Menu page: every section of the site as cards */
+.menu-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.menu-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.menu-list a, .menu-list button.linklike { font-size: 1.05rem; }
+.menu-list form { margin: 0; }

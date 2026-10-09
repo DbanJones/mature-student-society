@@ -113,6 +113,11 @@
       <span class="helptext">{{ form.members_only.help_text }}</span>
       {{ form.members_only.errors }}
     </p>
+    <p class="check-row">
+      {{ form.show_attendees }} <label for="{{ form.show_attendees.id_for_label }}" style="display: inline;">{{ form.show_attendees.label }}</label>
+      <span class="helptext">{{ form.show_attendees.help_text }}</span>
+      {{ form.show_attendees.errors }}
+    </p>
 
     {% if form.is_official %}
       <p class="check-row">

@@ -114,9 +114,31 @@ you were before; your admin rights are unchanged.
 - **The menu changed.** "What's on" is now a plain Event Calendar link.
   Supper Club and every other tag are listed under About → Groups, and the
   Winter Ball moved under About. Old tag-page links redirect.
-- **Run collectstatic on every upgrade.** Stylesheet links now carry a
-  version stamp, so browsers fetch the new CSS as soon as it is collected.
-  If the menu shows a stray checkbox, collectstatic was skipped.
+- **Static files collect themselves on every restart** once `run.sh` has
+  the extra line shown in DEPLOYMENT_SRCF.md; add it when you deploy this
+  release. Stylesheet links carry a version stamp, so browsers fetch new
+  CSS as soon as it is collected. The Super admin tab has a "Site health"
+  card: press "Check now" and it says whether the web server is serving
+  this version's files.
+- **The ☰ icon is gone.** Phones get a "Menu" link in the header and a
+  Menu tab at the bottom, both opening a page that lists the whole site.
+- **Check the mailer really sends.** The Mailer tab now says whether mail
+  leaves the server and has a "Send a test to me" button. Delivery needs
+  `REAL_EMAIL=true` in `.env` (mail then goes through the SRCF's own mail
+  server on localhost); without it "Send" only writes to the log. Set
+  `DEFAULT_FROM_EMAIL` to an srcf.net address the society owns, such as
+  `MSS <mss-webmaster@srcf.net>`: mail from the SRCF claiming to come from
+  another domain is likely to be refused or junked by Gmail and Outlook,
+  and the Mailman list must accept posts from that address.
+- **Pictures on pages.** Admin → Content → Pictures takes uploads (shrunk
+  on the way in, served to everyone) and shows the line to paste into a
+  page. Every Markdown box now has a toolbar and a live preview.
+- **Organisers can hide the RSVP list.** "Show who's going" on the event
+  form; the count always shows, and the organiser and admins still see
+  the names.
+- **"Draft with AI" takes instructions.** A box on the Mailer tab shapes
+  the tone, length and order of an issue; the society's tone of voice and
+  the rules about dates and links still apply.
 - **Every page is editable from Admin → Content → Pages.** The tab is now
   a tree of the site's menus; fixed pages list their text blocks (the
   home page welcome, About, Community policies, the Winter Ball copy, the

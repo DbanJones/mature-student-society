@@ -65,7 +65,7 @@ urlpatterns = [
     ], "inbox"))),
     path("", _namespace("core", ["home", "about", "wellbeing", "policies",
                                  "terms", "winter_ball", "search",
-                                 "dismiss_banner"])),
+                                 "dismiss_banner", "menu", "preview"])),
 ]
 
 VALID_SCORES = {

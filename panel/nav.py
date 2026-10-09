@@ -31,6 +31,7 @@ PANEL_GROUPS = [
     ]),
     ("content", "Content", [
         ("pages", "Pages", "panel:pages"),
+        ("pictures", "Pictures", "panel:pictures"),
         ("testimonials", "Testimonials", "panel:testimonials"),
         ("navigation", "Navigation", "panel:navigation"),
         ("about", "About & committee", "panel:about"),

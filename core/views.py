@@ -10,7 +10,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count, Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -99,6 +99,22 @@ def home(request):
         "top_restaurants": rated[:3],
         "testimonials": Testimonial.objects.approved().featured_first()[:3],
     })
+
+
+@login_required
+@require_POST
+def preview_markdown(request):
+    """Rendered HTML for the live preview in the editors, sanitised exactly
+    as the pages themselves are."""
+    from .templatetags.md import richtext_filter
+
+    return HttpResponse(richtext_filter(request.POST.get("text", "")[:60000]))
+
+
+def menu(request):
+    """Every section of the site on one page: the menu on a phone, and a
+    map of the site for everyone. The lists come from the nav context."""
+    return render(request, "core/menu.html", {"nav_active": "menu"})
 
 
 def winter_ball(request):

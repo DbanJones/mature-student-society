@@ -1,6 +1,8 @@
 """Forms for the society admin panel."""
 
 from django import forms
+from django.conf import settings
+from django.urls import reverse_lazy
 from django.utils.text import slugify
 
 from accounts.forms import clean_mobile_number
@@ -10,6 +12,7 @@ from core.models import (
     VISIBILITY_CHOICES,
     Activity,
     CommitteeMember,
+    Picture,
     SiteConfig,
     SitePage,
     TermsVersion,
@@ -50,6 +53,13 @@ class MailerForm(forms.Form):
         widget=forms.Textarea(
             attrs={"class": "mailer-body", "rows": 24, "spellcheck": "false"}
         ),
+    )
+    instructions = forms.CharField(
+        required=False, label="Instructions for the AI", max_length=1000,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Optional, for “Draft with AI”: how to shape this issue, e.g. “short and punchy, "
+                  "lead with the Winter Ball, warm sign-off from the committee”. The facts and "
+                  "links stay as they are whatever you ask.",
     )
 
 
@@ -191,7 +201,10 @@ class SitePageForm(forms.ModelForm):
                        "stays with admins.",
         }
         widgets = {
-            "content": forms.Textarea(attrs={"rows": 16}),
+            "content": forms.Textarea(attrs={
+                "rows": 16, "data-editor": reverse_lazy("core:preview"),
+                "data-pictures": reverse_lazy("panel:pictures"),
+            }),
             "editors": forms.CheckboxSelectMultiple,
         }
 
@@ -365,3 +378,25 @@ class ActivityForm(forms.ModelForm):
     class Meta:
         model = Activity
         fields = ["emoji", "name", "blurb", "sort_order"]
+
+
+class PictureForm(forms.ModelForm):
+    """A picture for the pages: checked, shrunk and stored under media/public."""
+
+    class Meta:
+        model = Picture
+        fields = ["image", "alt", "caption"]
+        labels = {"image": "Picture", "alt": "Describe it", "caption": "Caption (optional)"}
+
+    def clean_image(self):
+        image = self.cleaned_data.get("image")
+        if image and hasattr(image, "content_type"):
+            if not image.content_type.startswith("image/"):
+                raise forms.ValidationError("Please upload an image file.")
+            max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+            if image.size > max_bytes:
+                raise forms.ValidationError(f"Pictures must be {settings.MAX_UPLOAD_SIZE_MB} MB or smaller.")
+            from core.images import EVENT_MAX_PX, shrink_image
+
+            image = shrink_image(image, EVENT_MAX_PX)
+        return image

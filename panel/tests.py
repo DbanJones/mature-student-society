@@ -62,7 +62,7 @@ urlpatterns = [
         ("search/", "search"), ("banner/dismiss/", "dismiss_banner"),
         ("pages/<slug:slug>/edit/", "site_page_edit"),
         ("pages/<slug:slug>/history/", "site_page_history"),
-        ("winter-ball/", "winter_ball"),
+        ("winter-ball/", "winter_ball"), ("menu/", "menu"), ("preview/", "preview"),
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
@@ -163,7 +163,7 @@ class PermissionTests(PanelTestCase):
         for name in ["home", "waitlist", "members", "members_cleanup", "events",
                      "messages", "whatsapp_requests", "content", "contact_map",
                      "pages", "navigation", "testimonials", "terms", "stats",
-                     "mailer", "audit", "superadmin", "polls", "about", "surveys"]:
+                     "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -495,6 +495,15 @@ class MailerAIDraftTests(PanelTestCase):
         }
         data.update(extra)
         return self.client.post(reverse("panel:mailer"), data)
+
+    def test_ai_draft_takes_the_editors_instructions(self):
+        with mock.patch("panel.ai.draft_email", return_value="Short and sweet.") as draft:
+            response = self._draft(instructions="Keep it to three lines and lead with the Winter Ball")
+        system_prompt = draft.call_args.args[2]
+        self.assertIn("lead with the Winter Ball", system_prompt)
+        self.assertIn("never override the rules above", system_prompt)
+        self.assertContains(response, "Keep it to three lines")  # still on the form for the next pass
+        self.assertTrue(AuditLog.objects.filter(action="ai_draft_mailer", detail__contains="with instructions").exists())
 
     def test_ai_draft_replaces_body_logs_and_sends_nothing(self):
         with mock.patch(
@@ -1312,3 +1321,77 @@ class VisualToolsTests(PanelTestCase):
         response = self.client.get(reverse("panel:terms_diff", args=[second.pk]))
         self.assertContains(response, "diff-ins")
         self.assertContains(response, "+1")
+
+
+class SiteHealthTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="sh001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", is_portal_admin=True, is_super_admin=True,
+        )
+        self.client.force_login(self.admin)
+
+    def test_the_super_admin_tab_says_whether_static_files_are_current(self):
+        from io import BytesIO
+
+        from django.contrib.staticfiles import finders
+        from django.core.cache import cache
+
+        from panel import health
+
+        cache.delete(health.CACHE_KEY)
+        page = self.client.get(reverse("panel:superadmin"))
+        self.assertContains(page, "Check now")  # nothing is fetched until asked
+        with open(finders.find("css/base.css"), "rb") as handle:
+            current = handle.read()
+
+        def fake_open(request, timeout=0):
+            body = current if request.full_url.split("?")[0].endswith("css/base.css") else b"old bytes"
+            return BytesIO(body)
+
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
+            page = self.client.get(reverse("panel:superadmin") + "?health=1")
+        self.assertEqual(opened.call_count, len(health.CHECKED))
+        self.assertContains(page, "up to date")
+        self.assertContains(page, "stale")
+        rows = {row["name"]: row["status"] for row in page.context["static_health"]}
+        self.assertEqual(rows["css/base.css"], "ok")
+        self.assertEqual(rows["css/panel.css"], "stale")
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
+            page = self.client.get(reverse("panel:superadmin"))
+        self.assertEqual(opened.call_count, 0)  # the last result is kept
+        self.assertContains(page, "Check again now")
+        cache.delete(health.CACHE_KEY)
+
+
+class MailerDeliveryTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="md001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", email="ada@cam.ac.uk", is_portal_admin=True,
+        )
+        self.client.force_login(self.admin)
+
+    def test_a_test_send_goes_to_the_admin_alone_and_keeps_the_draft(self):
+        page = self.client.post(reverse("panel:mailer"), {
+            "recipient": "list@lists.srcf.net", "subject": "What's On", "body": "Hello all", "action": "test",
+        })
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["ada@cam.ac.uk"])
+        self.assertEqual(mail.outbox[0].subject, "[Test] What's On")
+        self.assertContains(page, "Test sent to ada@cam.ac.uk")
+        self.assertContains(page, 'value="list@lists.srcf.net"')  # the draft is still there
+        self.assertEqual(MailLog.objects.get().recipients, "ada@cam.ac.uk")
+        self.assertTrue(AuditLog.objects.filter(action="test_mailer").exists())
+
+    def test_the_mailer_says_whether_mail_really_leaves_the_server(self):
+        with override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend"):
+            self.assertContains(self.client.get(reverse("panel:mailer")), "not being delivered")
+        with override_settings(
+            EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+            DEFAULT_FROM_EMAIL="MSS <mss-webmaster@srcf.net>",
+        ):
+            page = self.client.get(reverse("panel:mailer"))
+        self.assertContains(page, "leaves this server")
+        self.assertContains(page, "mss-webmaster@srcf.net")

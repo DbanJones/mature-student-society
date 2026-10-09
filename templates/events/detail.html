@@ -145,7 +145,10 @@
       {% endif %}
 
       {% if user.is_authenticated %}
-        {% if attendees %}
+        {% if not event.show_attendees %}
+          <p class="small muted">The organiser has chosen not to show who's going{% if can_edit and attendees %}; as the organiser you can still see them{% endif %}.</p>
+        {% endif %}
+        {% if attendees and event.show_attendees or attendees and can_edit %}
           <div class="avatars" style="margin-bottom: 1rem;">
             {% for rsvp in attendees %}
               <a class="avatar-token" href="{% url 'members:profile' rsvp.user.username %}" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</a>

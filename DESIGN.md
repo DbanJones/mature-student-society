@@ -229,6 +229,17 @@ timeline, cards and FAQ). Admins see an "Edit text" link on each fixed
 page that opens the tree at that page. Custom pages carry a `section`
 (About, Guide or Members portal) that decides which menu lists them.
 
+## Pictures and the editor
+
+Admin → Content → Pictures holds pictures for the pages: uploads are
+checked and shrunk like event photos, stored under `media/public/` and
+served to everyone by `config.media.protected_media` (every other upload
+stays members-only). Each picture shows the Markdown line to paste into
+a page. Every Markdown editor (pages, text blocks, guide articles, group
+pages) gets a toolbar and a live preview from `static/js/editor.js`,
+which renders through `core:preview` with the same sanitiser as the
+pages, so what the preview shows is what the page will show.
+
 ## Surveys
 
 `surveys` is a sibling of `polls` rather than an extension of it: a poll

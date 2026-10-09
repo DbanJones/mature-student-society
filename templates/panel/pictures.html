@@ -1,0 +1,71 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Pictures{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Pictures</h1>
+    <p class="muted">
+      Pictures for the pages. Upload one here, then paste its line into any
+      page, text block, guide article or group page; the editor's Picture
+      button inserts the shape of the line for you. Pictures here are visible
+      to everyone, since the pages are.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <h2>Add a picture</h2>
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>{{ form.image.label_tag }} {{ form.image }}<span class="helptext">JPEG, PNG or WebP, up to a few MB; it is shrunk to 1600 px on the long side.</span>{{ form.image.errors }}</p>
+    <p>{{ form.alt.label_tag }} {{ form.alt }}<span class="helptext">{{ form.alt.help_text }}</span>{{ form.alt.errors }}</p>
+    <p>{{ form.caption.label_tag }} {{ form.caption }}{{ form.caption.errors }}</p>
+    <p><button type="submit" class="btn btn-accent">Upload</button></p>
+  </form>
+</div>
+
+{% if pictures %}
+  <div class="picture-grid">
+    {% for picture in pictures %}
+      <figure class="card picture-card">
+        <img src="{{ picture.image.url }}" alt="{{ picture.alt }}" loading="lazy">
+        <figcaption>
+          <strong>{{ picture.alt }}</strong>{% if picture.caption %}<br><span class="small muted">{{ picture.caption }}</span>{% endif %}
+          <br><span class="small muted">{{ picture.uploaded_at|date:"j M Y" }}{% if picture.uploaded_by %} · {{ picture.uploaded_by.get_full_name|default:picture.uploaded_by.username }}{% endif %}</span>
+          <input type="text" readonly value="{{ picture.markdown }}" id="pic-{{ picture.pk }}" aria-label="Line to paste into a page" onclick="this.select()">
+          <p class="row-actions" style="margin:.4rem 0 0">
+            <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="pic-{{ picture.pk }}">Copy line</button>
+            <form method="post" action="{% url 'panel:picture_delete' picture.pk %}" data-confirm="Delete “{{ picture.alt }}”? Pages that use it will show a broken picture until the line is removed.">{% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button></form>
+          </p>
+        </figcaption>
+      </figure>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="empty" style="margin-top:1rem">No pictures yet.</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.querySelectorAll(".copy-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var box = document.getElementById(btn.dataset.copy);
+      box.select();
+      var done = function () {
+        btn.textContent = "Copied";
+        setTimeout(function () { btn.textContent = "Copy line"; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(box.value).then(done, function () { document.execCommand("copy"); done(); });
+      } else {
+        document.execCommand("copy");
+        done();
+      }
+    });
+  });
+</script>
+{% endblock %}
