@@ -457,7 +457,7 @@ class MailerTests(PanelTestCase):
     def test_send_records_maillog_and_audit(self):
         self.client.force_login(self.admin)
         response = self.client.post(reverse("panel:mailer"), {
-            "recipient": "soc-mss-members@srcf.net",
+            "audience": "address", "recipient": "soc-mss-members@srcf.net",
             "subject": "MSS: What's On — test",
             "body": "Hello all,\n\nNothing this week.",
             "action": "send",
@@ -488,7 +488,7 @@ class MailerAIDraftTests(PanelTestCase):
 
     def _draft(self, **extra):
         data = {
-            "recipient": "soc-mss-members@srcf.net",
+            "audience": "address", "recipient": "soc-mss-members@srcf.net",
             "subject": "MSS: What's On — test",
             "body": "Hello all,\n\nPub night on Friday.",
             "action": "ai_draft",
@@ -1399,7 +1399,8 @@ class MailerDeliveryTests(TestCase):
 
     def test_a_test_send_goes_to_the_admin_alone_and_keeps_the_draft(self):
         page = self.client.post(reverse("panel:mailer"), {
-            "recipient": "list@lists.srcf.net", "subject": "What's On", "body": "Hello all", "action": "test",
+            "audience": "address", "recipient": "list@lists.srcf.net",
+            "subject": "What's On", "body": "Hello all", "action": "test",
         })
         self.assertEqual(page.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
@@ -1421,7 +1422,7 @@ class MailerDeliveryTests(TestCase):
         self.assertContains(page, "leaves this server")
         self.assertContains(page, "mss-webmaster@srcf.net")
         self.assertNotContains(page, "not an srcf.net address")
-        self.assertContains(page, "Sender filters")  # how to get Mailman to accept the From address
+        self.assertContains(page, "bcc'd in batches")  # how members are sent to, and the opt-out
         with override_settings(
             EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
             DEFAULT_FROM_EMAIL="MSS <maturesoc@cambridgesu.co.uk>",
@@ -1431,7 +1432,7 @@ class MailerDeliveryTests(TestCase):
     def test_a_test_send_needs_an_email_address_and_a_failed_send_is_recorded(self):
         self.admin.email = ""
         self.admin.save()
-        draft = {"recipient": "list@lists.srcf.net", "subject": "What's On", "body": "Hello all"}
+        draft = {"audience": "address", "recipient": "list@lists.srcf.net", "subject": "What's On", "body": "Hello all"}
         page = self.client.post(reverse("panel:mailer"), {**draft, "action": "test"}, follow=True)
         self.assertContains(page, "no email address")
         self.assertEqual(len(mail.outbox), 0)
@@ -1445,3 +1446,73 @@ class MailerDeliveryTests(TestCase):
         self.assertFalse(log.ok)
         self.assertIn("Connection refused", log.error)
         self.assertTrue(AuditLog.objects.filter(action="send_mailer", detail__startswith="FAILED").exists())
+
+
+class MailerAudienceTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="ma001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", email="ada@cam.ac.uk", is_portal_admin=True,
+        )
+        self.client.force_login(self.admin)
+        User.objects.bulk_create([  # no password hashing: 120 members in a blink
+            User(username=f"m{n:03}", first_name="M", last_name=str(n), college="wolfson",
+                 mobile="+44 7700 900100", email=f"m{n:03}@cam.ac.uk")
+            for n in range(120)
+        ])
+        User.objects.filter(username="m000").update(wants_mailer=False)
+        User.objects.filter(username="m001").update(is_banned=True, is_active=False)
+        User.objects.filter(username="m002").update(email="")
+
+    def test_the_mailer_goes_to_every_member_who_wants_it_in_private_batches(self):
+        page = self.client.get(reverse("panel:mailer"))
+        self.assertContains(page, "118 accounts")  # 120 + the admin, less opted out, banned and no email
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
+        }, follow=True)
+        self.assertContains(response, "handed to the mail server for 118 members")
+        self.assertEqual(len(mail.outbox), 3)  # 50 + 50 + 18
+        everyone = set()
+        for message in mail.outbox:
+            self.assertEqual(message.to, ["ada@cam.ac.uk"])  # the sender gets a copy of each batch
+            self.assertLessEqual(len(message.bcc), services.MAILER_BATCH)
+            self.assertIn("untick", message.body)
+            self.assertIn("/accounts/profile/", message.body)
+            self.assertIn("List-Unsubscribe", message.extra_headers)
+            everyone.update(message.bcc)
+        self.assertEqual(len(everyone), 118)
+        self.assertIn("ada@cam.ac.uk", everyone)
+        for left_out in ("m000@cam.ac.uk", "m001@cam.ac.uk"):
+            self.assertNotIn(left_out, everyone)
+        log = MailLog.objects.get()
+        self.assertTrue(log.ok)
+        self.assertEqual(log.recipients, "118 members")
+        self.assertTrue(AuditLog.objects.filter(action="send_mailer", target="118 members").exists())
+
+    def test_a_batch_the_mail_server_refuses_is_counted_and_the_rest_still_go(self):
+        real_send = mail.EmailMessage.send
+        calls = {"n": 0}
+
+        def flaky(message, fail_silently=False):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("Connection refused")
+            return real_send(message, fail_silently)
+
+        with mock.patch("panel.services.EmailMessage.send", flaky):
+            response = self.client.post(reverse("panel:mailer"), {
+                "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
+            }, follow=True)
+        self.assertContains(response, "50 addresses not sent")
+        self.assertEqual(len(mail.outbox), 2)
+        log = MailLog.objects.get()
+        self.assertFalse(log.ok)
+        self.assertIn("Connection refused", log.error)
+        self.assertEqual(log.recipients, "68 members")
+
+    def test_one_address_still_needs_an_address(self):
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "address", "recipient": "", "subject": "s", "body": "b", "action": "send",
+        })
+        self.assertContains(response, "Give the address")
+        self.assertEqual(len(mail.outbox), 0)

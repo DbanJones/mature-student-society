@@ -6,6 +6,8 @@ views stay thin and the mailer body is testable without a browser.
 
 import datetime
 
+from django.conf import settings
+from django.core.mail import EmailMessage
 from django.db.models import Avg, Count, Q
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -559,3 +561,50 @@ def poster_scans(limit=8):
         .filter(scans__gt=0).order_by("-scans", "-start")[:limit]
     )
     return _with_pct([{"label": e.title, "count": e.scans} for e in rows])
+
+
+# --- sending the mailer to members ---------------------------------------------------
+MAILER_BATCH = 50  # addresses bcc'd per message: kind to the mail server, no address shown to anyone
+
+
+def mailer_audience():
+    """Every account the What's On mailer goes to: active, not banned, with
+    an email address, and not opted out on the profile page."""
+    return (
+        User.objects.filter(is_active=True, is_banned=False, wants_mailer=True)
+        .exclude(email="").order_by("email")
+    )
+
+
+def mailer_footer(request, config):
+    """The lines under every copy: why they got it and how to stop it."""
+    profile = request.build_absolute_uri(reverse("accounts:profile"))
+    return (
+        f"\n\n--\nYou're getting this because you have an account on {config.short_name}. "
+        f"To stop these emails, untick “Email me the What's On mailer” on your profile: {profile}"
+    )
+
+
+def send_mailer_to_members(request, config, subject, body, copy_to):
+    """Send the mailer to every member, bcc'd in batches so nobody sees
+    anyone else's address. Each batch is addressed to ``copy_to`` (the admin
+    sending it, so they see it arrive). Returns (sent, failed, error): a
+    batch the mail server refuses is counted, and the rest still go."""
+    emails = list(mailer_audience().values_list("email", flat=True))
+    text = body + mailer_footer(request, config)
+    profile = request.build_absolute_uri(reverse("accounts:profile"))
+    reply_to = [config.contact_email] if config.contact_email else None
+    sent, failed, error = 0, 0, ""
+    for start in range(0, len(emails), MAILER_BATCH):
+        batch = emails[start:start + MAILER_BATCH]
+        try:
+            EmailMessage(
+                subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[copy_to], bcc=batch, reply_to=reply_to,
+                headers={"List-Unsubscribe": f"<{profile}>"},
+            ).send()
+            sent += len(batch)
+        except Exception as exc:
+            failed += len(batch)
+            error = error or str(exc)[:300]
+    return sent, failed, error

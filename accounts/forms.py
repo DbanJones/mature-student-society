@@ -62,7 +62,7 @@ class ProfileForm(forms.ModelForm):
         fields = [
             "first_name", "last_name", "college", "course", "bio",
             "talk_to_me_about", "work", "interests",
-            "mobile", "email", "photo",
+            "mobile", "email", "wants_mailer", "photo",
         ]
         labels = {
             "course": "What you're studying",

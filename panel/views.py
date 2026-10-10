@@ -1827,7 +1827,8 @@ def mailer(request):
                         request, "Draft rewritten by AI — review it before sending."
                     )
                     form = MailerForm(initial={
-                        "recipient": form.cleaned_data["recipient"],
+                        "audience": form.cleaned_data["audience"],
+                        "recipient": form.cleaned_data.get("recipient", ""),
                         "subject": form.cleaned_data["subject"],
                         "body": new_body,
                         "instructions": form.cleaned_data.get("instructions", ""),
@@ -1835,9 +1836,10 @@ def mailer(request):
             # fall through to render with the (re-drafted or unchanged) form
         elif form.is_valid():
             # "Send a test to me" goes to the admin alone, so the whole path
-            # (server, From address, spam filters) is checked before the list.
+            # (server, From address, spam filters) is checked first.
             is_test = request.POST.get("action") == "test"
-            recipient = request.user.email if is_test else form.cleaned_data["recipient"]
+            to_members = form.cleaned_data["audience"] == "members" and not is_test
+            recipient = request.user.email if is_test else form.cleaned_data.get("recipient", "")
             if is_test and not recipient:
                 messages.error(request, "Your account has no email address to send a test to.")
                 return redirect("panel:mailer")
@@ -1846,37 +1848,49 @@ def mailer(request):
                 subject = f"[Test] {subject}"[:200]
             body = form.cleaned_data["body"]
             ok, error = True, ""
-            try:
-                EmailMessage(
-                    subject=subject,
-                    body=body,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    to=[recipient],
-                ).send()
-            except Exception as exc:
-                ok, error = False, str(exc)[:300]
+            if to_members:
+                copy_to = request.user.email or settings.DEFAULT_FROM_EMAIL
+                sent, failed, error = services.send_mailer_to_members(request, config, subject, body, copy_to)
+                ok = failed == 0
+                if failed:
+                    error = f"{failed} address{'es' if failed != 1 else ''} not sent: {error}"[:300]
+                recipient = f"{sent} member{'s' if sent != 1 else ''}"
+            else:
+                try:
+                    EmailMessage(
+                        subject=subject,
+                        body=body + (services.mailer_footer(request, config) if is_test else ""),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        to=[recipient],
+                    ).send()
+                except Exception as exc:
+                    ok, error = False, str(exc)[:300]
             MailLog.objects.create(
                 subject=subject,
                 body=body,
-                recipients=recipient,
+                recipients=recipient[:200],
                 sent_by=request.user,
                 ok=ok,
                 error=error,
             )
             AuditLog.record(
-                request.user, "test_mailer" if is_test else "send_mailer", target=recipient,
+                request.user, "test_mailer" if is_test else "send_mailer", target=recipient[:200],
                 detail=(f"{'sent' if ok else 'FAILED'}: {subject}")[:300],
             )
             if ok and is_test:
                 messages.success(
                     request,
-                    f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to the list.",
+                    f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to everyone.",
                 )
+            elif to_members and ok:
+                messages.success(request, f"What's On handed to the mail server for {recipient}.")
+            elif to_members:
+                messages.error(request, f"What's On went to {recipient}, but {error}")
             elif ok:
                 messages.success(
                     request,
-                    f"What's On handed to the mail server for {recipient}. If it hasn't reached the list "
-                    "in a few minutes, the list is holding it: see “Getting it to the list” below.",
+                    f"What's On handed to the mail server for {recipient}. A mailing list that holds "
+                    "posts from senders it doesn't know will want approving there.",
                 )
             else:
                 messages.error(request, f"Sending failed: {error}")
@@ -1885,11 +1899,12 @@ def mailer(request):
             # keep the draft on screen after a test, ready to send for real
             form = MailerForm(initial={
                 key: form.cleaned_data.get(key, "")
-                for key in ("recipient", "subject", "body", "instructions")
+                for key in ("audience", "recipient", "subject", "body", "instructions")
             })
     else:
         subject, body = services.build_whats_on_email(request)
         form = MailerForm(initial={
+            "audience": "members",
             "recipient": config.mailing_list_address,
             "subject": subject,
             "body": body,
@@ -1902,6 +1917,8 @@ def mailer(request):
         "email_live": "smtp" in settings.EMAIL_BACKEND,
         "email_from": settings.DEFAULT_FROM_EMAIL,
         "email_from_ok": settings.DEFAULT_FROM_EMAIL.rstrip("> ").lower().endswith("@srcf.net"),
+        "audience_count": services.mailer_audience().count(),
+        "batch_size": services.MAILER_BATCH,
         "event_count": services.whats_on_events().count(),
         "recent_logs": MailLog.objects.select_related("sent_by")[:5],
     })

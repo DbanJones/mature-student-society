@@ -44,10 +44,14 @@ class MemberEditForm(forms.ModelForm):
 class MailerForm(forms.Form):
     """The editable What's On draft: recipient, subject and plain-text body."""
 
-    recipient = forms.EmailField(
-        label="To",
-        help_text="The SRCF mailing list address — delivers to every newsletter subscriber.",
+    audience = forms.ChoiceField(
+        label="To", widget=forms.RadioSelect, initial="members",
+        choices=[
+            ("members", "Every member with an email address"),
+            ("address", "One address (a mailing list, or a check)"),
+        ],
     )
+    recipient = forms.EmailField(required=False, label="Address", help_text="Only for “One address”.")
     subject = forms.CharField(max_length=200)
     body = forms.CharField(
         strip=False,
@@ -62,6 +66,12 @@ class MailerForm(forms.Form):
                   "lead with the Winter Ball, warm sign-off from the committee”. The facts and "
                   "links stay as they are whatever you ask.",
     )
+
+    def clean(self):
+        data = super().clean()
+        if data.get("audience") == "address" and not data.get("recipient"):
+            self.add_error("recipient", "Give the address to send to.")
+        return data
 
 
 class TagAdminForm(forms.ModelForm):

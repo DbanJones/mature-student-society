@@ -288,8 +288,11 @@ and simply post without JavaScript.
 - **WhatsApp**: there is no usable WhatsApp API for community groups, so
   integration is deep links (wa.me share), the one-time invite link, and a
   copy-paste/CSV export of attendee numbers for the group admin.
-- **Mailer** sends to the Mailman list address, not to individual members —
-  deliverability and unsubscribe handling stay Mailman's job.
+- **Mailer** sends straight to members: every active account with an
+  email address that hasn't opted out (`User.wants_mailer`, a profile
+  checkbox), bcc'd in batches of 50 through the SRCF's own mail server,
+  each copy with an unsubscribe line and a List-Unsubscribe header. No
+  Mailman list is needed, though "One address" can still post to one.
 - **SQLite locally / Postgres on SRCF** via `DB_ENGINE`; no ORM features that
   differ between them.
 - **Member Markdown is triple-guarded** (core/templatetags/md.py): the source

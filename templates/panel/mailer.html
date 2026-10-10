@@ -16,7 +16,7 @@
   <p class="small muted" style="margin:-.8rem 0 1rem">
     Mail leaves this server by SMTP, from <strong>{{ email_from }}</strong>.
     {% if not email_from_ok %}<strong>That is not an srcf.net address</strong>, so Gmail and Outlook may junk it and the list may not accept it; set <code>DEFAULT_FROM_EMAIL</code> in <code>.env</code> (UPGRADING.md).{% endif %}
-    Send yourself a test before sending to the list.
+    Send yourself a test before sending to everyone.
   </p>
 {% else %}
   <div class="flash flash-warning" style="margin:0 0 1rem">
@@ -26,12 +26,12 @@
   </div>
 {% endif %}
 <p class="small muted" style="margin:0 0 1rem">
-  <strong>Getting it to the list:</strong> “Sent” means the SRCF mail server took the message; the
-  list then decides. “To” must be the list's exact address (check it at
-  <a href="https://control.srcf.net">control.srcf.net</a>), and Mailman holds posts from senders it
-  doesn't know, so the list must accept mail from <strong>{{ email_from }}</strong>: subscribe that
-  address to the list (delivery off) or add it under Privacy options → Sender filters at
-  <a href="https://lists.srcf.net">lists.srcf.net</a>, then approve anything it is already holding.
+  <strong>Every member</strong> means the {{ audience_count }} account{{ audience_count|pluralize }} with an
+  email address that {{ audience_count|pluralize:"hasn't,haven't" }} opted out (Profile → “Email me the
+  What's On mailer”), bcc'd in batches of {{ batch_size }} so nobody sees anyone else's address; every copy
+  carries an unsubscribe line, and you are sent a copy of each batch. “Sent” means the SRCF mail server took
+  it. <strong>One address</strong> is for a mailing list or a check: a Mailman list holds posts from senders
+  it doesn't know, so it must accept mail from <strong>{{ email_from }}</strong>.
 </p>
 
 {% if site_config.email_tone %}
@@ -49,7 +49,6 @@
   <p class="small muted">
     <strong>{{ event_count }}</strong> event{{ event_count|pluralize }} in the next 14 days
     {% if event_count %}are included in this draft{% else %}— the draft notes an empty diary{% endif %}.
-    Sending to the list address delivers to <strong>all newsletter subscribers</strong>.
   </p>
   <form method="post">
     {% csrf_token %}
@@ -60,7 +59,7 @@
         ✨ Draft with AI
       </button>
       <button type="submit" name="action" value="test" class="btn btn-ghost"{% if not user.email %} disabled title="Your account has no email address"{% endif %}>Send a test to me</button>
-      <button type="submit" name="action" value="send" class="btn btn-accent">Send mailer</button>
+      <button type="submit" name="action" value="send" class="btn btn-accent" data-confirm="Send the mailer now?">Send mailer</button>
     </div>
     <p class="small muted" style="margin:.5rem 0 0">
       “Draft with AI” rewrites the body above in the society’s tone using

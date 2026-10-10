@@ -395,17 +395,22 @@ class ProfileDetailTests(TestCase):
     def test_own_profile_form_saves_new_fields(self):
         member = self._member("pd005")
         self.client.force_login(member)
-        response = self.client.post(reverse("accounts:profile"), {
+        data = {
             "first_name": "Test", "last_name": "Member", "college": "wolfson",
             "course": "MBA", "bio": "", "talk_to_me_about": "supply chains",
             "work": "Procurement", "interests": "salsa",
             "mobile": "+44 7700 900001", "email": "pd005@cam.ac.uk",
-        })
+        }
+        response = self.client.post(reverse("accounts:profile"), data)
         self.assertEqual(response.status_code, 302)
         member.refresh_from_db()
         self.assertEqual(member.talk_to_me_about, "supply chains")
         self.assertEqual(member.work, "Procurement")
         self.assertEqual(member.interests, "salsa")
+        self.assertFalse(member.wants_mailer)  # the mailer box was left unticked
+        self.client.post(reverse("accounts:profile"), {**data, "wants_mailer": "on"})
+        member.refresh_from_db()
+        self.assertTrue(member.wants_mailer)
 
 
 class TermsAcceptanceTests(TestCase):

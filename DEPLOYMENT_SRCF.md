@@ -243,19 +243,22 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 3. UIS's own Django guidance uses `django-auth-adfs` with
    `USERNAME_CLAIM: "upn"` — an equally good choice if preferred.
 
-## 9. Email + mailing list
+## 9. Email
 
 - The "What's On" mailer sends via local SMTP (`REAL_EMAIL=true`,
-  `EMAIL_HOST=localhost`); group web scripts' mail appears from
+  `EMAIL_HOST=localhost`) straight to every member with an email address,
+  bcc'd in batches of 50 so no address is shown to anyone; members opt out
+  on their profile. Group web scripts' mail appears from
   `<soc>-webmaster@srcf.net` by default; use that (or another srcf.net
   address the society owns) as `DEFAULT_FROM_EMAIL`, since mail sent from
-  the SRCF in another domain's name tends to fail SPF/DMARC checks and the
-  Mailman list must accept posts from it. The Mailer tab says whether
-  `REAL_EMAIL` is on and has a "Send a test to me" button. Keep volumes low — announcements go
-  to one Mailman list address, not to individual members.
-- Create the newsletter list via https://control.srcf.net (Mailman, managed at
-  https://lists.srcf.net), and put its posting address into Site configuration
-  → mailing list address. Docs: https://docs.srcf.net/reference/other-services/mailing-lists/
+  the SRCF in another domain's name tends to fail SPF/DMARC checks. The
+  Mailer tab says whether `REAL_EMAIL` is on and has a "Send a test to me"
+  button. After the first real send, look at the tab's "Recent sends" table:
+  a failed batch means the mail server refused it (the SRCF may rate-limit
+  outgoing mail), and the error text says why.
+- A Mailman list is optional: the Mailer tab's "One address" option posts to
+  one, in which case the list must accept mail from `DEFAULT_FROM_EMAIL`
+  (Privacy options → Sender filters at https://lists.srcf.net).
 
 ## 10. Custom domain (cambridgematuresoc.com)
 

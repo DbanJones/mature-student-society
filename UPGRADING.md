@@ -125,20 +125,21 @@ you were before; your admin rights are unchanged.
 - **The ☰ icon is gone.** Phones get a "Menu" link in the header (and,
   for logged-in members, a Menu tab at the bottom), both opening a page
   that lists the whole site.
-- **Check the mailer really sends.** The Mailer tab now says whether mail
-  leaves the server and has a "Send a test to me" button. Delivery needs
+- **The mailer sends to members directly.** "Every member with an email
+  address" (the default) bcc's them in batches of 50 — no Mailman list is
+  needed; "One address" remains for a list or a check. Members can opt out
+  with "Email me the What's On mailer" on their profile (a new column, so
+  run `migrate`), every copy carries an unsubscribe line, and the admin who
+  presses Send gets a copy of each batch. The tab says whether mail leaves
+  the server and has a "Send a test to me" button. Delivery needs
   `REAL_EMAIL=true` in `.env` (mail then goes through the SRCF's own mail
   server on localhost); without it "Send" only writes to the log. Set
-  `DEFAULT_FROM_EMAIL` to an srcf.net address the society owns, such as
   `DEFAULT_FROM_EMAIL="MSS <mss-webmaster@srcf.net>"` (quoted: `.env` is read
   by bash and an unquoted `<` stops the service from starting; this is also
-  the fallback when the variable is unset): mail from the SRCF claiming to come from
-  another domain is likely to be refused or junked by Gmail and Outlook.
-  The Mailman list must accept posts from that address: subscribe it to
-  the list with delivery off, or add it under Privacy options → Sender
-  filters at lists.srcf.net; a post from an unknown sender is held for
-  moderation, which looks like nothing happening. The Mailer tab repeats
-  this under “Getting it to the list”.
+  the fallback when the variable is unset): mail from the SRCF claiming to
+  come from another domain is likely to be refused or junked by Gmail and
+  Outlook. Watch "Recent sends" after the first real send: a failed batch
+  means the mail server refused it, and the error text says why.
 - **Pictures on pages.** Admin → Content → Pictures takes uploads (shrunk
   on the way in, served to everyone) and shows the line to paste into a
   page. Every Markdown box now has a toolbar and a live preview.
