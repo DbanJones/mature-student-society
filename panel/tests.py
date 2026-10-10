@@ -163,7 +163,7 @@ class PermissionTests(PanelTestCase):
         for name in ["home", "waitlist", "members", "members_cleanup", "events",
                      "messages", "whatsapp_requests", "content", "contact_map",
                      "pages", "navigation", "testimonials", "terms", "stats",
-                     "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures"]:
+                     "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures", "old_list"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -1466,7 +1466,7 @@ class MailerAudienceTests(TestCase):
 
     def test_the_mailer_goes_to_every_member_who_wants_it_in_private_batches(self):
         page = self.client.get(reverse("panel:mailer"))
-        self.assertContains(page, "118 accounts")  # 120 + the admin, less opted out, banned and no email
+        self.assertContains(page, "Website members (118)")  # 120 + the admin, less opted out, banned and no email
         response = self.client.post(reverse("panel:mailer"), {
             "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
         }, follow=True)
@@ -1510,9 +1510,160 @@ class MailerAudienceTests(TestCase):
         self.assertIn("Connection refused", log.error)
         self.assertEqual(log.recipients, "68 members")
 
+    def test_the_old_mailing_list_audiences_reach_each_person_once(self):
+        from panel.models import OldSubscriber
+
+        User.objects.create_user(
+            username="jd123", password="pw", first_name="Jo", last_name="Day", college="wolfson",
+            mobile="+44 7700 900100", email="jo.day@gmail.com", crsid="jd123",
+        )
+        for email in ("old1@example.org", "old2@example.org", "old3@example.org"):
+            OldSubscriber.objects.create(email=email, first_name="Old")
+        OldSubscriber.objects.create(email="M010@cam.ac.uk")  # a member, by address (any case)
+        OldSubscriber.objects.create(email="jd123@cam.ac.uk")  # a member, by CRSid
+        OldSubscriber.objects.create(email="gone@example.org", unsubscribed_at=timezone.now())
+        self.assertEqual(services.audience_counts(), {"members": 119, "old": 5, "old_new": 3, "both": 122})
+        self.assertEqual(services.mailer_recipients("old")[1], [
+            "jd123@cam.ac.uk", "m010@cam.ac.uk", "old1@example.org", "old2@example.org", "old3@example.org",
+        ])
+        self.assertEqual(services.mailer_recipients("old_new")[1], ["old1@example.org", "old2@example.org", "old3@example.org"])
+        members, old = services.mailer_recipients("both")
+        self.assertEqual(len(members), 119)
+        self.assertEqual(old, ["old1@example.org", "old2@example.org", "old3@example.org"])
+        self.assertContains(self.client.get(reverse("panel:mailer")), "each person once (122)")
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "both", "subject": "What's On", "body": "Hello all", "action": "send",
+        }, follow=True)
+        self.assertContains(response, "handed to the mail server for 119 members + 3 on the old list")
+        self.assertEqual(len(mail.outbox), 4)  # 50 + 50 + 19 members, then one batch for the old list
+        old_batch = mail.outbox[-1]
+        self.assertEqual(sorted(old_batch.bcc), ["old1@example.org", "old2@example.org", "old3@example.org"])
+        self.assertIn("mailing list", old_batch.body)
+        self.assertIn("/unsubscribe/", old_batch.body)
+        self.assertIn("join the website", old_batch.body)
+        self.assertIn("mailto:", old_batch.extra_headers["List-Unsubscribe"])
+        self.assertEqual(MailLog.objects.get().recipients, "119 members + 3 on the old list")
+        OldSubscriber.objects.all().delete()
+        User.objects.update(wants_mailer=False)
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "both", "subject": "What's On", "body": "Hello all", "action": "send",
+        }, follow=True)
+        self.assertContains(response, "Nobody to send to")
+        self.assertEqual(MailLog.objects.count(), 1)
+
     def test_one_address_still_needs_an_address(self):
         response = self.client.post(reverse("panel:mailer"), {
             "audience": "address", "recipient": "", "subject": "s", "body": "b", "action": "send",
         })
         self.assertContains(response, "Give the address")
         self.assertEqual(len(mail.outbox), 0)
+
+
+class OldListTests(TestCase):
+    ROWS = [
+        ["", "", "", "", "", "", "Help"],
+        ["Sylvia", "Sylvia Smith", "SS123@cam.ac.uk", "", "Wolfson", "F", "Yes", "History PhD"],
+        ["Vik", "", "vr45@cam.ac.uk", "vr45@zero.cam.ac.uk", "", "M", "", "MBA"],
+        ["", "", "someone@gmail.com", "", "Darwin"],
+        ["Sylvia", "", "ss123@cam.ac.uk", "", "", "", "", "Also runs the book club"],
+        ["No", "Address", "", "", "Darwin"],
+    ]
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="ol001", password="pw", first_name="Ada", last_name="Admin",
+            college="darwin", mobile="+44 7700 900002", email="ada@cam.ac.uk", is_portal_admin=True,
+        )
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _xlsx(rows):
+        """A minimal workbook: one sheet of inline strings."""
+        import zipfile
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        def cell(ref, text):
+            return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>' if text else ""
+
+        body = "".join(
+            f'<row r="{r}">' + "".join(cell(f"{chr(65 + c)}{r}", text) for c, text in enumerate(row)) + "</row>"
+            for r, row in enumerate(rows, start=1)
+        )
+        sheet = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f"<sheetData>{body}</sheetData></worksheet>"
+        )
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as book:
+            book.writestr("xl/worksheets/sheet1.xml", sheet)
+        return SimpleUploadedFile("old-list.xlsx", buffer.getvalue(), content_type="application/octet-stream")
+
+    def test_the_spreadsheet_is_read_without_a_library(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from panel import sheets
+
+        rows = sheets.read_rows(self._xlsx(self.ROWS))
+        self.assertEqual(rows[1][2], "SS123@cam.ac.uk")
+        entries, stats = sheets.parse_old_list(rows)
+        self.assertEqual(stats, {"rows": 6, "no_address": 2, "duplicates": 1})
+        by_email = {e["email"]: e for e in entries}
+        self.assertEqual(sorted(by_email), ["someone@gmail.com", "ss123@cam.ac.uk", "vr45@cam.ac.uk"])
+        sylvia = by_email["ss123@cam.ac.uk"]
+        self.assertEqual((sylvia["first_name"], sylvia["last_name"], sylvia["college"]), ("Sylvia", "Smith", "Wolfson"))
+        self.assertIn("History PhD", sylvia["notes"])
+        self.assertIn("Also runs the book club", sylvia["notes"])
+        self.assertEqual(by_email["vr45@cam.ac.uk"]["first_name"], "Vik")
+        self.assertEqual(by_email["someone@gmail.com"]["college"], "Darwin")
+        csv_rows = sheets.read_rows(SimpleUploadedFile("old.csv", b"\xef\xbb\xbfName,Email\nAnn,ann@example.org\n"))
+        self.assertEqual(csv_rows, [["Name", "Email"], ["Ann", "ann@example.org"]])
+        with self.assertRaises(sheets.SheetError):
+            sheets.read_rows(SimpleUploadedFile("bad.xlsx", b"PK\x03\x04 not really a zip"))
+
+    def test_admins_import_the_list_and_see_who_has_moved_over(self):
+        from panel.models import OldSubscriber
+
+        User.objects.create_user(
+            username="ss123", password="pw", first_name="Sylvia", last_name="Smith", college="wolfson",
+            mobile="+44 7700 900100", email="sylvia@gmail.com", crsid="ss123",
+        )
+        response = self.client.post(reverse("panel:old_list"), {"sheet": self._xlsx(self.ROWS)}, follow=True)
+        self.assertContains(response, "Added 3")
+        self.assertContains(response, "skipped 2 rows without an address")
+        self.assertEqual(OldSubscriber.objects.count(), 3)
+        page = self.client.get(reverse("panel:old_list"))
+        self.assertContains(page, "Moved over (1)")  # ss123, matched by CRSid
+        self.assertContains(page, "Not yet on the website (2)")
+        self.assertContains(page, "Sylvia Smith")
+        waiting = self.client.get(reverse("panel:old_list") + "?status=waiting")
+        self.assertContains(waiting, "vr45@cam.ac.uk")
+        self.assertNotContains(waiting, "ss123@cam.ac.uk")
+        export = self.client.get(reverse("panel:old_list") + "?status=waiting&export=csv")
+        self.assertEqual(export["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("someone@gmail.com", export.content.decode())
+        self.assertNotIn("ss123@cam.ac.uk", export.content.decode())
+        again = self.client.post(reverse("panel:old_list"), {"sheet": self._xlsx([["Vik", "Rao", "vr45@cam.ac.uk", "", "Darwin"]])}, follow=True)
+        self.assertContains(again, "Added 0, filled in 1")
+        self.assertEqual(OldSubscriber.objects.count(), 3)
+        vik = OldSubscriber.objects.get(email="vr45@cam.ac.uk")
+        self.assertEqual((vik.last_name, vik.college), ("Rao", "Darwin"))
+        sub = OldSubscriber.objects.get(email="someone@gmail.com")
+        self.client.post(reverse("panel:old_list_action", args=[sub.pk]), {"action": "unsubscribe"})
+        sub.refresh_from_db()
+        self.assertIsNotNone(sub.unsubscribed_at)
+        self.assertContains(self.client.get(reverse("panel:old_list")), "Unsubscribed (1)")
+        self.client.post(reverse("panel:old_list_action", args=[sub.pk]), {"action": "resubscribe"})
+        sub.refresh_from_db()
+        self.assertIsNone(sub.unsubscribed_at)
+        self.client.post(reverse("panel:old_list_action", args=[sub.pk]), {"action": "remove"})
+        self.assertFalse(OldSubscriber.objects.filter(pk=sub.pk).exists())
+        self.assertTrue(AuditLog.objects.filter(action="import_old_list").exists())
+        self.client.logout()
+        member = User.objects.create_user(
+            username="ol002", password="pw", first_name="M", last_name="M", college="wolfson", mobile="+44 7700 900101",
+        )
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(reverse("panel:old_list")).status_code, 403)

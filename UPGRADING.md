@@ -125,6 +125,16 @@ you were before; your admin rights are unchanged.
 - **The ☰ icon is gone.** Phones get a "Menu" link in the header (and,
   for logged-in members, a Menu tab at the bottom), both opening a page
   that lists the whole site.
+- **The old mailing list lives on the site.** Admin → People → Old mailing
+  list imports the committee's spreadsheet of addresses (.xlsx or .csv,
+  addresses in any column; nothing is duplicated or overwritten on a
+  re-import), shows who has since joined the website (matched by email or
+  by CRSid) and downloads the rest as CSV. The Mailer tab can send to
+  website members, the old list (everyone, or only those not yet on the
+  website), both at once with each person reached once, or one address.
+  Anyone can stop the mailer for an address at /unsubscribe/ (they are
+  emailed a link to undo it). New table: run `migrate`. Keep the
+  spreadsheet itself out of the repository and off the server.
 - **The mailer sends to members directly.** "Every member with an email
   address" (the default) bcc's them in batches of 50 — no Mailman list is
   needed; "One address" remains for a list or a check. Members can opt out

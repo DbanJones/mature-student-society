@@ -44,7 +44,7 @@ from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
-from . import ai, services
+from . import ai, services, sheets
 from .health import static_health
 from .forms import (
     ActivityForm,
@@ -58,6 +58,7 @@ from .forms import (
     MapSettingsForm,
     MemberEditForm,
     MessagingSettingsForm,
+    OldListUploadForm,
     PictureForm,
     SitePageForm,
     TabVisibilityForm,
@@ -65,7 +66,7 @@ from .forms import (
     TagAdminForm,
     WhatsAppSettingsForm,
 )
-from .models import AuditLog, MailLog
+from .models import AuditLog, MailLog, OldSubscriber
 
 
 def _display_name(member):
@@ -1795,12 +1796,22 @@ def stats(request):
 
 # --- What's On mailer ------------------------------------------------------------------
 
+def _mailer_form(*args, **kwargs):
+    """A MailerForm whose audience labels carry today's counts."""
+    form = MailerForm(*args, **kwargs)
+    counts = services.audience_counts()
+    form.fields["audience"].choices = [
+        (key, f"{label} ({counts[key]})" if key in counts else label) for key, label in services.AUDIENCES
+    ]
+    return form
+
+
 @portal_admin_required
 def mailer(request):
     config = SiteConfig.get()
 
     if request.method == "POST":
-        form = MailerForm(request.POST)
+        form = _mailer_form(request.POST)
         if form.is_valid() and request.POST.get("action") == "ai_draft":
             # Rewrite the current draft with AI and re-render for review — do
             # NOT send. Keeps whatever the admin has edited into recipient/
@@ -1826,7 +1837,7 @@ def mailer(request):
                     messages.success(
                         request, "Draft rewritten by AI — review it before sending."
                     )
-                    form = MailerForm(initial={
+                    form = _mailer_form(initial={
                         "audience": form.cleaned_data["audience"],
                         "recipient": form.cleaned_data.get("recipient", ""),
                         "subject": form.cleaned_data["subject"],
@@ -1838,7 +1849,8 @@ def mailer(request):
             # "Send a test to me" goes to the admin alone, so the whole path
             # (server, From address, spam filters) is checked first.
             is_test = request.POST.get("action") == "test"
-            to_members = form.cleaned_data["audience"] == "members" and not is_test
+            audience = form.cleaned_data["audience"]
+            to_list = audience != "address" and not is_test
             recipient = request.user.email if is_test else form.cleaned_data.get("recipient", "")
             if is_test and not recipient:
                 messages.error(request, "Your account has no email address to send a test to.")
@@ -1848,13 +1860,16 @@ def mailer(request):
                 subject = f"[Test] {subject}"[:200]
             body = form.cleaned_data["body"]
             ok, error = True, ""
-            if to_members:
+            if to_list:
                 copy_to = request.user.email or settings.DEFAULT_FROM_EMAIL
-                sent, failed, error = services.send_mailer_to_members(request, config, subject, body, copy_to)
+                sent, failed, error = services.send_mailer(request, config, subject, body, copy_to, audience)
+                if not failed and not sent["members"] and not sent["old"]:
+                    messages.error(request, "Nobody to send to: that audience has no addresses.")
+                    return redirect("panel:mailer")
                 ok = failed == 0
                 if failed:
                     error = f"{failed} address{'es' if failed != 1 else ''} not sent: {error}"[:300]
-                recipient = f"{sent} member{'s' if sent != 1 else ''}"
+                recipient = services.describe_sent(sent)
             else:
                 try:
                     EmailMessage(
@@ -1882,9 +1897,9 @@ def mailer(request):
                     request,
                     f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to everyone.",
                 )
-            elif to_members and ok:
+            elif to_list and ok:
                 messages.success(request, f"What's On handed to the mail server for {recipient}.")
-            elif to_members:
+            elif to_list:
                 messages.error(request, f"What's On went to {recipient}, but {error}")
             elif ok:
                 messages.success(
@@ -1897,13 +1912,13 @@ def mailer(request):
             if not is_test:
                 return redirect("panel:mailer")
             # keep the draft on screen after a test, ready to send for real
-            form = MailerForm(initial={
+            form = _mailer_form(initial={
                 key: form.cleaned_data.get(key, "")
                 for key in ("audience", "recipient", "subject", "body", "instructions")
             })
     else:
         subject, body = services.build_whats_on_email(request)
-        form = MailerForm(initial={
+        form = _mailer_form(initial={
             "audience": "members",
             "recipient": config.mailing_list_address,
             "subject": subject,
@@ -2298,3 +2313,104 @@ def term_dates(request):
     AuditLog.record(request.user, "update_term_dates")
     messages.success(request, "Term dates saved. The calendar now labels term weeks.")
     return redirect("panel:navigation")
+
+
+# --- the old mailing list -----------------------------------------------------------------
+
+@portal_admin_required
+def old_list(request):
+    """The mailing list from before the website: import a spreadsheet, see
+    who has moved over, download the rest."""
+    form = OldListUploadForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        upload = form.cleaned_data["sheet"]
+        try:
+            entries, stats = sheets.parse_old_list(sheets.read_rows(upload))
+        except sheets.SheetError as exc:
+            messages.error(request, str(exc))
+            return redirect("panel:old_list")
+        added = filled = 0
+        for entry in entries:
+            sub, created = OldSubscriber.objects.get_or_create(
+                email=entry["email"],
+                defaults={**{k: v for k, v in entry.items() if k != "email"}, "added_by": request.user},
+            )
+            if created:
+                added += 1
+                continue
+            changed = False
+            for field in ("first_name", "last_name", "college", "notes"):
+                if entry[field] and not getattr(sub, field):
+                    setattr(sub, field, entry[field])
+                    changed = True
+            if changed:
+                sub.save()
+                filled += 1
+        AuditLog.record(
+            request.user, "import_old_list", target=upload.name[:200],
+            detail=f"added {added}, filled in {filled}, skipped {stats['no_address']}, merged {stats['duplicates']}",
+        )
+        messages.success(
+            request,
+            f"Added {added}, filled in {filled}, skipped {stats['no_address']} "
+            f"row{'s' if stats['no_address'] != 1 else ''} without an address; "
+            f"{stats['duplicates']} duplicate{'s' if stats['duplicates'] != 1 else ''} merged.",
+        )
+        return redirect("panel:old_list")
+
+    status = request.GET.get("status", "")
+    q = request.GET.get("q", "").strip()
+    subs = services.old_list_status(list(OldSubscriber.objects.all()))
+    counts = {
+        "all": len(subs),
+        "unsubscribed": sum(1 for s in subs if s.unsubscribed_at),
+        "moved": sum(1 for s in subs if s.member and not s.unsubscribed_at),
+    }
+    counts["waiting"] = counts["all"] - counts["unsubscribed"] - counts["moved"]
+    if status == "unsubscribed":
+        subs = [s for s in subs if s.unsubscribed_at]
+    elif status == "moved":
+        subs = [s for s in subs if s.member and not s.unsubscribed_at]
+    elif status == "waiting":
+        subs = [s for s in subs if not s.member and not s.unsubscribed_at]
+    if q:
+        needle = q.lower()
+        subs = [s for s in subs if needle in f"{s.name} {s.email} {s.college} {s.notes}".lower()]
+    if request.GET.get("export") == "csv":
+        import csv
+
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="old-mailing-list.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["email", "first name", "last name", "college", "status"])
+        for s in subs:
+            state = "unsubscribed" if s.unsubscribed_at else ("on the website" if s.member else "not yet")
+            writer.writerow([s.email, s.first_name, s.last_name, s.college, state])
+        return response
+    page = Paginator(subs, 100).get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
+    return render(request, "panel/old_list.html", {
+        "nav_active": "panel", "panel_tab": "old_list",
+        "form": form, "page": page, "counts": counts, "status": status, "q": q,
+        "qs": params.urlencode(),
+    })
+
+
+@portal_admin_required
+@require_POST
+def old_list_action(request, pk):
+    sub = get_object_or_404(OldSubscriber, pk=pk)
+    action = request.POST.get("action")
+    if action == "unsubscribe":
+        sub.unsubscribed_at = timezone.now()
+        sub.save(update_fields=["unsubscribed_at"])
+    elif action == "resubscribe":
+        sub.unsubscribed_at = None
+        sub.save(update_fields=["unsubscribed_at"])
+    elif action == "remove":
+        sub.delete()
+    else:
+        raise Http404
+    AuditLog.record(request.user, f"old_list_{action}", target=sub.email[:200])
+    return _redirect_back(request, "panel:old_list")

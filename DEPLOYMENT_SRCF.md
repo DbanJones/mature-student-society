@@ -256,6 +256,9 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   button. After the first real send, look at the tab's "Recent sends" table:
   a failed batch means the mail server refused it (the SRCF may rate-limit
   outgoing mail), and the error text says why.
+- The society's old mailing list (a spreadsheet) is imported once from
+  Admin → People → Old mailing list; the mailer can then reach those people
+  too, and the page shows who has since joined the website.
 - A Mailman list is optional: the Mailer tab's "One address" option posts to
   one, in which case the list must accept mail from `DEFAULT_FROM_EMAIL`
   (Privacy options → Sender filters at https://lists.srcf.net).

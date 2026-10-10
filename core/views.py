@@ -8,8 +8,11 @@ events never leak to anonymous visitors.
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth import get_user_model
+from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -140,6 +143,64 @@ def _preview_text(request):
         messages.error(request, f"Can't preview: {problem}.")
         return ""
     return text
+
+
+UNSUBSCRIBES_PER_MINUTE = 10
+RESUBSCRIBE_SALT = "mailer-resubscribe"
+
+
+def unsubscribe(request):
+    """Stop the What's On mailer for an address: a member's profile setting
+    and the old mailing list both. Anyone can ask for any address (there
+    is no login), so the address itself is told by email and given a link
+    to undo it; an address on neither list gets the same page and no mail."""
+    from panel.models import OldSubscriber
+
+    done, email = False, ""
+    if request.method == "POST":
+        email = request.POST.get("email", "").strip().lower()
+        key = f"unsubscribe-rate:{request.META.get('REMOTE_ADDR', '')}"
+        cache.add(key, 0, 60)
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            count = 1
+        if count > UNSUBSCRIBES_PER_MINUTE:
+            return HttpResponse("Too many requests; try again in a minute.", status=429,
+                                content_type="text/plain; charset=utf-8")
+        if "@" in email:
+            users = get_user_model().objects.filter(email__iexact=email, wants_mailer=True)
+            listed = users.exists()
+            users.update(wants_mailer=False)
+            listed = bool(OldSubscriber.objects.filter(email=email, unsubscribed_at__isnull=True)
+                          .update(unsubscribed_at=timezone.now())) or listed
+            if listed:
+                token = signing.dumps(email, salt=RESUBSCRIBE_SALT)
+                undo = request.build_absolute_uri(reverse("core:resubscribe", args=[token]))
+                send_mail(
+                    "You've been unsubscribed from the What's On mailer",
+                    f"This address ({email}) won't get the society's What's On mailer any more.\n\n"
+                    f"If that wasn't you, or you change your mind, put it back with this link:\n{undo}\n",
+                    None, [email], fail_silently=True,
+                )
+            done = True
+    return render(request, "core/unsubscribe.html", {"done": done, "email": email})
+
+
+def resubscribe(request, token):
+    """The undo link from the unsubscribe email: valid for ninety days."""
+    from panel.models import OldSubscriber
+
+    try:
+        email = signing.loads(token, salt=RESUBSCRIBE_SALT, max_age=90 * 24 * 3600)
+    except signing.BadSignature:
+        raise Http404("That link has expired.")
+    if request.method == "POST":
+        get_user_model().objects.filter(email__iexact=email).update(wants_mailer=True)
+        OldSubscriber.objects.filter(email=email).update(unsubscribed_at=None)
+        messages.success(request, f"{email} is back on the What's On mailer.")
+        return redirect("core:home")
+    return render(request, "core/unsubscribe.html", {"resubscribe": True, "email": email})
 
 
 def menu(request):

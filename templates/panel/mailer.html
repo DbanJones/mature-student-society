@@ -26,12 +26,13 @@
   </div>
 {% endif %}
 <p class="small muted" style="margin:0 0 1rem">
-  <strong>Every member</strong> means the {{ audience_count }} account{{ audience_count|pluralize }} with an
-  email address that {{ audience_count|pluralize:"hasn't,haven't" }} opted out (Profile → “Email me the
-  What's On mailer”), bcc'd in batches of {{ batch_size }} so nobody sees anyone else's address; every copy
-  carries an unsubscribe line, and you are sent a copy of each batch. “Sent” means the SRCF mail server took
-  it. <strong>One address</strong> is for a mailing list or a check: a Mailman list holds posts from senders
-  it doesn't know, so it must accept mail from <strong>{{ email_from }}</strong>.
+  <strong>Website members</strong> are the accounts with an email address that haven't opted out (Profile →
+  “Email me the What's On mailer”). <strong>The old mailing list</strong> is the spreadsheet imported under
+  People → <a href="{% url 'panel:old_list' %}">Old mailing list</a>: “everyone still on it” includes people
+  who have since joined the website, “only those not yet on the website” is for nudging them over, and
+  <strong>Both</strong> reaches each person once. Every copy goes bcc'd in batches of {{ batch_size }} so nobody
+  sees anyone else's address, carries an unsubscribe line, and you are sent a copy of each batch. “Sent” means
+  the SRCF mail server took it. <strong>One address</strong> is for a mailing list or a check.
 </p>
 
 {% if site_config.email_tone %}

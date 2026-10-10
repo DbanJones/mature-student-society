@@ -588,3 +588,37 @@ class PicturesAndEditorTests(TestCase):
             self.client.post(reverse("core:preview"), {"text": "fine"})
         self.assertEqual(self.client.post(reverse("core:preview"), {"text": "fine"}).status_code, 429)
         cache.delete(f"preview-rate:{self.member.pk}")
+
+
+class UnsubscribeTests(TestCase):
+    def test_anyone_can_stop_the_mailer_for_an_address_and_undo_it(self):
+        from django.core import mail
+
+        from panel.models import OldSubscriber
+
+        member = User.objects.create_user(
+            username="un001", password="pw", first_name="Mia", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001", email="Mia@cam.ac.uk",
+        )
+        old = OldSubscriber.objects.create(email="mia@cam.ac.uk")
+        self.assertContains(self.client.get(reverse("core:unsubscribe")), "Stop the")
+        page = self.client.post(reverse("core:unsubscribe"), {"email": "MIA@cam.ac.uk"})
+        self.assertContains(page, "won't get the")
+        member.refresh_from_db()
+        old.refresh_from_db()
+        self.assertFalse(member.wants_mailer)
+        self.assertIsNotNone(old.unsubscribed_at)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["mia@cam.ac.uk"])
+        link = next(word for word in mail.outbox[0].body.split() if "/resubscribe/" in word)
+        path = link.split("testserver", 1)[1]
+        self.assertContains(self.client.get(path), "back on")
+        self.client.post(path)
+        member.refresh_from_db()
+        old.refresh_from_db()
+        self.assertTrue(member.wants_mailer)
+        self.assertIsNone(old.unsubscribed_at)
+        page = self.client.post(reverse("core:unsubscribe"), {"email": "nobody@example.org"})
+        self.assertContains(page, "won't get the")  # the same page, and no email, for an unknown address
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(self.client.get("/resubscribe/not-a-token/").status_code, 404)

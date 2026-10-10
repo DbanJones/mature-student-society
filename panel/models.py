@@ -44,3 +44,42 @@ class AuditLog(models.Model):
     @classmethod
     def record(cls, actor, action, target="", detail=""):
         cls.objects.create(actor=actor, action=action, target=str(target), detail=detail)
+
+
+class OldSubscriber(models.Model):
+    """Someone on the society's mailing list from before the website,
+    imported from a spreadsheet (Admin → People → Old mailing list). The
+    What's On mailer can still reach them, and the page shows who has since
+    joined the website."""
+
+    email = models.EmailField(unique=True)
+    first_name = models.CharField(max_length=80, blank=True)
+    last_name = models.CharField(max_length=80, blank=True)
+    college = models.CharField(max_length=80, blank=True)
+    notes = models.CharField(max_length=300, blank=True)
+    added_at = models.DateTimeField(auto_now_add=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="old_subscribers_added",
+    )
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["email"]
+
+    def __str__(self):
+        return self.email
+
+    @property
+    def name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+    @property
+    def crsid(self):
+        """The CRSid a cam.ac.uk address implies, or ''."""
+        local, _at, domain = self.email.partition("@")
+        return local if domain == "cam.ac.uk" else ""
+
+    def save(self, *args, **kwargs):
+        self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)

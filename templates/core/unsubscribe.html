@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}What's On mailer{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:34rem; margin: 1rem auto">
+  {% if resubscribe %}
+    <h1>Back on the list?</h1>
+    <p>Put <strong>{{ email }}</strong> back on the What's On mailer.</p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-accent">Yes, send me the mailer again</button>
+    </form>
+  {% elif done %}
+    <h1>Done</h1>
+    <p><strong>{{ email }}</strong> won't get the What's On mailer.</p>
+    <p class="small muted">
+      If that address was on our list, we've emailed it a link to undo this. Members can also turn the
+      mailer on or off with “Email me the What's On mailer” on their profile.
+    </p>
+  {% else %}
+    <h1>Stop the What's On mailer</h1>
+    <p class="muted">
+      Enter the address the mailer reaches you at. Members can also untick “Email me the What's On
+      mailer” on their profile.
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <p><label for="id_email">Email address</label> <input type="email" name="email" id="id_email" required></p>
+      <button type="submit" class="btn btn-accent">Stop these emails</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

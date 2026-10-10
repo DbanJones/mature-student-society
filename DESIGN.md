@@ -32,7 +32,7 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
 | posters | EventPoster, PosterScan | One-button event posters: laid out server-side as SVG, printed and exported in the browser, nothing stored |
 | faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
-| panel | MailLog, AuditLog | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
+| panel | MailLog, AuditLog, OldSubscriber | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
 | dashboard | KeepyUppyScore | Member dashboard |
 
 ## Membership model
@@ -291,8 +291,13 @@ and simply post without JavaScript.
 - **Mailer** sends straight to members: every active account with an
   email address that hasn't opted out (`User.wants_mailer`, a profile
   checkbox), bcc'd in batches of 50 through the SRCF's own mail server,
-  each copy with an unsubscribe line and a List-Unsubscribe header. No
-  Mailman list is needed, though "One address" can still post to one.
+  each copy with an unsubscribe line and a List-Unsubscribe header. The
+  old mailing list (`panel.OldSubscriber`, imported from a spreadsheet by
+  `panel.sheets`, which reads .xlsx and .csv without a library) is a second
+  audience, de-duplicated against members by address or CRSid; anyone can
+  unsubscribe an address at `/unsubscribe/` and undo it from the emailed
+  link. No Mailman list is needed, though "One address" can still post to
+  one.
 - **SQLite locally / Postgres on SRCF** via `DB_ENGINE`; no ORM features that
   differ between them.
 - **Member Markdown is triple-guarded** (core/templatetags/md.py): the source

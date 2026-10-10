@@ -47,9 +47,12 @@ class MailerForm(forms.Form):
     audience = forms.ChoiceField(
         label="To", widget=forms.RadioSelect, initial="members",
         choices=[
-            ("members", "Every member with an email address"),
+            ("members", "Website members"),
+            ("old", "The old mailing list, everyone still on it"),
+            ("old_new", "The old mailing list, only those not yet on the website"),
+            ("both", "Both: website members and the old list, each person once"),
             ("address", "One address (a mailing list, or a check)"),
-        ],
+        ],  # the view adds today's counts to the labels
     )
     recipient = forms.EmailField(required=False, label="Address", help_text="Only for “One address”.")
     subject = forms.CharField(max_length=200)
@@ -418,3 +421,20 @@ class PictureForm(forms.ModelForm):
 
             image = shrink_image(image, EVENT_MAX_PX)
         return image
+
+
+class OldListUploadForm(forms.Form):
+    """A spreadsheet of the old mailing list, read by panel.sheets."""
+
+    sheet = forms.FileField(
+        label="Spreadsheet",
+        help_text="An .xlsx or .csv export of the old list: addresses in any column, names and college beside them.",
+    )
+
+    def clean_sheet(self):
+        sheet = self.cleaned_data["sheet"]
+        if sheet.size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+            raise forms.ValidationError(f"Keep it under {settings.MAX_UPLOAD_SIZE_MB} MB.")
+        if not sheet.name.lower().endswith((".xlsx", ".csv", ".txt")):
+            raise forms.ValidationError("Upload an .xlsx or .csv file.")
+        return sheet
