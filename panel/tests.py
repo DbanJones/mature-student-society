@@ -63,6 +63,7 @@ urlpatterns = [
         ("pages/<slug:slug>/edit/", "site_page_edit"),
         ("pages/<slug:slug>/history/", "site_page_history"),
         ("winter-ball/", "winter_ball"), ("menu/", "menu"), ("preview/", "preview"),
+        ("unsubscribe/", "unsubscribe"), ("resubscribe/<str:token>/", "resubscribe"),
     ])),
     path("accounts/", _ns("accounts", [
         ("login/", "login"), ("logout/", "logout"), ("waitlist/", "waitlist"),
@@ -495,6 +496,11 @@ class MailerAIDraftTests(PanelTestCase):
         }
         data.update(extra)
         return self.client.post(reverse("panel:mailer"), data)
+
+    def test_ai_draft_keeps_the_chosen_audience(self):
+        with mock.patch("panel.ai.draft_email", return_value="Short and sweet."):
+            response = self._draft(audience="both", recipient="")
+        self.assertRegex(response.content.decode(), r'value="both"[^>]*checked')
 
     def test_ai_draft_takes_the_editors_instructions(self):
         with mock.patch("panel.ai.draft_email", return_value="Short and sweet.") as draft:
@@ -1331,20 +1337,22 @@ class SiteHealthTests(TestCase):
         )
         self.client.force_login(self.admin)
 
-    def test_the_super_admin_tab_checks_the_served_static_files_only_when_asked(self):
+    def test_the_super_admin_tab_checks_the_copy_and_what_is_served_only_when_asked(self):
+        import tempfile
         import urllib.error
-        from io import BytesIO
+        from io import BytesIO, StringIO
 
-        from django.contrib.staticfiles import finders
+        from django.core.management import call_command
 
+        from core.storage import static_sources
         from panel import health
 
-        with open(finders.find("css/base.css"), "rb") as handle:
+        with open(static_sources()["css/base.css"], "rb") as handle:
             current = handle.read()
 
         def fake_open(request, timeout=0):
             url = request.full_url.split("?")[0]
-            if url.endswith("css/base.css"):
+            if url.endswith("/css/base.css") and "/admin/" not in url:
                 return BytesIO(current)
             if url.endswith("css/panel.css"):
                 return BytesIO(b"old bytes")
@@ -1352,40 +1360,65 @@ class SiteHealthTests(TestCase):
                 raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
             raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
 
-        with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
-            page = self.client.get(reverse("panel:superadmin"))
-            self.assertContains(page, "Check now")
-            self.assertEqual(opened.call_count, 0)  # nothing is fetched until asked
-            page = self.client.get(reverse("panel:superadmin") + "?health=1", HTTP_HOST="testserver:8443")
-        self.assertEqual(opened.call_count, len(health.CHECKED))
-        for call in opened.call_args_list:
-            self.assertTrue(call.args[0].full_url.startswith("http://testserver/static/"))  # the host, never its port
-        rows = {row["name"]: row["status"] for row in page.context["static_health"]}
-        self.assertEqual(rows["css/base.css"], "ok")
-        self.assertEqual(rows["css/panel.css"], "stale")
-        self.assertEqual(rows["css/posters.css"], "HTTP 403")
-        self.assertEqual(rows["js/poster-studio.js"], "missing")
-        self.assertContains(page, "up to date")
-        self.assertContains(page, "HTTP 403")
-        self.assertContains(page, "Check again")
+        with tempfile.TemporaryDirectory() as root, override_settings(STATIC_ROOT=root):
+            with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
+                page = self.client.get(reverse("panel:superadmin"))
+                self.assertContains(page, "Check now")
+                self.assertEqual(opened.call_count, 0)  # nothing is fetched until asked
+                page = self.client.get(reverse("panel:superadmin") + "?health=1", HTTP_HOST="testserver:8443")
+            for call in opened.call_args_list:
+                self.assertTrue(call.args[0].full_url.startswith("http://testserver/static/"))  # the host, never its port
+            result = page.context["static_health"]
+            rows = {row["name"]: row["status"] for row in result["served"]}
+            self.assertEqual(rows["css/base.css"], "ok")
+            self.assertEqual(rows["css/panel.css"], "stale")
+            self.assertEqual(rows["css/posters.css"], "HTTP 403")
+            self.assertEqual(rows["admin/css/base.css"], "missing")  # only a real copy has Django's own files
+            self.assertIn("fonts/SourceSans3-Variable.ttf", rows)  # fonts and scripts are checked too
+            self.assertIn("js/editor.js", rows)
+            self.assertContains(page, "not copied")  # nothing has been copied into the empty folder
+            call_command("sync_static", stdout=StringIO())
+
+            def other_folder(request, timeout=0):  # served, but not what was copied
+                url = request.full_url.split("?")[0]
+                if url.endswith("css/panel.css"):
+                    return BytesIO(b"old bytes")
+                if url.endswith("/css/base.css") and "/admin/" not in url:
+                    return BytesIO(current)
+                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+            with mock.patch.object(health.urllib.request, "urlopen", side_effect=other_folder):
+                page = self.client.get(reverse("panel:superadmin") + "?health=1")
+            self.assertTrue(page.context["static_health"]["copy"]["current"])
+            self.assertEqual(page.context["static_health"]["cause"], "folder")
+            self.assertContains(page, "Apache is reading a different folder")
+            with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open):  # includes a 403
+                page = self.client.get(reverse("panel:superadmin") + "?health=1")
+            self.assertEqual(page.context["static_health"]["cause"], "permissions")
+            self.assertNotContains(page, "Apache is reading a different folder")
+            with mock.patch.object(health.urllib.request, "urlopen", side_effect=urllib.error.URLError("no route")):
+                page = self.client.get(reverse("panel:superadmin") + "?health=1")
+            self.assertEqual(page.context["static_health"]["cause"], "fetch")
+            self.assertContains(page, "couldn't fetch its own site")
+            self.assertNotContains(page, "Apache is reading a different folder")
         # the admin forms go back to the plain tab, so they never re-run the check
         self.assertContains(page, f'name="next" value="{reverse("panel:superadmin")}"')
 
     def test_a_source_file_that_cannot_be_read_is_reported_not_raised(self):
         from io import BytesIO
 
+        from core.storage import static_sources
         from panel import health
 
-        real_find = health.finders.find
+        from django.conf import settings
 
-        def find(name, *args, **kwargs):
-            return "C:/nowhere/base.css" if name == "css/base.css" else real_find(name, *args, **kwargs)
-
-        with mock.patch.object(health.finders, "find", side_effect=find), \
+        missing = str(settings.BASE_DIR / "static" / "css" / "no-such-file.css")  # under static/, so it's checked
+        sources = dict(static_sources(), **{"css/base.css": missing})
+        with mock.patch.object(health, "static_sources", return_value=sources), \
                 mock.patch.object(health.urllib.request, "urlopen", side_effect=lambda *a, **k: BytesIO(b"x")):
             page = self.client.get(reverse("panel:superadmin") + "?health=1")
         self.assertEqual(page.status_code, 200)
-        rows = {row["name"]: row["status"] for row in page.context["static_health"]}
+        rows = {row["name"]: row["status"] for row in page.context["static_health"]["served"]}
         self.assertEqual(rows["css/base.css"], "unreadable here")
 
 
@@ -1428,6 +1461,26 @@ class MailerDeliveryTests(TestCase):
             DEFAULT_FROM_EMAIL="MSS <maturesoc@cambridgesu.co.uk>",
         ):
             self.assertContains(self.client.get(reverse("panel:mailer")), "not an srcf.net address")
+
+    def test_a_test_send_is_the_message_the_audience_gets(self):
+        from core.models import SiteConfig
+
+        config = SiteConfig.get()
+        config.contact_email = "committee@example.org"
+        config.save()
+        self.client.post(reverse("panel:mailer"), {
+            "audience": "members", "subject": "What's On", "body": "Hello all", "action": "test",
+        })
+        member_copy = mail.outbox[-1]
+        self.assertEqual(member_copy.recipients(), ["ada@cam.ac.uk"])
+        self.assertIn("untick", member_copy.body)
+        self.assertEqual(member_copy.reply_to, ["committee@example.org"])
+        self.assertIn("/unsubscribe/", member_copy.extra_headers["List-Unsubscribe"])
+        self.client.post(reverse("panel:mailer"), {
+            "audience": "old_new", "subject": "What's On", "body": "Hello all", "action": "test",
+        })
+        self.assertIn("join the website", mail.outbox[-1].body)
+        self.assertNotIn("untick", mail.outbox[-1].body)
 
     def test_a_test_send_needs_an_email_address_and_a_failed_send_is_recorded(self):
         self.admin.email = ""
@@ -1473,15 +1526,22 @@ class MailerAudienceTests(TestCase):
         self.assertContains(response, "handed to the mail server for 118 members")
         self.assertEqual(len(mail.outbox), 3)  # 50 + 50 + 18
         everyone = set()
+        from django.conf import settings
+
+        copies = []
         for message in mail.outbox:
-            self.assertEqual(message.to, ["ada@cam.ac.uk"])  # the sender gets a copy of each batch
+            # the society's own address is shown, and nobody else's, not even the sender's
+            self.assertEqual(message.to, [settings.DEFAULT_FROM_EMAIL])
+            self.assertNotIn(settings.DEFAULT_FROM_EMAIL, message.recipients())
+            self.assertEqual(message.recipients(), message.bcc)
             self.assertLessEqual(len(message.bcc), services.MAILER_BATCH)
             self.assertIn("untick", message.body)
             self.assertIn("/accounts/profile/", message.body)
-            self.assertIn("List-Unsubscribe", message.extra_headers)
+            self.assertIn("/unsubscribe/", message.extra_headers["List-Unsubscribe"])
             everyone.update(message.bcc)
+            copies += message.bcc
         self.assertEqual(len(everyone), 118)
-        self.assertIn("ada@cam.ac.uk", everyone)
+        self.assertEqual(copies.count("ada@cam.ac.uk"), 1)  # the sender is a member: one copy, no extra
         for left_out in ("m000@cam.ac.uk", "m001@cam.ac.uk"):
             self.assertNotIn(left_out, everyone)
         log = MailLog.objects.get()
@@ -1490,16 +1550,18 @@ class MailerAudienceTests(TestCase):
         self.assertTrue(AuditLog.objects.filter(action="send_mailer", target="118 members").exists())
 
     def test_a_batch_the_mail_server_refuses_is_counted_and_the_rest_still_go(self):
-        real_send = mail.EmailMessage.send
+        from django.core.mail.backends.locmem import EmailBackend
+
+        real_send = EmailBackend.send_messages
         calls = {"n": 0}
 
-        def flaky(message, fail_silently=False):
+        def flaky(backend, messages):
             calls["n"] += 1
             if calls["n"] == 2:
                 raise OSError("Connection refused")
-            return real_send(message, fail_silently)
+            return real_send(backend, messages)
 
-        with mock.patch("panel.services.EmailMessage.send", flaky):
+        with mock.patch.object(EmailBackend, "send_messages", flaky):
             response = self.client.post(reverse("panel:mailer"), {
                 "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
             }, follow=True)
@@ -1537,11 +1599,12 @@ class MailerAudienceTests(TestCase):
         self.assertContains(response, "handed to the mail server for 119 members + 3 on the old list")
         self.assertEqual(len(mail.outbox), 4)  # 50 + 50 + 19 members, then one batch for the old list
         old_batch = mail.outbox[-1]
-        self.assertEqual(sorted(old_batch.bcc), ["old1@example.org", "old2@example.org", "old3@example.org"])
+        # the sender isn't on the old list, so they get one copy of that version too
+        self.assertEqual(sorted(old_batch.bcc), ["ada@cam.ac.uk", "old1@example.org", "old2@example.org", "old3@example.org"])
         self.assertIn("mailing list", old_batch.body)
         self.assertIn("/unsubscribe/", old_batch.body)
         self.assertIn("join the website", old_batch.body)
-        self.assertIn("mailto:", old_batch.extra_headers["List-Unsubscribe"])
+        self.assertNotIn("mailto:", old_batch.extra_headers["List-Unsubscribe"])  # nothing reads that mailbox
         self.assertEqual(MailLog.objects.get().recipients, "119 members + 3 on the old list")
         OldSubscriber.objects.all().delete()
         User.objects.update(wants_mailer=False)
@@ -1550,6 +1613,127 @@ class MailerAudienceTests(TestCase):
         }, follow=True)
         self.assertContains(response, "Nobody to send to")
         self.assertEqual(MailLog.objects.count(), 1)
+
+    def test_banned_and_opted_out_members_are_never_mailed_through_the_old_list(self):
+        from panel.models import OldSubscriber
+
+        OldSubscriber.objects.create(email="m000@cam.ac.uk")  # m000 opted out on the profile
+        OldSubscriber.objects.create(email="m001@cam.ac.uk")  # m001 is banned
+        OldSubscriber.objects.create(email="fresh@example.org")
+        for audience in ("old", "old_new", "both"):
+            old = services.mailer_recipients(audience)[1]
+            self.assertNotIn("m000@cam.ac.uk", old, audience)
+            self.assertNotIn("m001@cam.ac.uk", old, audience)
+            self.assertIn("fresh@example.org", old, audience)
+        self.assertEqual(services.audience_counts()["old"], 1)
+        page = self.client.get(reverse("panel:old_list"))
+        self.assertContains(page, "Banned member")
+        self.assertContains(page, "opted out of the mailer")
+        self.assertContains(page, "Moved over (2)")
+
+    def test_two_accounts_sharing_an_inbox_get_one_copy(self):
+        User.objects.create(username="dup", email="M005@CAM.AC.UK", first_name="D", last_name="Up",
+                            college="wolfson", mobile="+44 7700 900100")
+        self.assertEqual(len(services.member_addresses()), 118)
+        self.assertEqual(services.audience_counts()["members"], 118)
+
+    def test_an_undeliverable_address_is_skipped_and_the_rest_still_go(self):
+        User.objects.filter(username="m003").update(email="m003@@example..org")
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
+        }, follow=True)
+        self.assertContains(response, "went to 117 members, but 1 address not sent: 1 invalid address skipped")
+        self.assertNotIn("m003@@example..org", [a for m in mail.outbox for a in m.bcc])
+        self.assertEqual(sum(len(m.bcc) for m in mail.outbox), 117)
+
+    def test_the_same_mailer_cannot_go_to_the_same_audience_twice_in_ten_minutes(self):
+        data = {"audience": "members", "subject": "What's On", "body": "Hello all", "action": "send"}
+        self.client.post(reverse("panel:mailer"), data)
+        sent = len(mail.outbox)
+        response = self.client.post(reverse("panel:mailer"), data)
+        self.assertContains(response, "This mailer went to that audience at")
+        self.assertContains(response, "Hello all")  # the draft is still there
+        self.assertEqual(len(mail.outbox), sent)
+        self.assertEqual(MailLog.objects.count(), 1)
+
+    def test_a_send_that_reached_nobody_does_not_block_a_retry(self):
+        from django.core.mail.backends.locmem import EmailBackend
+
+        data = {"audience": "members", "subject": "What's On", "body": "Hello all", "action": "send"}
+        with mock.patch.object(EmailBackend, "open", side_effect=OSError("Connection refused")):
+            response = self.client.post(reverse("panel:mailer"), data, follow=True)
+        self.assertContains(response, "went to nobody")
+        self.assertContains(response, "Connection refused")
+        response = self.client.post(reverse("panel:mailer"), data, follow=True)
+        self.assertContains(response, "handed to the mail server for 118 members")
+
+    def test_overlapping_audiences_are_guarded_and_one_address_is_guarded_per_address(self):
+        from panel.models import OldSubscriber
+
+        OldSubscriber.objects.create(email="old1@example.org")
+        data = {"subject": "What's On", "body": "Hello all", "action": "send"}
+        self.client.post(reverse("panel:mailer"), {**data, "audience": "members"})
+        response = self.client.post(reverse("panel:mailer"), {**data, "audience": "both"})
+        self.assertContains(response, "would reach some of the same people again")
+        self.assertContains(response, "only those not yet on the website")
+        response = self.client.post(reverse("panel:mailer"), {**data, "audience": "old_new"}, follow=True)
+        self.assertContains(response, "handed to the mail server for 1 on the old list")
+        for to in ("proof@example.org", "list@example.org"):  # a check, then the real list
+            response = self.client.post(reverse("panel:mailer"), {**data, "audience": "address", "recipient": to}, follow=True)
+            self.assertContains(response, f"handed to the mail server for {to}")
+
+    def test_the_mail_servers_own_error_is_kept_beside_the_invalid_address_note(self):
+        from django.core.mail.backends.locmem import EmailBackend
+
+        User.objects.filter(username="m003").update(email="m003@@example..org")
+        real_send = EmailBackend.send_messages
+        calls = {"n": 0}
+
+        def flaky(backend, messages):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("451 try again later")
+            return real_send(backend, messages)
+
+        with mock.patch.object(EmailBackend, "send_messages", flaky):
+            self.client.post(reverse("panel:mailer"), {
+                "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
+            })
+        log = MailLog.objects.get()
+        self.assertIn("451 try again later", log.error)
+        self.assertIn("1 invalid address skipped", log.error)
+
+    def test_an_empty_audience_keeps_the_draft(self):
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "old", "subject": "Keep this subject", "body": "Keep this body", "action": "send",
+        })
+        self.assertContains(response, "Nobody to send to")
+        self.assertContains(response, "Keep this subject")
+        self.assertContains(response, "Keep this body")
+        self.assertFalse(MailLog.objects.exists())
+
+    def test_a_send_that_is_cut_off_leaves_a_record(self):
+        with mock.patch("panel.services.send_mailer", side_effect=RuntimeError("worker killed")):
+            with self.assertRaises(RuntimeError):
+                self.client.post(reverse("panel:mailer"), {
+                    "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",
+                })
+        log = MailLog.objects.get()
+        self.assertFalse(log.ok)
+        self.assertIn("cut off", log.error)
+        self.assertEqual(log.audience, "members")
+
+    def test_the_address_box_does_not_matter_unless_one_address_is_chosen(self):
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "members", "recipient": "not an address", "subject": "What's On",
+            "body": "Hello all", "action": "send",
+        }, follow=True)
+        self.assertContains(response, "handed to the mail server for 118 members")
+        response = self.client.post(reverse("panel:mailer"), {
+            "audience": "address", "recipient": "not an address", "subject": "Other",
+            "body": "Hello", "action": "send",
+        })
+        self.assertContains(response, "That isn")
 
     def test_one_address_still_needs_an_address(self):
         response = self.client.post(reverse("panel:mailer"), {
@@ -1609,7 +1793,7 @@ class OldListTests(TestCase):
         rows = sheets.read_rows(self._xlsx(self.ROWS))
         self.assertEqual(rows[1][2], "SS123@cam.ac.uk")
         entries, stats = sheets.parse_old_list(rows)
-        self.assertEqual(stats, {"rows": 6, "no_address": 2, "duplicates": 1})
+        self.assertEqual(stats, {"rows": 6, "no_address": 2, "invalid": 0, "duplicates": 1})
         by_email = {e["email"]: e for e in entries}
         self.assertEqual(sorted(by_email), ["someone@gmail.com", "ss123@cam.ac.uk", "vr45@cam.ac.uk"])
         sylvia = by_email["ss123@cam.ac.uk"]
@@ -1622,6 +1806,141 @@ class OldListTests(TestCase):
         self.assertEqual(csv_rows, [["Name", "Email"], ["Ann", "ann@example.org"]])
         with self.assertRaises(sheets.SheetError):
             sheets.read_rows(SimpleUploadedFile("bad.xlsx", b"PK\x03\x04 not really a zip"))
+
+    def test_the_shapes_excel_really_saves_are_read(self):
+        import zipfile
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from panel import sheets
+
+        def upload(data, name="old.csv"):
+            return SimpleUploadedFile(name, data)
+
+        mac = upload("Name,Email\rAnn,ann@example.org\rBob,bob@example.org\r".encode("cp1252"))
+        self.assertEqual(sheets.read_rows(mac)[2], ["Bob", "bob@example.org"])
+        unicode_text = upload("Name\tEmail\r\nZoë\tzoe@example.org\r\n".encode("utf-16"))
+        self.assertEqual(sheets.read_rows(unicode_text)[1], ["Zoë", "zoe@example.org"])
+        semicolons = upload("Name;Email;College\nAnn;ann@example.org;Darwin\n".encode("utf-8"))
+        self.assertEqual(sheets.read_rows(semicolons)[1], ["Ann", "ann@example.org", "Darwin"])
+
+        entries, stats = sheets.parse_old_list([
+            ["Clare", "Clare Smith", "cs1@cam.ac.uk", "Wolfson"],  # a first name that is a college
+            ["17", "Dr", "Ann", "Jones", "aj2@cam.ac.uk"],  # an index column and a title
+            ["Bob Brown <bb3@cam.ac.uk>"],  # name and address in one cell
+            ["Typo", "x@example..org"],  # an address, but not a valid one
+        ])
+        by_email = {e["email"]: e for e in entries}
+        self.assertEqual((by_email["cs1@cam.ac.uk"]["first_name"], by_email["cs1@cam.ac.uk"]["last_name"],
+                          by_email["cs1@cam.ac.uk"]["college"]), ("Clare", "Smith", "Wolfson"))
+        self.assertEqual((by_email["aj2@cam.ac.uk"]["first_name"], by_email["aj2@cam.ac.uk"]["last_name"]), ("Ann", "Jones"))
+        self.assertEqual((by_email["bb3@cam.ac.uk"]["first_name"], by_email["bb3@cam.ac.uk"]["last_name"]), ("Bob", "Brown"))
+        self.assertEqual(stats["invalid"], 1)
+
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as book:
+            book.writestr("xl/worksheets/sheet1.xml", "<x>" + " " * 5000 + "</x>")
+        with mock.patch.object(sheets, "MAX_XML_BYTES", 1000), self.assertRaisesRegex(sheets.SheetError, "too big"):
+            sheets.read_rows(upload(buffer.getvalue(), "big.xlsx"))
+        import zlib
+
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as book:
+            book.writestr("xl/worksheets/sheet1.xml", "<worksheet>" + "<row/>" * 2000 + "</worksheet>")
+        broken = bytearray(buffer.getvalue())
+        start = 30 + len("xl/worksheets/sheet1.xml")  # the compressed sheet follows its local header
+        broken[start:start + 8] = b"\xff" * 8
+        with self.assertRaises(sheets.SheetError) as caught:
+            sheets.read_rows(upload(bytes(broken), "broken.xlsx"))
+        self.assertIsInstance(caught.exception.__cause__, zlib.error)
+        with self.assertRaisesRegex(sheets.SheetError, "password-protected"):
+            sheets.read_rows(upload(sheets.OLE2 + b"\x00" * 600, "locked.xlsx"))
+        with self.assertRaisesRegex(sheets.SheetError, "not readable text"):
+            sheets.read_rows(upload(bytes(range(256)) * 20, "binary.csv"))
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as book:
+            book.writestr("xl/workbook.xml", "<workbook>" + " " * 5000 + "</workbook>")
+            book.writestr("xl/worksheets/sheet1.xml", "<worksheet/>")
+        with mock.patch.object(sheets, "MAX_XML_BYTES", 1000), self.assertRaisesRegex(sheets.SheetError, "too big"):
+            sheets.read_rows(upload(buffer.getvalue(), "big-workbook.xlsx"))
+        response = self.client.post(reverse("panel:old_list"), {"sheet": upload(b"Name,Notes\nAnn,none\n")}, follow=True)
+        self.assertContains(response, "No email addresses found")
+
+    def test_delimiters_are_judged_by_the_shape_of_the_rows(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from panel import sheets
+
+        comma = SimpleUploadedFile("a.csv", b"Email,Notes\r\nann@example.org,Darwin; MBA; book club\r\n"
+                                            b"bob@example.org,Wolfson; PhD; choir\r\n")
+        self.assertEqual(sheets.read_rows(comma)[1], ["ann@example.org", "Darwin; MBA; book club"])
+        unicode_text = SimpleUploadedFile(
+            "a.txt", "Name\tEmail\tNotes\r\nAnn Smith\tann@example.org\tMBA, Darwin, book club, walks\r\n".encode("utf-16"))
+        self.assertEqual(sheets.read_rows(unicode_text)[1], ["Ann Smith", "ann@example.org", "MBA, Darwin, book club, walks"])
+        tabs = SimpleUploadedFile("a.txt", "Smith, Ann\tann@example.org\nJones, Bob\tbob@example.org\n".encode())
+        self.assertEqual(sheets.read_rows(tabs)[0], ["Smith, Ann", "ann@example.org"])
+        entries, _stats = sheets.parse_old_list([
+            ["Ann Smith", "Wolfson", "as1@cam.ac.uk"],  # Name | College | Email
+            ["Clare", "Clare Hall", "cs2@cam.ac.uk"],  # a first name beside a college that starts with it
+        ])
+        by_email = {e["email"]: e for e in entries}
+        self.assertEqual((by_email["as1@cam.ac.uk"]["first_name"], by_email["as1@cam.ac.uk"]["college"]), ("Ann Smith", "Wolfson"))
+        self.assertEqual((by_email["cs2@cam.ac.uk"]["first_name"], by_email["cs2@cam.ac.uk"]["college"]), ("Clare", "Clare Hall"))
+
+    def test_an_admin_unsubscribes_and_resubscribes_both_twins(self):
+        from panel.models import OldSubscriber
+
+        cam = OldSubscriber.objects.create(email="cd456@cam.ac.uk")
+        OldSubscriber.objects.create(email="cd456@hermes.cam.ac.uk")
+        self.client.post(reverse("panel:old_list_action", args=[cam.pk]), {"action": "unsubscribe"})
+        self.assertEqual(OldSubscriber.objects.filter(unsubscribed_at__isnull=False).count(), 2)
+        self.client.post(reverse("panel:old_list_action", args=[cam.pk]), {"action": "resubscribe"})
+        self.assertEqual(services.mailer_recipients("old")[1], ["cd456@cam.ac.uk"])
+
+    def test_addresses_are_read_whole_and_the_real_college_column_wins(self):
+        import zipfile
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        from panel import sheets
+
+        entries, stats = sheets.parse_old_list([
+            ["Sean", "Sean O'Brien", "sean.o'brien@company.co.uk", "", "Darwin"],
+            ["Pat", "'pat@example.org'"],
+            ["Clare", "", "cl12@cam.ac.uk", "", "Wolfson", "F"],  # a first name that is a college, the college on the right
+        ])
+        by_email = {e["email"]: e for e in entries}
+        self.assertIn("sean.o'brien@company.co.uk", by_email)
+        self.assertIn("pat@example.org", by_email)
+        self.assertEqual((by_email["cl12@cam.ac.uk"]["first_name"], by_email["cl12@cam.ac.uk"]["college"]), ("Clare", "Wolfson"))
+        sheet = ('<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                 '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>ann@example.org</t></is></c>'
+                 '<c r="ZZZZZZZ1" t="inlineStr"><is><t>far away</t></is></c></row></sheetData></worksheet>')
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as book:
+            book.writestr("xl/worksheets/sheet1.xml", sheet)
+        rows = sheets.read_rows(SimpleUploadedFile("wide.xlsx", buffer.getvalue()))
+        self.assertEqual(rows, [["ann@example.org"]])  # a cell billions of columns out is ignored
+
+    def test_unsubscribed_addresses_are_kept_and_crsids_come_only_from_raven_accounts(self):
+        from django.utils import timezone
+
+        from panel.models import OldSubscriber
+
+        gone = OldSubscriber.objects.create(email="gone1@cam.ac.uk", unsubscribed_at=timezone.now())
+        self.client.post(reverse("panel:old_list_action", args=[gone.pk]), {"action": "remove"})
+        self.assertTrue(OldSubscriber.objects.filter(pk=gone.pk).exists())
+        self.assertNotContains(self.client.get(reverse("panel:old_list")), 'value="remove"')
+        # an account whose username happens to look like a CRSid is not that person
+        User.objects.create_user(username="ab12", password="pw", first_name="A", last_name="B",
+                                 college="wolfson", mobile="+44 7700 900103", email="ab@example.org")
+        OldSubscriber.objects.create(email="ab12@cam.ac.uk")
+        OldSubscriber.objects.create(email="admin@cam.ac.uk")
+        subs = {s.email: s for s in services.old_list_status(list(OldSubscriber.objects.all()))}
+        self.assertIsNone(subs["ab12@cam.ac.uk"].member)
+        self.assertEqual(subs["admin@cam.ac.uk"].crsid, "")
 
     def test_admins_import_the_list_and_see_who_has_moved_over(self):
         from panel.models import OldSubscriber

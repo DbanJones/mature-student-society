@@ -223,12 +223,46 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-STATIC_ROOT = BASE_DIR / "staticfiles"
+
+
+def _static_root(value):
+    """Where sync_static (and collectstatic) put the files Apache serves. On
+    the SRCF set DJANGO_STATIC_ROOT in .env to the folder Apache serves for
+    /static/, so every restart puts new CSS live."""
+    path = Path(value)
+    if not path.is_absolute() or "~" in value:
+        raise ImproperlyConfigured("DJANGO_STATIC_ROOT must be an absolute path.")
+    if path.name in ("", "public_html") or (path / "manage.py").exists() or (path / ".htaccess").exists():
+        raise ImproperlyConfigured(
+            "DJANGO_STATIC_ROOT must be a folder of its own, such as .../public_html/static."
+        )
+    return path
+
+
+STATIC_ROOT = _static_root(os.environ.get("DJANGO_STATIC_ROOT", "").strip() or str(BASE_DIR / "staticfiles"))
+# With the served folder configured (production), each ?v= stamp is taken from
+# the copy Apache serves, so a URL changes exactly when what visitors get
+# changes; a copy that failed keeps its old, consistent URL. Locally, from the
+# source, which runserver serves.
+STATIC_VERSION_FROM_ROOT = env_bool(
+    "DJANGO_STATIC_VERSION_FROM_ROOT", default=bool(os.environ.get("DJANGO_STATIC_ROOT", "").strip()),
+)
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        # Uploads (member photos, page pictures) are only ever served through
+        # Django, so nobody else on the server needs to read them.
+        "OPTIONS": {"file_permissions_mode": 0o640, "directory_permissions_mode": 0o750},
+    },
     # Static URLs carry ?v=<content hash> so a deploy never meets stale CSS.
     "staticfiles": {"BACKEND": "core.storage.VersionedStaticFilesStorage"},
 }
+
+# The site's public address, for links in emails (e.g.
+# https://www.cambridgematuresoc.com). Unset, links follow the request.
+SITE_URL = os.environ.get("DJANGO_SITE_URL", "").strip().rstrip("/")
+if SITE_URL and not SITE_URL.startswith(("https://", "http://")):
+    raise ImproperlyConfigured("DJANGO_SITE_URL must start with https:// (or http://).")
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -243,6 +277,8 @@ if env_bool("REAL_EMAIL", default=False):
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
     EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+    # Seconds to wait on the mail server before giving up on a message.
+    EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "20"))
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 

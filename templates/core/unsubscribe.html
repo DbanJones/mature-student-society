@@ -4,7 +4,14 @@
 
 {% block content %}
 <div class="card" style="max-width:34rem; margin: 1rem auto">
-  {% if resubscribe %}
+  {% if expired %}
+    <h1>That link has run out</h1>
+    <p>The link is more than 90 days old or isn't complete, so nothing has changed.</p>
+    <p class="small muted">
+      To get the mailer again, members can tick “Email me the What's On mailer” on their profile;
+      anyone else can ask the committee.
+    </p>
+  {% elif resubscribe %}
     <h1>Back on the list?</h1>
     <p>Put <strong>{{ email }}</strong> back on the What's On mailer.</p>
     <form method="post">
@@ -15,8 +22,8 @@
     <h1>Done</h1>
     <p><strong>{{ email }}</strong> won't get the What's On mailer.</p>
     <p class="small muted">
-      If that address was on our list, we've emailed it a link to undo this. Members can also turn the
-      mailer on or off with “Email me the What's On mailer” on their profile.
+      If that address was on our list, it gets an email with a link to undo this. Members can also turn
+      the mailer on or off with “Email me the What's On mailer” on their profile.
     </p>
   {% else %}
     <h1>Stop the What's On mailer</h1>

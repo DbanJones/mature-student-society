@@ -11,18 +11,47 @@ down.
 """
 
 import hashlib
+import os
 from functools import lru_cache
 
+from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.contrib.staticfiles.storage import StaticFilesStorage
+
+# Mixed into every version, so changing it changes every static URL at once
+# and browsers that cached a stale copy fetch the file again. Changed on
+# 11 Oct 2026, after the SRCF had served September's stylesheets under
+# October's URLs.
+STAMP = b"2026-10-11"
+IGNORE = ["CVS", ".*", "*~"]  # as collectstatic
+
+
+def static_sources():
+    """``{url name: source path}`` for every static file the site ships (its
+    own and Django's admin), the first finder winning, as collectstatic."""
+    sources = {}
+    for finder in finders.get_finders():
+        for path, storage in finder.list(IGNORE):
+            prefix = getattr(storage, "prefix", None)
+            name = (f"{prefix}/{path}" if prefix else path).replace("\\", "/")
+            sources.setdefault(name, storage.path(path))
+    return sources
+
+
+def _served_copy(name):
+    """The copy Apache serves, when stamps follow it and it exists."""
+    if not getattr(settings, "STATIC_VERSION_FROM_ROOT", False):
+        return None
+    path = os.path.join(str(settings.STATIC_ROOT), *name.split("/"))
+    return path if os.path.isfile(path) else None
 
 
 @lru_cache(maxsize=512)
 def _version(name):
-    path = finders.find(name)
+    path = _served_copy(name) or finders.find(name)
     if not path:
         return ""
-    digest = hashlib.md5(usedforsecurity=False)
+    digest = hashlib.md5(STAMP, usedforsecurity=False)
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(65536), b""):
             digest.update(chunk)

@@ -7,7 +7,7 @@ the homepage (the calendar itself is tested in the events app).
 import datetime
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -591,6 +591,11 @@ class PicturesAndEditorTests(TestCase):
 
 
 class UnsubscribeTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()  # the rate limits live in the cache
+
     def test_anyone_can_stop_the_mailer_for_an_address_and_undo_it(self):
         from django.core import mail
 
@@ -621,4 +626,234 @@ class UnsubscribeTests(TestCase):
         page = self.client.post(reverse("core:unsubscribe"), {"email": "nobody@example.org"})
         self.assertContains(page, "won't get the")  # the same page, and no email, for an unknown address
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(self.client.get("/resubscribe/not-a-token/").status_code, 404)
+        broken = self.client.get("/resubscribe/not-a-token/")
+        self.assertEqual(broken.status_code, 400)
+        self.assertContains(broken, "run out", status_code=400)
+
+    def test_the_undo_link_puts_back_only_what_was_changed(self):
+        from django.core import mail
+
+        from panel.models import OldSubscriber
+
+        member = User.objects.create_user(
+            username="un002", password="pw", first_name="Ola", last_name="Out", college="wolfson",
+            mobile="+44 7700 900002", email="ola@cam.ac.uk", wants_mailer=False,  # opted out already
+        )
+        old = OldSubscriber.objects.create(email="ola@cam.ac.uk")
+        self.client.post(reverse("core:unsubscribe"), {"email": "ola@cam.ac.uk"})
+        link = next(word for word in mail.outbox[-1].body.split() if "/resubscribe/" in word)
+        self.client.post(link.split("testserver", 1)[1])
+        member.refresh_from_db()
+        old.refresh_from_db()
+        self.assertIsNone(old.unsubscribed_at)  # put back
+        self.assertFalse(member.wants_mailer)  # their own earlier choice stands
+
+    def test_the_rate_limit_is_per_visitor_behind_the_proxy(self):
+        for _ in range(10):
+            self.client.post(reverse("core:unsubscribe"), {"email": "x@example.org"}, HTTP_X_FORWARDED_FOR="9.9.9.9, 1.2.3.4")
+        blocked = self.client.post(reverse("core:unsubscribe"), {"email": "x@example.org"}, HTTP_X_FORWARDED_FOR="9.9.9.9, 1.2.3.4")
+        self.assertEqual(blocked.status_code, 429)
+        other = self.client.post(reverse("core:unsubscribe"), {"email": "x@example.org"}, HTTP_X_FORWARDED_FOR="9.9.9.9, 5.6.7.8")
+        self.assertEqual(other.status_code, 200)
+
+    def test_a_cambridge_address_and_its_hermes_twin_are_one_person(self):
+        from panel import services
+        from panel.models import OldSubscriber
+
+        OldSubscriber.objects.create(email="ab123@cam.ac.uk")
+        OldSubscriber.objects.create(email="ab123@hermes.cam.ac.uk")
+        self.assertEqual(services.mailer_recipients("old")[1], ["ab123@cam.ac.uk"])  # one copy
+        self.client.post(reverse("core:unsubscribe"), {"email": "ab123@cam.ac.uk"})
+        self.assertEqual(services.mailer_recipients("old")[1], [])  # and not the twin instead
+        self.assertFalse(OldSubscriber.objects.filter(unsubscribed_at__isnull=True).exists())
+
+    def test_an_account_reading_the_mailer_elsewhere_keeps_it(self):
+        member = User.objects.create_user(
+            username="ab124", password="pw", first_name="Al", last_name="B", college="wolfson",
+            mobile="+44 7700 900006", email="alice@gmail.com", crsid="ab124",
+        )
+        self.client.post(reverse("core:unsubscribe"), {"email": "ab124@cam.ac.uk"})
+        member.refresh_from_db()
+        self.assertTrue(member.wants_mailer)  # their CRSid address isn't the one they read it at
+
+    def test_the_undo_link_only_puts_back_what_is_still_as_it_left_it(self):
+        from django.core import mail
+        from django.utils import timezone
+
+        from panel.models import OldSubscriber
+
+        member = User.objects.create_user(
+            username="un006", password="pw", first_name="Fam", last_name="Ily", college="wolfson",
+            mobile="+44 7700 900007", email="family@example.org",
+        )
+        row = OldSubscriber.objects.create(email="family@example.org")
+        self.client.post(reverse("core:unsubscribe"), {"email": "family@example.org"})
+        path = next(w for w in mail.outbox[-1].body.split() if "/resubscribe/" in w).split("testserver", 1)[1]
+        member.refresh_from_db()
+        member.email = "bob@example.net"  # the account has moved on, and opted out there
+        member.wants_mailer = False
+        member.save()
+        self.client.post(path)
+        member.refresh_from_db()
+        row.refresh_from_db()
+        self.assertFalse(member.wants_mailer)
+        self.assertIsNone(row.unsubscribed_at)  # the row was still as the unsubscribe left it
+        row.unsubscribed_at = timezone.now()  # unsubscribed again later, by an admin
+        row.save()
+        self.client.post(path)  # the old link, used again
+        row.refresh_from_db()
+        self.assertIsNotNone(row.unsubscribed_at)
+
+    def test_every_unsubscribe_that_changes_something_is_told(self):
+        from django.core import mail
+
+        User.objects.create_user(
+            username="un004", password="pw", first_name="Eve", last_name="F", college="wolfson",
+            mobile="+44 7700 900004", email="ef789@cam.ac.uk",
+        )
+        self.client.post(reverse("core:unsubscribe"), {"email": "ef789@cam.ac.uk"})
+        link = next(word for word in mail.outbox[-1].body.split() if "/resubscribe/" in word)
+        self.client.post(link.split("testserver", 1)[1])
+        self.client.post(reverse("core:unsubscribe"), {"email": "ef789@cam.ac.uk"})
+        self.assertEqual(len(mail.outbox), 2)  # the second unsubscribe is told too
+
+    @override_settings(SITE_URL="https://www.example.org")
+    def test_emailed_links_use_the_sites_own_address(self):
+        from django.core import mail
+
+        from panel.models import OldSubscriber
+
+        OldSubscriber.objects.create(email="site@example.org")
+        self.client.post(reverse("core:unsubscribe"), {"email": "site@example.org"}, HTTP_HOST="testserver:1")
+        self.assertIn("https://www.example.org/resubscribe/", mail.outbox[-1].body)
+
+    def test_members_who_have_not_accepted_the_terms_can_still_unsubscribe(self):
+        from django.core import mail
+        from django.core.cache import cache
+
+        from core.models import TermsVersion
+
+        TermsVersion.objects.filter(number=1).update(is_published=True)
+        cache.clear()
+        member = User.objects.create_user(
+            username="un005", password="pw", first_name="Gil", last_name="H", college="wolfson",
+            mobile="+44 7700 900005", email="gh456@cam.ac.uk",
+        )
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(reverse("core:menu")).status_code, 302)  # the terms gate is on
+        self.assertEqual(self.client.get(reverse("core:unsubscribe")).status_code, 200)
+        self.client.post(reverse("core:unsubscribe"), {"email": "gh456@cam.ac.uk"})
+        member.refresh_from_db()
+        self.assertFalse(member.wants_mailer)
+        link = next(word for word in mail.outbox[-1].body.split() if "/resubscribe/" in word)
+        self.assertEqual(self.client.get(link.split("testserver", 1)[1]).status_code, 200)
+        cache.clear()
+
+    def test_members_mid_signup_can_still_unsubscribe(self):
+        member = User.objects.create_user(username="un003", password="pw", email="mid@cam.ac.uk")  # no profile yet
+        self.client.force_login(member)
+        self.assertEqual(self.client.get(reverse("core:unsubscribe")).status_code, 200)
+
+
+class StaticDeployTests(TestCase):
+    def test_sync_static_copies_by_content_and_never_deletes(self):
+        import os
+        import tempfile
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from core.storage import static_sources
+
+        total = len(static_sources())
+        with tempfile.TemporaryDirectory() as root, override_settings(STATIC_ROOT=root):
+            out = StringIO()
+            call_command("sync_static", stdout=out)
+            self.assertIn(f"{total} copied, 0 unchanged", out.getvalue())
+            self.assertTrue(os.path.exists(os.path.join(root, "admin", "css", "base.css")))
+            base = os.path.join(root, "css", "base.css")
+            with open(base, "r+b") as handle:  # same size, different bytes...
+                first = handle.read(1)
+                handle.seek(0)
+                handle.write(b"X" if first != b"X" else b"Y")
+            stat = os.stat(base)
+            os.utime(base, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**12))  # ...and newer than the source
+            leftover = os.path.join(root, "css", "only-on-the-server.css")
+            open(leftover, "w").close()
+            out = StringIO()
+            call_command("sync_static", stdout=out)
+            self.assertIn(f"1 copied, {total - 1} unchanged", out.getvalue())  # collectstatic would skip it
+            with open(base, "rb") as copy, open(static_sources()["css/base.css"], "rb") as source:
+                self.assertEqual(copy.read(), source.read())
+            self.assertTrue(os.path.exists(leftover))  # nothing is ever deleted
+
+    def test_the_srcf_launcher_fails_closed_and_keeps_static_files_current(self):
+        from django.conf import settings
+
+        script = (settings.BASE_DIR / "run_on_srcf.sh").read_bytes().decode("utf-8")
+        for needed in ("set -euo pipefail", "[ -r .env ]", '"${RAVEN_MODE:-dev}" = "header"', '"${DB_ENGINE:-sqlite}"',
+                       "manage.py check", "manage.py migrate", "manage.py sync_static", "-c gunicorn.conf.py",
+                       ".venv/bin/gunicorn"):
+            self.assertIn(needed, script)
+        # .env is read tolerantly (as before), then strict again
+        self.assertLess(script.index("set +eu"), script.index(". ./.env"))
+        self.assertLess(script.index(". ./.env"), script.index("set -eu\n"))
+        self.assertNotIn("seed_demo", script)  # it re-created deleted tags on every restart
+        self.assertNotIn("runserver", script)
+        self.assertNotIn("\r", script)  # a CRLF launcher won't run on Linux
+
+    def test_the_socket_is_handed_to_the_society_or_left_open_with_a_warning(self):
+        import importlib.util
+        import os
+        import tempfile
+        from unittest import mock
+
+        from django.conf import settings
+
+        spec = importlib.util.spec_from_file_location("gunicorn_conf", settings.BASE_DIR / "gunicorn.conf.py")
+        conf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(conf)
+        self.assertEqual(conf.umask, 0o007)
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "web.sock")
+            open(path, "w").close()
+            server = mock.Mock(LISTENERS=[mock.Mock(cfg_addr=path), mock.Mock(cfg_addr=("127.0.0.1", 8000))])
+            with mock.patch.dict(os.environ, {"SRCF_SOCIETY": "no-such-group-mss"}):
+                conf.SOCIETY = "no-such-group-mss"  # no such group here, so it can't be handed over
+                conf.when_ready(server)
+            server.log.warning.assert_called_once()  # ...and the site keeps working, open as before
+            if os.name == "posix":
+                self.assertEqual(os.stat(path).st_mode & 0o777, 0o777)
+
+    def test_with_the_served_folder_configured_stamps_follow_what_is_served(self):
+        import hashlib
+        import os
+        import tempfile
+
+        from django.templatetags.static import static
+
+        from core import storage
+
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "css"))
+            with open(os.path.join(root, "css", "base.css"), "wb") as handle:
+                handle.write(b"september")  # what Apache would hand out
+            storage._version.cache_clear()
+            try:
+                with override_settings(STATIC_ROOT=root, STATIC_VERSION_FROM_ROOT=True):
+                    served = hashlib.md5(storage.STAMP + b"september", usedforsecurity=False).hexdigest()[:10]
+                    self.assertTrue(static("css/base.css").endswith(f"?v={served}"))
+                    self.assertRegex(static("css/core.css"), r"\?v=[0-9a-f]{10}$")  # not copied yet: from the source
+            finally:
+                storage._version.cache_clear()
+
+    def test_every_static_url_carries_the_current_stamp(self):
+        import hashlib
+
+        from django.templatetags.static import static
+
+        from core.storage import STAMP, static_sources
+
+        with open(static_sources()["css/base.css"], "rb") as handle:
+            expected = hashlib.md5(STAMP + handle.read(), usedforsecurity=False).hexdigest()[:10]
+        self.assertTrue(static("css/base.css").endswith(f"?v={expected}"))

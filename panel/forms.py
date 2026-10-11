@@ -2,6 +2,7 @@
 
 from django import forms
 from django.conf import settings
+from django.core import validators
 from django.urls import reverse_lazy
 from django.utils.text import slugify
 
@@ -54,7 +55,7 @@ class MailerForm(forms.Form):
             ("address", "One address (a mailing list, or a check)"),
         ],  # the view adds today's counts to the labels
     )
-    recipient = forms.EmailField(required=False, label="Address", help_text="Only for “One address”.")
+    recipient = forms.CharField(required=False, label="Address", help_text="Only for “One address”.")
     subject = forms.CharField(max_length=200)
     body = forms.CharField(
         strip=False,
@@ -72,8 +73,17 @@ class MailerForm(forms.Form):
 
     def clean(self):
         data = super().clean()
-        if data.get("audience") == "address" and not data.get("recipient"):
+        recipient = (data.get("recipient") or "").strip()
+        if data.get("audience") != "address":
+            data["recipient"] = recipient  # kept for the form, never used
+        elif not recipient:
             self.add_error("recipient", "Give the address to send to.")
+        else:
+            try:
+                validators.validate_email(recipient)
+            except forms.ValidationError:
+                self.add_error("recipient", "That isn't an email address.")
+            data["recipient"] = recipient
         return data
 
 

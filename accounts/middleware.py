@@ -6,6 +6,8 @@ from django.shortcuts import redirect
 # and lets people log out, finish their profile, or load assets).
 PROFILE_EXEMPT_PREFIXES = (
     "/accounts/",
+    "/unsubscribe/",            # stopping email never waits on anything
+    "/resubscribe/",
     "/static/",
     "/media/",
     "/dj-admin/",
@@ -27,6 +29,8 @@ TERMS_EXEMPT_PREFIXES = (
     "/media/",
     "/dj-admin/",
     "/terms/",
+    "/unsubscribe/",            # stopping email never waits on anything
+    "/resubscribe/",
 )
 
 

@@ -1,31 +1,32 @@
 #!/bin/bash
-# Launch the MSS portal locally. Run it with:  ./run.sh
-# (or:  bash run.sh)
-#
-# This uses the project's own virtual environment, so you don't have to
-# remember to activate it or worry about which Python your Mac defaults to.
+# Start the MSS portal on the SRCF (webserver.srcf.net). systemd runs this on
+# every (re)start; UPGRADING.md has the commands. It stops rather than start
+# a half-configured site: no readable .env, or a .env not set up for
+# production, and nothing is served.
+set -euo pipefail
+cd "$(dirname "$0")"
 
-cd "$(dirname "$0")" || exit 1
+SOCKET=/public/societies/mss/mature-student-society/sockets/web.sock
 
-if [ ! -x ".venv/bin/python" ]; then
-  echo "No virtual environment found at .venv/ — creating one..."
-  python3 -m venv .venv || { echo "Could not create venv"; exit 1; }
-  .venv/bin/pip install --quiet --upgrade pip
-  .venv/bin/pip install --quiet -r requirements.txt
-fi
-. .venv/bin/activate
-set -a; source .env; set +a
+[ -r .env ] || { echo "run_on_srcf.sh: .env is missing or unreadable by $(id -un)" >&2; exit 1; }
+# .env is read as it always has been: a line bash can't parse prints a
+# warning instead of stopping the site. What matters is checked just after.
+set +eu
+set -a; . ./.env; set +a
+set -eu
+[ "${RAVEN_MODE:-dev}" = "header" ] || { echo "run_on_srcf.sh: RAVEN_MODE must be header on the SRCF" >&2; exit 1; }
+[ "${DB_ENGINE:-sqlite}" != "sqlite" ] || { echo "run_on_srcf.sh: DB_ENGINE must name the society's database" >&2; exit 1; }
+[ -x .venv/bin/gunicorn ] || { echo "run_on_srcf.sh: .venv/bin/gunicorn is missing: .venv/bin/pip install -r requirements-srcf.txt" >&2; exit 1; }
 
-# Make sure the database exists and has demo data (safe to run repeatedly).
+.venv/bin/python manage.py check          # refuses unsafe production settings
 .venv/bin/python manage.py migrate --noinput
-if [ ! -s "db.sqlite3" ]; then
-  .venv/bin/python manage.py seed_demo --categories-only
-fi
 
-echo ""
-echo "  MSS portal starting at http://127.0.0.1:8000/"
-echo "  Log in via the 'Development impersonation' card (dbj25 = admin)."
-echo "  Press Ctrl+C to stop."
-echo ""
-#exec .venv/bin/python manage.py runserver
-exec gunicorn -w 2 -b unix:/public/societies/mss/mature-student-society/sockets/web.sock --log-file - config.wsgi:application
+# Copy any changed stylesheets, scripts and fonts into the folder Apache
+# serves (DJANGO_STATIC_ROOT in .env). A failure leaves the files already
+# there and the Super admin "Site health" card says so; it never stops the site.
+( umask 002 && .venv/bin/python manage.py sync_static ) \
+  || echo "run_on_srcf.sh: sync_static failed; serving the static files already on disk" >&2
+
+mkdir -p "$(dirname "$SOCKET")"
+# gunicorn.conf.py closes the socket to other SRCF users (see there).
+exec .venv/bin/gunicorn -c gunicorn.conf.py -w 2 -b "unix:$SOCKET" --log-file - config.wsgi:application

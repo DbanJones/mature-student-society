@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from core.models import SiteConfig, TermsVersion
+from core.net import client_ip as core_client_ip
 
 from .forms import (
     CRSID_RE,
@@ -158,16 +159,9 @@ class LogoutView(auth_views.LogoutView):
 # --- Terms and conditions ------------------------------------------------------
 
 
-def client_ip(request):
-    """Best-effort client IP, honouring the reverse proxy in front of us.
-
-    On the SRCF the app sits behind Apache, so REMOTE_ADDR is the proxy and the
-    real address is the first entry of X-Forwarded-For.
-    """
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or None
-    return request.META.get("REMOTE_ADDR") or None
+# The visitor's address: the last X-Forwarded-For entry, the one Apache adds
+# (anything before it was sent by the client and can't be trusted).
+client_ip = core_client_ip
 
 
 @login_required

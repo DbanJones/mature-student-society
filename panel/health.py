@@ -1,25 +1,34 @@
 """Is the web server serving the files this version of the site ships with?
 
-On the SRCF, Apache serves /static/ from a folder that ``collectstatic``
-fills. Skip that step after a deploy and every page gets new HTML with old
-stylesheets: a stray menu control on the desktop, an unstyled poster
-studio, text set in the wrong font. The Super admin tab can ask the public
-site for a few files and compare them with the source, so the mismatch is
-seen in the panel rather than guessed at from a strange-looking page.
+On the SRCF, Apache serves /static/ straight from a folder on disk. If that
+folder isn't kept up to date, every page gets new HTML with old stylesheets.
+The Super admin tab checks two things separately, so the cause is clear:
+
+- the copy in STATIC_ROOT (filled by sync_static on every start) against the
+  source, with no web request at all;
+- what the public site actually serves, file by file, against the source.
+
+If the copy is current but the site serves something else, Apache is
+reading a different folder from STATIC_ROOT (see DJANGO_STATIC_ROOT).
 """
 
+import filecmp
 import hashlib
+import os
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from urllib.parse import urljoin
 
-from django.contrib.staticfiles import finders
+from django.conf import settings
 from django.http.request import split_domain_port
 from django.templatetags.static import static
 
-CHECKED = ["css/base.css", "css/panel.css", "css/posters.css", "js/poster-studio.js"]
+from core.storage import static_sources
+
 TIMEOUT = 4
+BUDGET = 12  # seconds for the whole check, well inside gunicorn's 30
+ADMIN_PROBE = "admin/css/base.css"  # only a real collect contains Django's own files
 
 
 def _digest(data):
@@ -33,12 +42,9 @@ def _origin(request):
     return f"{request.scheme}://{domain}"
 
 
-def _check(name, url):
+def _served(name, source, url):
     try:
-        path = finders.find(name)
-        if not path:
-            return {"name": name, "status": "not in this version", "url": url}
-        with open(path, "rb") as handle:
+        with open(source, "rb") as handle:
             expected = _digest(handle.read())
     except OSError:
         return {"name": name, "status": "unreadable here", "url": url}
@@ -55,16 +61,65 @@ def _check(name, url):
     return {"name": name, "status": status, "url": url}
 
 
+def collected_copy():
+    """How the copy in STATIC_ROOT compares with the source: every file the
+    site ships, Django's admin included. No web request."""
+    root = str(settings.STATIC_ROOT)
+    missing = differ = 0
+    sources = static_sources()
+    for name, source in sources.items():
+        target = os.path.join(root, *name.split("/"))
+        try:
+            if not os.path.isfile(target):
+                missing += 1
+            elif not filecmp.cmp(source, target, shallow=False):
+                differ += 1
+        except OSError:
+            differ += 1
+    return {"root": root, "total": len(sources), "missing": missing, "differ": differ,
+            "current": missing == 0 and differ == 0}
+
+
 def static_health(request):
-    """One row per checked file: ``ok``, ``stale`` (served but different),
-    ``missing`` (404), ``HTTP <code>``, ``unreachable``, ``unreadable here``
-    or ``not in this version``. Fetches every time it is called (only the
-    "Check now" button calls it, and nothing is remembered: each gunicorn
-    worker has its own memory). Never raises."""
+    """The two checks. ``served`` has one row per checked file: the portal's
+    own files and one of Django's, each ``ok``, ``stale`` (served but
+    different), ``missing`` (404), ``HTTP <code>``, ``unreachable`` or
+    ``unreadable here``. Fetches every time it is called (only the "Check
+    now" button calls it). Never raises."""
+    own = str(settings.BASE_DIR / "static")
+    sources = static_sources()
+    checked = {name: path for name, path in sources.items() if path.startswith(own) or name == ADMIN_PROBE}
     origin = _origin(request)
-    urls = {name: urljoin(origin, static(name)) for name in CHECKED}
+    names = sorted(checked)
+    rows = []
+    pool = ThreadPoolExecutor(max_workers=max(1, len(names)))
     try:
-        with ThreadPoolExecutor(max_workers=len(CHECKED)) as pool:
-            return list(pool.map(lambda name: _check(name, urls[name]), CHECKED))
+        futures = {name: pool.submit(_served, name, checked[name], urljoin(origin, static(name))) for name in names}
+        wait(futures.values(), timeout=BUDGET)
+        for name in names:
+            future = futures[name]
+            if future.done() and future.exception() is None:
+                rows.append(future.result())
+            else:
+                rows.append({"name": name, "status": "timed out" if not future.done() else "unreachable", "url": ""})
     except Exception:
-        return [{"name": name, "status": "unreachable", "url": urls[name]} for name in CHECKED]
+        rows = [{"name": name, "status": "unreachable", "url": ""} for name in names]
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    try:
+        copy = collected_copy()
+    except Exception:
+        copy = None
+    problems = [row for row in rows if row["status"] != "ok"]
+    statuses = {row["status"] for row in problems}
+    if not problems:
+        cause = ""
+    elif statuses <= {"stale", "missing"}:
+        cause = "folder"  # served, but not what was copied: Apache reads another folder, or the copy failed
+    elif "HTTP 403" in statuses:
+        cause = "permissions"
+    elif statuses <= {"unreachable", "timed out"}:
+        cause = "fetch"
+    else:
+        cause = "other"
+    return {"served": rows, "problems": problems, "ok": len(rows) - len(problems), "copy": copy, "cause": cause}

@@ -5,6 +5,17 @@ account, and for handing it over to future committees. Everything here was
 checked against https://docs.srcf.net in July 2026 — the specific pages are
 linked so you can re-verify details that may have changed.
 
+> **The live site today (October 2026).** Since the move to
+> cambridgematuresoc.com the portal runs from **public space**,
+> `/public/societies/mss/mature-student-society`, started by the repository's
+> `run_on_srcf.sh` (not the `run.sh` shown in section 4), with its socket at
+> `/public/societies/mss/mature-student-society/sockets/web.sock`. Apache
+> serves `/static/` from `/public/societies/mss/public_html/static`, which the
+> launcher keeps current (`DJANGO_STATIC_ROOT` in `.env`). UPGRADING.md is the
+> day-to-day guide for that layout, including the permission checks that
+> public space needs. The rest of this file is the original private-space
+> setup, kept for a future move back.
+
 Throughout, `<soc>` is the society's SRCF group account short name (e.g.
 `mss`), and paths follow SRCF conventions:
 
@@ -135,8 +146,8 @@ ln -s /societies/<soc>/portal/staticfiles /public/societies/<soc>/public_html/st
 ```
 
 Then in the portal (`/dj-admin/` → Site configuration, or /admin/): set the
-WhatsApp Open Forum invite link, mailing list address, and promote the first
-committee accounts to portal admins.
+WhatsApp Open Forum invite link, and promote the first committee accounts
+to portal admins.
 
 **Media/member photos**: `MEDIA_ROOT` stays in private space
 (`/societies/<soc>/portal/media/`) and is served through Django: pictures

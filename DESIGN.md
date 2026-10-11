@@ -327,5 +327,7 @@ each.
   list ever grew into the hundreds.
 - **WhatsApp** integration is necessarily link-based (share deep-links,
   one-time invite, number export) — there is no group API to automate joins.
-- **Bulk email** goes to the Mailman list, not per-member sends, so
-  unsubscribe/deliverability stay Mailman's responsibility.
+- **Bulk email** goes out from the portal itself, bcc'd in batches of 50
+  through the SRCF's mail server (see "Mailer" above), rather than through
+  a mailing-list service: unsubscribes are the profile checkbox and the
+  public /unsubscribe/ page, and bounces return to the From address.

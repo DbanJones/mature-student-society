@@ -10,7 +10,8 @@
       The society's mailing list from before the website, imported from a spreadsheet.
       The What's On mailer can still reach these people (choose the old list on the Mailer tab),
       and this page shows who has since joined the website: matched by email address, or by CRSid
-      for a cam.ac.uk address.
+      for a cam.ac.uk address. Members who are banned or have opted out of the mailer on their
+      profile are never mailed through this list.
     </p>
   </div>
   <div class="actions">
@@ -59,9 +60,13 @@
             <td>
               {% if sub.unsubscribed_at %}
                 <span class="badge badge-danger" title="{{ sub.unsubscribed_at|date:'j M Y' }}">Unsubscribed</span>
+              {% elif sub.member and sub.member.is_banned %}
+                <span class="badge badge-danger">Banned member</span>
+                <a class="small" href="{% url 'panel:member_edit' sub.member.pk %}">{{ sub.member.get_full_name|default:sub.member.username }}</a>
               {% elif sub.member %}
                 <span class="badge badge-ok">On the website</span>
                 <a class="small" href="{% url 'panel:member_edit' sub.member.pk %}">{{ sub.member.get_full_name|default:sub.member.username }}</a>
+                {% if not sub.member.wants_mailer %}<br><span class="small muted">opted out of the mailer</span>{% endif %}
               {% else %}
                 <span class="badge">Not yet</span>
               {% endif %}
@@ -75,7 +80,7 @@
                 {% else %}
                   <button type="submit" name="action" value="unsubscribe" class="btn btn-small btn-ghost">Unsubscribe</button>
                 {% endif %}
-                <button type="submit" name="action" value="remove" class="btn btn-small btn-danger" data-confirm="Remove {{ sub.email }} from the old list?">Remove</button>
+                {% if not sub.unsubscribed_at %}<button type="submit" name="action" value="remove" class="btn btn-small btn-danger" data-confirm="Delete {{ sub.email }} from the old list? Importing a sheet that still has it would add it back; to stop mailing someone, use Unsubscribe instead.">Remove</button>{% endif %}
               </form>
             </td>
           </tr>

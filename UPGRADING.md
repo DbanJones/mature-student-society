@@ -1,7 +1,14 @@
 # Upgrading the live portal without losing data or logins
 
-For whoever deploys a new version to the SRCF (mss.soc.srcf.net). Read the
-whole page once before starting; the actual work is about fifteen minutes.
+For whoever deploys a new version to the SRCF (www.cambridgematuresoc.com,
+also mss.soc.srcf.net). Read the whole page once before starting; the
+actual work is about fifteen minutes.
+
+The live portal is the folder `/public/societies/mss/mature-student-society`
+(the one with `run_on_srcf.sh` in it), started by `run_on_srcf.sh` on
+webserver.srcf.net. Apache serves `/static/` straight from
+`/public/societies/mss/public_html/static`; the portal copies the current
+stylesheets, scripts and fonts there every time it starts.
 
 ## What lives where (and what must survive an upgrade)
 
@@ -16,8 +23,8 @@ whole page once before starting; the actual work is about fifteen minutes.
 Three rules that protect the live site:
 
 1. **Never run `seed_demo` without `--categories-only` on the live site.** It
-   creates demo members, events and messages. `run_on_srcf.sh` already runs
-   the safe `--categories-only` form.
+   creates demo members, events and messages. `run_on_srcf.sh` seeds
+   nothing; a brand-new install runs `seed_demo --categories-only` once.
 2. **Never change `DJANGO_SECRET_KEY` as part of an upgrade.** Sessions are
    signed with it; a new key logs every member out and invalidates the
    set-password links in any unanswered invite emails. (Rotate it only on
@@ -45,56 +52,102 @@ ls -la /societies/mss/backups/
 
 That file is the whole database. If anything goes wrong, restoring it is one
 command (see "If something goes wrong" below). Also copy `.env` somewhere
-safe: `cp /path/to/portal/.env /societies/mss/backups/env-$(date +%F)`.
+safe: `cp /public/societies/mss/mature-student-society/.env /societies/mss/backups/env-$(date +%F)`
+(private space, so other SRCF users can't read the copy).
 
 ## Step by step
 
-Replace `/path/to/portal` with the folder that contains `run_on_srcf.sh`.
+All of this happens on **webserver.srcf.net** (PuTTY), in the portal folder
+`/public/societies/mss/mature-student-society`.
 
 **1. Put the new code in place.** Either way, `.env` and `media/` are left
 alone.
 
 - *With git on the server:*
   ```bash
-  cd /path/to/portal
+  cd /public/societies/mss/mature-student-society
   git fetch origin
-  git checkout feature/admin-ux-and-content   # or: git pull origin main, once merged
+  git checkout feature/admin-ux-and-content && git pull   # or: git pull origin main, once merged
   ```
 - *With WinSCP:* download the branch as a ZIP from GitHub (Code → Download
   ZIP), unzip it on your PC, and drag the **contents** of the unzipped folder
-  into `/path/to/portal`, choosing "overwrite" when asked. Do **not** delete
+  into the portal folder, choosing "overwrite" when asked. Do **not** delete
   the folder first.
 
-**2. Install dependencies and apply database changes.** In PuTTY:
+**2. Install dependencies and check the settings.** In PuTTY:
 
 ```bash
-cd /path/to/portal
-set -a; source .env; set +a
-.venv/bin/pip install -r requirements.txt
+cd /public/societies/mss/mature-student-society
+set -a; . ./.env; set +a
+.venv/bin/pip install -r requirements-srcf.txt
 .venv/bin/python manage.py check          # must say "no issues"
-.venv/bin/python manage.py migrate        # adds the new tables; keeps all data
-.venv/bin/python manage.py collectstatic --noinput
 ```
 
-`migrate` prints each change it applies. This release adds eleven: new
-tables for polls, notifications, testimonials, page revisions, committee
-and activities, and new columns on users, events, pages and site settings.
-Nothing is removed and no existing row is changed, except that previously
-muted members stay muted.
+Don't run `migrate` here: the old code is still serving, and it can't write
+to tables that already have this release's new columns. The restart in
+step 3 stops the old code, then applies the migrations and copies the new
+static files before starting the new code.
 
-**3. Restart the app** so it picks up the new code:
+**3. Restart the portal.** First see which account runs it:
 
 ```bash
-systemctl --user restart mssportal      # the name used in DEPLOYMENT_SRCF.md
-systemctl --user status mssportal       # should say "active (running)"
+ps -eo user,args | grep [g]unicorn        # the first column is the account
 ```
 
-If the service is named differently, `systemctl --user list-units | grep -i mss`
-shows it.
+- Run by **mss** (a society service, the usual case): find the unit and restart it
+  ```bash
+  sudo -Hu mss XDG_RUNTIME_DIR=/run/user/$(id -u mss) systemctl --user list-units --all | grep -i -E 'mss|portal'
+  sudo -Hu mss XDG_RUNTIME_DIR=/run/user/$(id -u mss) systemctl --user restart <unit>
+  ```
+- Run by **your own account**: `systemctl --user list-units | grep -i -E 'mss|portal'`,
+  then `systemctl --user restart <unit>`.
 
-**4. Check the site.** Open https://mss.soc.srcf.net/ logged out, then log
-in with Raven and open /me/ and /admin/. You should still be logged in if
-you were before; your admin rights are unchanged.
+Always **restart**, never "reload": a reload skips `run_on_srcf.sh`, so
+migrations and static files wouldn't be applied.
+
+**4. Check the site.** Open https://www.cambridgematuresoc.com/ logged out,
+then log in with Raven and open /me/ and /admin/. On the Super admin tab press
+**Check now** under Site health: both lines should be green. If the site
+shows "Service Unavailable", see "If something goes wrong" below.
+
+## One-time setup (October 2026 release)
+
+Do these once, in order, between steps 2 and 3.
+
+1. **Check nothing private is open to other SRCF users.** Everything under
+   `/public/societies/mss/` can be read by any SRCF user.
+   ```bash
+   cd /public/societies/mss/mature-student-society
+   stat -c '%A %U:%G %n' .env media
+   ```
+   The last three characters of each mode are what *other* users may do;
+   they must be `---`. Each fix is run by the owner (the `%U` column; when
+   that is `mss`, put `sudo -u mss` in front):
+   - `.env`: `chgrp mss .env && chmod 660 .env` (the society's admins can
+     still read and edit it). If it was readable by others, also change the
+     MySQL password (control.srcf.net) and `DJANGO_SECRET_KEY` (this logs
+     everyone out; tell members), because the SRCF's snapshots keep old
+     copies of the file.
+   - `media`: `chmod o-rwx media`.
+
+   The portal's socket closes itself to other users from this release on
+   (`gunicorn.conf.py`); after the restart, `stat -c '%A %G' sockets/web.sock`
+   should show `srwxrwx--- mss`.
+2. **Tell the portal where Apache serves `/static/` from, and the site's own
+   address.** In control.srcf.net, check whether cambridgematuresoc.com has
+   its own "Document root"; if it does, use that folder's `static` below.
+   Add the two lines on the server (a Windows editor can add invisible
+   characters that break `.env`):
+   ```bash
+   printf '\nDJANGO_STATIC_ROOT=/public/societies/mss/public_html/static\nDJANGO_SITE_URL=https://www.cambridgematuresoc.com\n' >> .env
+   grep -c '^DJANGO_STATIC_ROOT=' .env        # must print 1
+   ```
+3. **Let the portal keep that folder current.** Whoever owns it (`stat -c %U /public/societies/mss/public_html/static`)
+   runs `srcf-soc-permfix mss`, so the account that runs the portal can
+   replace the files there.
+4. Restart (step 3 above) and press **Check now** on the Super admin tab. If
+   it says the files weren't copied, run
+   `set -a; . ./.env; set +a; .venv/bin/python manage.py sync_static` and restart again.
 
 ## After this release: three settings and one cron line
 
@@ -114,14 +167,17 @@ you were before; your admin rights are unchanged.
 - **The menu changed.** "What's on" is now a plain Event Calendar link.
   Supper Club and every other tag are listed under About → Groups, and the
   Winter Ball moved under About. Old tag-page links redirect.
-- **Static files collect themselves on every restart** once `run.sh` has
-  the extra line shown in DEPLOYMENT_SRCF.md; add it when you deploy this
-  release. Stylesheet links carry a version stamp, so browsers fetch new
-  CSS as soon as it is collected. The Super admin tab has a "Site health"
-  card: press "Check now" and it says whether the web server is serving
-  this version's files. The boot-time collect runs as the society user, so
-  `staticfiles/` must be writable by it; if it fails the site still starts
-  and the card says so.
+- **Static files copy themselves into place on every restart.**
+  `run_on_srcf.sh` runs `manage.py sync_static`, which compares file
+  contents (so ZIP and WinSCP deploys work) and copies into
+  `DJANGO_STATIC_ROOT`, the folder Apache serves. Every stylesheet link
+  carries a new version stamp, so browsers fetch fresh copies. The Super
+  admin "Site health" card checks both the copy and what visitors are
+  actually served, file by file. If a copy fails the site still starts and
+  the card says so.
+- **The launcher refuses to start a half-configured site.** Without a
+  readable `.env`, or with one not set up for production, it stops instead
+  of starting in development mode.
 - **The ☰ icon is gone.** Phones get a "Menu" link in the header (and,
   for logged-in members, a Menu tab at the bottom), both opening a page
   that lists the whole site.
@@ -139,8 +195,9 @@ you were before; your admin rights are unchanged.
   address" (the default) bcc's them in batches of 50 — no Mailman list is
   needed; "One address" remains for a list or a check. Members can opt out
   with "Email me the What's On mailer" on their profile (a new column, so
-  run `migrate`), every copy carries an unsubscribe line, and the admin who
-  presses Send gets a copy of each batch. The tab says whether mail leaves
+  run `migrate`), every copy carries an unsubscribe line and shows only the
+  society's address as its recipient, and the admin who presses Send gets
+  a copy of each version (one for members, one for the old list). The tab says whether mail leaves
   the server and has a "Send a test to me" button. Delivery needs
   `REAL_EMAIL=true` in `.env` (mail then goes through the SRCF's own mail
   server on localhost); without it "Send" only writes to the log. Set
@@ -188,15 +245,25 @@ button.
 
 ## If something goes wrong
 
-- **Site shows an error after restart:** `journalctl --user -u mssportal -n 50`
-  shows why. The commonest cause is a missing variable in `.env`; the app
-  refuses to start in production with `DJANGO_DEBUG=true` or the default
-  secret key, on purpose.
+- **Site shows an error after restart:** see why with
+  `cd /public/societies/mss/mature-student-society && set -a && . ./.env && set +a && .venv/bin/python manage.py check`,
+  and the unit's status (`... systemctl --user status <unit>`, with the
+  `sudo -Hu mss` prefix when mss runs it). The commonest cause is a missing
+  or unreadable `.env`: the launcher now stops rather than start without
+  it, and the app refuses `DJANGO_DEBUG=true` or the default secret key.
+- **"Service Unavailable" after the restart:** first look at the unit's
+  status (`... systemctl --user status <unit>`): the launcher prints why it
+  refused to start, most often an unreadable `.env`. If the portal is
+  running, the log says whether the socket could be handed to group mss;
+  when it couldn't, the socket is left open and the site works. If the
+  socket *was* handed to mss and Apache still can't reach it, add
+  `MSS_SOCKET_OPEN=1` to `.env`, restart, and tell David: that brings back
+  the old, open socket while it's sorted out.
 - **Need to go back:** restore the backup and the previous code.
   ```bash
   gunzip < /societies/mss/backups/mss-YYYY-MM-DD.sql.gz | mysql -h mysql -u mss -p mss
-  cd /path/to/portal && git checkout main      # or re-upload the previous ZIP
-  systemctl --user restart mssportal
+  cd /public/societies/mss/mature-student-society && git checkout main   # or re-upload the previous ZIP
+  # then restart as in step 3
   ```
   Members stay logged in through a restore as long as `.env` is unchanged.
 

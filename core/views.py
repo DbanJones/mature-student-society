@@ -6,9 +6,12 @@ events through ``Event.objects.visible_to(request.user)`` so members_only
 events never leak to anonymous visitors.
 """
 
+import datetime
+import logging
+
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
@@ -22,7 +25,6 @@ from django.utils.formats import date_format
 from django.views.decorators.http import require_POST
 
 from core.forms import SitePageContentForm
-from core.richtext import richtext_problem
 from core.models import (
     Activity,
     CommitteeMember,
@@ -30,6 +32,8 @@ from core.models import (
     SitePageRevision,
     TermsVersion,
 )
+from core.net import absolute_url, client_ip
+from core.richtext import richtext_problem
 from events.models import RSVP, Event
 from guide.models import GuidePage
 from supper.models import Restaurant
@@ -147,57 +151,105 @@ def _preview_text(request):
 
 UNSUBSCRIBES_PER_MINUTE = 10
 RESUBSCRIBE_SALT = "mailer-resubscribe"
+RESUBSCRIBE_DAYS = 90
+logger = logging.getLogger(__name__)
+
+
+def _same_mailbox(email):
+    """The address and, for a Cambridge one, its @hermes twin (one mailbox)."""
+    from panel.models import OldSubscriber
+
+    crsid = OldSubscriber(email=email).crsid
+    return [f"{crsid}@{domain}" for domain in OldSubscriber.CRSID_DOMAINS] if crsid else [email]
+
+
+def _any_email(emails):
+    query = Q(pk__in=[])
+    for address in emails:
+        query |= Q(email__iexact=address)
+    return query
+
+
+def _allow(key, limit, seconds):
+    """A simple counter in the cache: True while ``key`` has been used fewer
+    than ``limit`` times in the last ``seconds``."""
+    cache.add(key, 0, seconds)
+    try:
+        return cache.incr(key) <= limit
+    except ValueError:  # the window ended between the two calls
+        cache.set(key, 1, seconds)
+        return True
 
 
 def unsubscribe(request):
     """Stop the What's On mailer for an address: a member's profile setting
     and the old mailing list both. Anyone can ask for any address (there
-    is no login), so the address itself is told by email and given a link
-    to undo it; an address on neither list gets the same page and no mail."""
+    is no login), so the address itself is told by email about every
+    change, with a link that undoes exactly what was changed; an address on
+    neither list gets the same page and no mail."""
     from panel.models import OldSubscriber
 
     done, email = False, ""
     if request.method == "POST":
-        email = request.POST.get("email", "").strip().lower()
-        key = f"unsubscribe-rate:{request.META.get('REMOTE_ADDR', '')}"
-        cache.add(key, 0, 60)
-        try:
-            count = cache.incr(key)
-        except ValueError:
-            count = 1
-        if count > UNSUBSCRIBES_PER_MINUTE:
+        if not _allow(f"unsubscribe-rate:{client_ip(request)}", UNSUBSCRIBES_PER_MINUTE, 60):
             return HttpResponse("Too many requests; try again in a minute.", status=429,
                                 content_type="text/plain; charset=utf-8")
+        email = request.POST.get("email", "").strip().lower()
         if "@" in email:
-            users = get_user_model().objects.filter(email__iexact=email, wants_mailer=True)
-            listed = users.exists()
+            # A Cambridge address and its @hermes twin are the same person.
+            emails = _same_mailbox(email)
+            # Accounts are matched by the address itself, never by CRSid alone:
+            # a member who reads the mailer at another address keeps it.
+            users = get_user_model().objects.filter(wants_mailer=True).filter(_any_email(emails))
+            user_ids = list(users.values_list("pk", flat=True))
             users.update(wants_mailer=False)
-            listed = bool(OldSubscriber.objects.filter(email=email, unsubscribed_at__isnull=True)
-                          .update(unsubscribed_at=timezone.now())) or listed
-            if listed:
-                token = signing.dumps(email, salt=RESUBSCRIBE_SALT)
-                undo = request.build_absolute_uri(reverse("core:resubscribe", args=[token]))
-                send_mail(
-                    "You've been unsubscribed from the What's On mailer",
-                    f"This address ({email}) won't get the society's What's On mailer any more.\n\n"
-                    f"If that wasn't you, or you change your mind, put it back with this link:\n{undo}\n",
-                    None, [email], fail_silently=True,
+            now = timezone.now()
+            rows = OldSubscriber.objects.filter(email__in=emails, unsubscribed_at__isnull=True)
+            row_ids = list(rows.values_list("pk", flat=True))
+            rows.update(unsubscribed_at=now)
+            if user_ids or row_ids:
+                token = signing.dumps(
+                    {"e": email, "t": now.isoformat(), "u": user_ids, "o": row_ids},
+                    salt=RESUBSCRIBE_SALT, compress=True,
                 )
+                undo = absolute_url(request, reverse("core:resubscribe", args=[token]))
+                try:
+                    send_mail(
+                        "You've been unsubscribed from the What's On mailer",
+                        f"This address ({email}) won't get the society's What's On mailer any more.\n\n"
+                        f"If that wasn't you, or you change your mind, put it back with this link "
+                        f"(it works for {RESUBSCRIBE_DAYS} days):\n{undo}\n",
+                        None, [email],
+                    )
+                except Exception:
+                    logger.warning("Could not send the unsubscribe confirmation", exc_info=True)
             done = True
     return render(request, "core/unsubscribe.html", {"done": done, "email": email})
 
 
 def resubscribe(request, token):
-    """The undo link from the unsubscribe email: valid for ninety days."""
+    """The undo link from the unsubscribe email: puts back exactly what that
+    unsubscribe changed."""
     from panel.models import OldSubscriber
 
     try:
-        email = signing.loads(token, salt=RESUBSCRIBE_SALT, max_age=90 * 24 * 3600)
-    except signing.BadSignature:
-        raise Http404("That link has expired.")
+        data = signing.loads(token, salt=RESUBSCRIBE_SALT, max_age=RESUBSCRIBE_DAYS * 24 * 3600)
+        email = data["e"]
+    except (signing.BadSignature, KeyError, TypeError):
+        return render(request, "core/unsubscribe.html", {"expired": True}, status=400)
     if request.method == "POST":
-        get_user_model().objects.filter(email__iexact=email).update(wants_mailer=True)
-        OldSubscriber.objects.filter(email=email).update(unsubscribed_at=None)
+        # Only what that unsubscribe changed, and only if it's still that way:
+        # an account still opted out at that address, a row still carrying
+        # that unsubscribe's time. Using the link twice changes nothing more.
+        emails = _same_mailbox(email)
+        get_user_model().objects.filter(pk__in=data.get("u") or [], wants_mailer=False).filter(
+            _any_email(emails)).update(wants_mailer=True)
+        try:
+            when = datetime.datetime.fromisoformat(data.get("t", ""))
+        except (TypeError, ValueError):
+            when = None
+        if when is not None:
+            OldSubscriber.objects.filter(pk__in=data.get("o") or [], unsubscribed_at=when).update(unsubscribed_at=None)
         messages.success(request, f"{email} is back on the What's On mailer.")
         return redirect("core:home")
     return render(request, "core/unsubscribe.html", {"resubscribe": True, "email": email})

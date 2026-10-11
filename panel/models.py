@@ -1,3 +1,5 @@
+import re
+
 from django.conf import settings
 from django.db import models
 
@@ -15,6 +17,10 @@ class MailLog(models.Model):
     sent_at = models.DateTimeField(auto_now_add=True)
     ok = models.BooleanField(default=True)
     error = models.CharField(max_length=300, blank=True)
+    audience = models.CharField(
+        max_length=10, blank=True,
+        help_text="Which audience a send went to (members, old, old_new, both, address or test).",
+    )
 
     class Meta:
         ordering = ["-sent_at"]
@@ -74,11 +80,16 @@ class OldSubscriber(models.Model):
     def name(self):
         return f"{self.first_name} {self.last_name}".strip()
 
+    CRSID_DOMAINS = ("cam.ac.uk", "hermes.cam.ac.uk")
+
     @property
     def crsid(self):
-        """The CRSid a cam.ac.uk address implies, or ''."""
+        """The CRSid a Cambridge address implies (``ab123@cam.ac.uk``), or ''.
+        Only CRSid-shaped local parts count, so ``admin@cam.ac.uk`` is not one."""
         local, _at, domain = self.email.partition("@")
-        return local if domain == "cam.ac.uk" else ""
+        if domain in self.CRSID_DOMAINS and re.fullmatch(r"[a-z]{2,6}[0-9]{1,5}", local):
+            return local
+        return ""
 
     def save(self, *args, **kwargs):
         self.email = self.email.strip().lower()

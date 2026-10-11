@@ -478,7 +478,7 @@ class TermsAcceptanceTests(TestCase):
         )
         acceptance = TermsAcceptance.objects.get(user=member)
         self.assertEqual(acceptance.version_number, 2)
-        self.assertEqual(acceptance.ip_address, "203.0.113.7")
+        self.assertEqual(acceptance.ip_address, "10.0.0.1")  # the entry Apache added, not the client's claim
         self.assertEqual(acceptance.user_agent, "TestBrowser/1.0")
         self.assertEqual(acceptance.source, TermsAcceptance.Source.PORTAL)
 

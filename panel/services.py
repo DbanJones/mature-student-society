@@ -7,7 +7,10 @@ views stay thin and the mailer body is testable without a browser.
 import datetime
 
 from django.conf import settings
-from django.core.mail import EmailMessage
+from django.core.exceptions import ValidationError
+from django.core.mail import EmailMessage, get_connection
+from django.core.mail.message import sanitize_address
+from django.core.validators import validate_email
 from django.db.models import Avg, Count, Q
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -15,6 +18,7 @@ from django.utils.formats import date_format
 
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
 from core.models import SiteConfig, TermsVersion
+from core.net import absolute_url
 from panel.models import AuditLog, OldSubscriber
 from events.models import RSVP, Category, Event
 from guide.models import GuidePage
@@ -573,6 +577,7 @@ AUDIENCES = (
     ("both", "Both: website members and the old list, each person once"),
     ("address", "One address (a mailing list, or a check)"),
 )
+AUDIENCE_LABELS = dict(AUDIENCES)
 
 
 def mailer_audience():
@@ -584,53 +589,92 @@ def mailer_audience():
     )
 
 
+def member_addresses():
+    """The members' addresses, each inbox once (two accounts can share one)."""
+    seen, addresses = set(), []
+    for email in mailer_audience().values_list("email", flat=True):
+        email = email.strip()
+        if email and email.lower() not in seen:
+            seen.add(email.lower())
+            addresses.append(email)
+    return addresses
+
+
 def old_list_status(subscribers):
     """Attach ``.member`` (a User or None) to each old-list entry: matched by
-    address, any case, or for a cam.ac.uk address by CRSid."""
-    users = User.objects.filter(is_active=True).only("id", "email", "crsid", "username", "first_name", "last_name")
+    address, any case, or for a Cambridge address by a Raven account's
+    CRSid. Banned and opted-out members are matched too, so the mailer can
+    leave them out; where two accounts share an address, the active one
+    wins."""
+    users = User.objects.only(
+        "id", "email", "crsid", "username", "first_name", "last_name",
+        "is_active", "is_banned", "wants_mailer",
+    ).order_by("is_banned", "-is_active", "pk")
     by_email, by_crsid = {}, {}
     for user in users:
         if user.email:
-            by_email[user.email.lower()] = user
-        by_crsid[(user.crsid or user.username).lower()] = user
+            by_email.setdefault(user.email.strip().lower(), user)
+        if user.crsid:
+            by_crsid.setdefault(user.crsid.lower(), user)
     for sub in subscribers:
-        sub.member = by_email.get(sub.email) or (by_crsid.get(sub.crsid.lower()) if sub.crsid else None)
+        sub.member = by_email.get(sub.email) or (by_crsid.get(sub.crsid) if sub.crsid else None)
     return subscribers
 
 
+def reached_as_member(member):
+    """True when a matched member gets the mailer as a member."""
+    return bool(member and member.is_active and not member.is_banned and member.wants_mailer and member.email)
+
+
+def left_out(member):
+    """True when a matched member must not get the mailer at all: banned, or
+    opted out on their profile (the old list must not undo either)."""
+    return bool(member and (member.is_banned or not member.wants_mailer))
+
+
 def old_list_audience(only_unmigrated=False):
-    """Old-list entries the mailer may still reach: not unsubscribed, and
-    with ``only_unmigrated`` not matched to a website member either."""
+    """Old-list entries the mailer may still reach: not unsubscribed, not a
+    banned or opted-out member, and with ``only_unmigrated`` not matched to
+    a website account at all."""
     subs = old_list_status(list(OldSubscriber.objects.filter(unsubscribed_at__isnull=True)))
-    return [sub for sub in subs if not (only_unmigrated and sub.member)]
+    return [sub for sub in subs if not left_out(sub.member) and not (only_unmigrated and sub.member)]
 
 
 def mailer_recipients(audience):
-    """``(member addresses, old-list addresses)`` for an audience key, with
-    no address, and for "both" no person, reached twice."""
-    members = list(mailer_audience().values_list("email", flat=True)) if audience in ("members", "both") else []
+    """``(member addresses, old-list addresses)`` for an audience key. No
+    inbox is reached twice, nor (by CRSid) any person; in "both" an old-list
+    entry whose owner gets the members' copy is left out."""
+    members = member_addresses() if audience in ("members", "both") else []
     taken = {email.lower() for email in members}
+    # a person who unsubscribed one Cambridge address isn't mailed at its twin
+    people = {sub.crsid for sub in OldSubscriber.objects.filter(unsubscribed_at__isnull=False) if sub.crsid}
     old = []
     if audience in ("old", "old_new", "both"):
-        for sub in old_list_audience(only_unmigrated=audience != "old"):
-            if sub.email not in taken:
-                old.append(sub.email)
-                taken.add(sub.email)
+        for sub in old_list_audience(only_unmigrated=audience == "old_new"):
+            if audience == "both" and reached_as_member(sub.member):
+                continue
+            person = sub.crsid or sub.email
+            if sub.email in taken or person in people:
+                continue
+            old.append(sub.email)
+            taken.add(sub.email)
+            people.add(person)
     return members, old
 
 
 def audience_counts():
     """How many addresses each audience reaches, for the form's labels."""
-    members = mailer_audience().count()
-    old = old_list_audience()
-    waiting = sum(1 for sub in old if not sub.member)
-    return {"members": members, "old": len(old), "old_new": waiting, "both": members + waiting}
+    counts = {}
+    for key in ("members", "old", "old_new", "both"):
+        members, old = mailer_recipients(key)
+        counts[key] = len(members) + len(old)
+    return counts
 
 
 def mailer_footer(request, config):
     """Under every copy to a member: why they got it and how to stop it."""
-    profile = request.build_absolute_uri(reverse("accounts:profile"))
-    stop = request.build_absolute_uri(reverse("core:unsubscribe"))
+    profile = absolute_url(request, reverse("accounts:profile"))
+    stop = absolute_url(request, reverse("core:unsubscribe"))
     return (
         f"\n\n--\nYou're getting this because you have an account on {config.short_name}. "
         f"To stop these emails, untick “Email me the What's On mailer” on your profile ({profile}) "
@@ -640,8 +684,8 @@ def mailer_footer(request, config):
 
 def old_list_footer(request, config):
     """Under every copy to the old mailing list."""
-    stop = request.build_absolute_uri(reverse("core:unsubscribe"))
-    home = request.build_absolute_uri("/")
+    stop = absolute_url(request, reverse("core:unsubscribe"))
+    home = absolute_url(request, "/")
     return (
         f"\n\n--\nYou're getting this because you were on the {config.short_name} mailing list. "
         f"To stop these emails: {stop}\n"
@@ -649,48 +693,106 @@ def old_list_footer(request, config):
     )
 
 
-def _bare(address):
-    """``x@y`` from ``Name <x@y>``."""
-    return address.rsplit("<", 1)[-1].rstrip("> ").strip()
+def footer_for(request, config, audience):
+    """The footer the given audience's copies carry ("address" has none)."""
+    if audience == "address":
+        return ""
+    if audience in ("old", "old_new"):
+        return old_list_footer(request, config)
+    return mailer_footer(request, config)
 
 
-def send_in_batches(subject, text, copy_to, emails, reply_to, unsubscribe):
-    """One message per MAILER_BATCH addresses, bcc'd. Returns (sent, failed,
-    first error): a batch the mail server refuses is counted and the rest
-    still go."""
-    headers = {"List-Unsubscribe": f"<mailto:{_bare(settings.DEFAULT_FROM_EMAIL)}?subject=unsubscribe>, <{unsubscribe}>"}
-    sent, failed, error = 0, 0, ""
-    for start in range(0, len(emails), MAILER_BATCH):
-        batch = emails[start:start + MAILER_BATCH]
-        try:
-            EmailMessage(
-                subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[copy_to], bcc=batch, reply_to=reply_to, headers=headers,
-            ).send()
-            sent += len(batch)
-        except Exception as exc:
-            failed += len(batch)
-            error = error or str(exc)[:300]
-    return sent, failed, error
+class MailerMessage(EmailMessage):
+    """Shows the society's own address as To but delivers only to the bcc
+    list, so no recipient's address, the sender's included, is shown to
+    anyone, and nothing lands in the society's own mailbox."""
+
+    def recipients(self):
+        return [address for address in self.bcc if address]
 
 
-def send_mailer(request, config, subject, body, copy_to, audience):
-    """Send to an audience in private batches, each batch addressed to
-    ``copy_to`` (the admin sending it, so they see it arrive). Returns
-    ``({"members": n, "old": m}, failed, error)``."""
-    members, old = mailer_recipients(audience)
-    unsubscribe = request.build_absolute_uri(reverse("core:unsubscribe"))
+def mailer_message(request, config, subject, text, bcc, to=None):
     reply_to = [config.contact_email] if config.contact_email else None
-    sent, failed, error = {"members": 0, "old": 0}, 0, ""
+    unsubscribe = absolute_url(request, reverse("core:unsubscribe"))
+    return MailerMessage(
+        subject=subject, body=text, from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[to or settings.DEFAULT_FROM_EMAIL], bcc=bcc, reply_to=reply_to,
+        headers={"List-Unsubscribe": f"<{unsubscribe}>"},
+    )
+
+
+def deliverable(address):
+    """True when the mail server could accept the address at all; one bad
+    address would otherwise sink every other address in its batch."""
+    try:
+        validate_email(address)
+        sanitize_address(address, settings.DEFAULT_CHARSET)
+    except (ValidationError, ValueError):
+        return False
+    return True
+
+
+def send_in_batches(request, config, subject, text, emails, copy_to=""):
+    """One message per MAILER_BATCH addresses, bcc'd, over one connection to
+    the mail server. ``copy_to`` (the admin sending it) is added to the first
+    batch, once, when not already in the list. Undeliverable addresses are
+    skipped and counted; a batch the server refuses is counted and the rest
+    still go. Returns ``(sent, failed, first error)``."""
+    good = [email for email in emails if deliverable(email)]
+    invalid = len(emails) - len(good)
+    note = f"{invalid} invalid address{'es' if invalid != 1 else ''} skipped" if invalid else ""
+    extra = [copy_to] if copy_to and copy_to.lower() not in {email.lower() for email in good} else []
+    sent = failed = 0
+    server_error = ""
+    connection = get_connection()
+    try:
+        connection.open()
+        for start in range(0, len(good), MAILER_BATCH):
+            batch = good[start:start + MAILER_BATCH]
+            message = mailer_message(request, config, subject, text, batch + (extra if start == 0 else []))
+            try:
+                connection.send_messages([message])
+                sent += len(batch)
+            except Exception as exc:
+                failed += len(batch)
+                server_error = server_error or str(exc)
+                connection.close()  # the next batch gets a fresh connection
+    except Exception as exc:  # the mail server could not be reached at all
+        failed += len(good) - sent - failed
+        server_error = server_error or str(exc)
+    finally:
+        connection.close()
+    # the mail server's own words first: they explain far more than the note
+    error = "; ".join(part for part in (server_error, note) if part)[:300]
+    return sent, failed + invalid, error
+
+
+def send_mailer(request, config, subject, body, copy_to, members, old):
+    """Send to members and old-list addresses in private batches, each with
+    its own footer. Returns ``({"members": n, "old": m}, failed, error)``."""
+    sent, failed, errors = {"members": 0, "old": 0}, 0, []
     for key, emails, footer in (
         ("members", members, mailer_footer(request, config)),
         ("old", old, old_list_footer(request, config)),
     ):
         if emails:
-            sent[key], bad, err = send_in_batches(subject, body + footer, copy_to, emails, reply_to, unsubscribe)
+            sent[key], bad, err = send_in_batches(request, config, subject, body + footer, emails, copy_to)
             failed += bad
-            error = error or err
-    return sent, failed, error
+            if err and err not in errors:
+                errors.append(err)
+    return sent, failed, "; ".join(errors)[:300]
+
+
+def send_test(request, config, subject, body, audience, to):
+    """The message an audience would get, footer and headers included, sent
+    to ``to`` alone."""
+    text = body + footer_for(request, config, audience)
+    mailer_message(request, config, subject, text, [to], to=to).send()
+
+
+def send_one(request, config, subject, body, to):
+    """The mailer to a single address (a list, or a check), as is."""
+    mailer_message(request, config, subject, body, [to], to=to).send()
 
 
 def describe_sent(sent):

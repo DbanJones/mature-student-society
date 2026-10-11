@@ -27,7 +27,6 @@ from accounts.decorators import (
     tag_owner_or_admin_required,
 )
 from accounts.models import User, WaitlistRequest, WhatsAppAccessRequest
-from core.richtext import richtext_problem
 from core.models import (
     VISIBILITY_CHOICES,
     Activity,
@@ -40,6 +39,7 @@ from core.models import (
     TermsRevision,
     TermsVersion,
 )
+from core.richtext import richtext_problem
 from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
@@ -1796,6 +1796,114 @@ def stats(request):
 
 # --- What's On mailer ------------------------------------------------------------------
 
+RESEND_GUARD = datetime.timedelta(minutes=10)
+STARTED = "Started; if this stays, the send was cut off part-way."
+# Audiences that share people: a send to one blocks a send to the others for a while.
+OVERLAPS = {
+    "members": ("members", "old", "both"),
+    "old": ("old", "old_new", "both", "members"),
+    "old_new": ("old_new", "old", "both"),
+    "both": ("both", "members", "old", "old_new"),
+}
+
+
+def _earlier_send(audience, subject, to=""):
+    """A send of this mailer in the last ten minutes that may have reached
+    some of the same people: finished with at least one delivery, or still
+    going (or cut off). A send that reached nobody doesn't count."""
+    if audience == "address":
+        logs = MailLog.objects.filter(audience="address", recipients=to[:200])
+    else:
+        logs = MailLog.objects.filter(audience__in=OVERLAPS[audience])
+    reached = Q(ok=True) | Q(error=STARTED) | (~Q(audience="address") & ~Q(recipients="nobody"))
+    return (logs.filter(reached, subject=subject, sent_at__gte=timezone.now() - RESEND_GUARD)
+            .order_by("-sent_at").first())
+
+
+def _send_mailer(request, config, form):
+    """Carry out "Send" or "Send a test to me". Returns a redirect once a
+    real send has gone, or None to show the draft again (after a test, or
+    when the send was refused)."""
+    is_test = request.POST.get("action") == "test"
+    audience = form.cleaned_data["audience"]
+    subject = form.cleaned_data["subject"][:200]
+    body = form.cleaned_data["body"]
+    if is_test:
+        to = request.user.email
+        if not to:
+            messages.error(request, "Your account has no email address to send a test to.")
+            return None
+        subject = f"[Test] {subject}"[:200]
+        ok, error = True, ""
+        try:
+            services.send_test(request, config, subject, body, audience, to)
+        except Exception as exc:
+            ok, error = False, str(exc)[:300]
+        MailLog.objects.create(subject=subject, body=body, recipients=to[:200], sent_by=request.user,
+                               ok=ok, error=error, audience="test")
+        AuditLog.record(request.user, "test_mailer", target=to[:200], detail=f"{'sent' if ok else 'FAILED'}: {subject}"[:300])
+        if ok:
+            messages.success(
+                request,
+                f"Test sent to {to}, as “{services.AUDIENCE_LABELS[audience]}” would get it. "
+                "Check it arrived (and the spam folder) before sending for real.",
+            )
+        else:
+            messages.error(request, f"Sending failed: {error}")
+        return None
+
+    if audience != "address":
+        members, old = services.mailer_recipients(audience)
+        if not members and not old:
+            messages.error(request, "Nobody to send to: that audience has no addresses.")
+            return None
+    earlier = _earlier_send(audience, subject, form.cleaned_data.get("recipient", ""))
+    if earlier:
+        when = f"{timezone.localtime(earlier.sent_at):%H:%M}"
+        label = services.AUDIENCE_LABELS.get(earlier.audience, earlier.audience)
+        if earlier.error == STARTED:
+            said = f"A send of this mailer to “{label}” started at {when} and hasn't finished, or was cut off part-way."
+        elif earlier.audience == audience:
+            said = f"This mailer went to that audience at {when}."
+        else:
+            said = f"This mailer went to “{label}” at {when}, and that would reach some of the same people again."
+        if earlier.audience == "members" and audience in ("old", "both"):
+            said += " To reach the old list without repeating anyone, choose “only those not yet on the website”."
+        messages.error(request, f"{said} To send it anyway, wait ten minutes; Recent sends shows how it went.")
+        return None
+    if audience == "address":
+        to = form.cleaned_data["recipient"]
+        log = MailLog.objects.create(subject=subject, body=body, recipients=to[:200], sent_by=request.user,
+                                     ok=False, error=STARTED, audience=audience)
+        ok, error = True, ""
+        try:
+            services.send_one(request, config, subject, body, to)
+        except Exception as exc:
+            ok, error = False, str(exc)[:300]
+        recipient = to
+    else:
+        log = MailLog.objects.create(
+            subject=subject, body=body, recipients=f"{len(members) + len(old)} addresses (sending)",
+            sent_by=request.user, ok=False, error=STARTED, audience=audience,
+        )
+        sent, failed, error = services.send_mailer(request, config, subject, body, request.user.email, members, old)
+        ok = failed == 0
+        if failed:
+            error = f"{failed} address{'es' if failed != 1 else ''} not sent: {error}"[:300]
+        recipient = services.describe_sent(sent)
+    log.recipients, log.ok, log.error = recipient[:200], ok, error
+    log.save(update_fields=["recipients", "ok", "error"])
+    AuditLog.record(request.user, "send_mailer", target=recipient[:200],
+                    detail=f"{'sent' if ok else 'FAILED'}: {subject}"[:300])
+    if ok:
+        messages.success(request, f"What's On handed to the mail server for {recipient}.")
+    elif audience == "address":
+        messages.error(request, f"Sending failed: {error}")
+    else:
+        messages.error(request, f"What's On went to {recipient}, but {error}")
+    return redirect("panel:mailer")
+
+
 def _mailer_form(*args, **kwargs):
     """A MailerForm whose audience labels carry today's counts."""
     form = MailerForm(*args, **kwargs)
@@ -1846,72 +1954,10 @@ def mailer(request):
                     })
             # fall through to render with the (re-drafted or unchanged) form
         elif form.is_valid():
-            # "Send a test to me" goes to the admin alone, so the whole path
-            # (server, From address, spam filters) is checked first.
-            is_test = request.POST.get("action") == "test"
-            audience = form.cleaned_data["audience"]
-            to_list = audience != "address" and not is_test
-            recipient = request.user.email if is_test else form.cleaned_data.get("recipient", "")
-            if is_test and not recipient:
-                messages.error(request, "Your account has no email address to send a test to.")
-                return redirect("panel:mailer")
-            subject = form.cleaned_data["subject"][:200]
-            if is_test:
-                subject = f"[Test] {subject}"[:200]
-            body = form.cleaned_data["body"]
-            ok, error = True, ""
-            if to_list:
-                copy_to = request.user.email or settings.DEFAULT_FROM_EMAIL
-                sent, failed, error = services.send_mailer(request, config, subject, body, copy_to, audience)
-                if not failed and not sent["members"] and not sent["old"]:
-                    messages.error(request, "Nobody to send to: that audience has no addresses.")
-                    return redirect("panel:mailer")
-                ok = failed == 0
-                if failed:
-                    error = f"{failed} address{'es' if failed != 1 else ''} not sent: {error}"[:300]
-                recipient = services.describe_sent(sent)
-            else:
-                try:
-                    EmailMessage(
-                        subject=subject,
-                        body=body + (services.mailer_footer(request, config) if is_test else ""),
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        to=[recipient],
-                    ).send()
-                except Exception as exc:
-                    ok, error = False, str(exc)[:300]
-            MailLog.objects.create(
-                subject=subject,
-                body=body,
-                recipients=recipient[:200],
-                sent_by=request.user,
-                ok=ok,
-                error=error,
-            )
-            AuditLog.record(
-                request.user, "test_mailer" if is_test else "send_mailer", target=recipient[:200],
-                detail=(f"{'sent' if ok else 'FAILED'}: {subject}")[:300],
-            )
-            if ok and is_test:
-                messages.success(
-                    request,
-                    f"Test sent to {recipient}. Check it arrived (and the spam folder) before sending to everyone.",
-                )
-            elif to_list and ok:
-                messages.success(request, f"What's On handed to the mail server for {recipient}.")
-            elif to_list:
-                messages.error(request, f"What's On went to {recipient}, but {error}")
-            elif ok:
-                messages.success(
-                    request,
-                    f"What's On handed to the mail server for {recipient}. A mailing list that holds "
-                    "posts from senders it doesn't know will want approving there.",
-                )
-            else:
-                messages.error(request, f"Sending failed: {error}")
-            if not is_test:
-                return redirect("panel:mailer")
-            # keep the draft on screen after a test, ready to send for real
+            response = _send_mailer(request, config, form)
+            if response:
+                return response
+            # nothing sent for real (a test, or a refusal): keep the draft on screen
             form = _mailer_form(initial={
                 key: form.cleaned_data.get(key, "")
                 for key in ("audience", "recipient", "subject", "body", "instructions")
@@ -2329,6 +2375,9 @@ def old_list(request):
         except sheets.SheetError as exc:
             messages.error(request, str(exc))
             return redirect("panel:old_list")
+        if not entries:
+            messages.error(request, "No email addresses found in that file, so nothing was imported.")
+            return redirect("panel:old_list")
         added = filled = 0
         for entry in entries:
             sub, created = OldSubscriber.objects.get_or_create(
@@ -2348,13 +2397,15 @@ def old_list(request):
                 filled += 1
         AuditLog.record(
             request.user, "import_old_list", target=upload.name[:200],
-            detail=f"added {added}, filled in {filled}, skipped {stats['no_address']}, merged {stats['duplicates']}",
+            detail=(f"added {added}, filled in {filled}, skipped {stats['no_address']} + {stats['invalid']} invalid, "
+                    f"merged {stats['duplicates']}")[:300],
         )
+        invalid = (f", {stats['invalid']} with an address that isn't valid" if stats["invalid"] else "")
         messages.success(
             request,
             f"Added {added}, filled in {filled}, skipped {stats['no_address']} "
-            f"row{'s' if stats['no_address'] != 1 else ''} without an address; "
-            f"{stats['duplicates']} duplicate{'s' if stats['duplicates'] != 1 else ''} merged.",
+            f"row{'s' if stats['no_address'] != 1 else ''} without an address{invalid}; "
+            f"{stats['duplicates']} address{'es' if stats['duplicates'] != 1 else ''} repeated in the file merged.",
         )
         return redirect("panel:old_list")
 
@@ -2384,7 +2435,14 @@ def old_list(request):
         writer = csv.writer(response)
         writer.writerow(["email", "first name", "last name", "college", "status"])
         for s in subs:
-            state = "unsubscribed" if s.unsubscribed_at else ("on the website" if s.member else "not yet")
+            if s.unsubscribed_at:
+                state = "unsubscribed"
+            elif s.member and s.member.is_banned:
+                state = "banned member"
+            elif s.member and not s.member.wants_mailer:
+                state = "on the website, opted out"
+            else:
+                state = "on the website" if s.member else "not yet"
             writer.writerow([s.email, s.first_name, s.last_name, s.college, state])
         return response
     page = Paginator(subs, 100).get_page(request.GET.get("page"))
@@ -2402,13 +2460,17 @@ def old_list(request):
 def old_list_action(request, pk):
     sub = get_object_or_404(OldSubscriber, pk=pk)
     action = request.POST.get("action")
+    # a Cambridge address and its @hermes twin are one mailbox: change both
+    twins = OldSubscriber.objects.filter(
+        email__in=[f"{sub.crsid}@{domain}" for domain in OldSubscriber.CRSID_DOMAINS] if sub.crsid else [sub.email])
     if action == "unsubscribe":
-        sub.unsubscribed_at = timezone.now()
-        sub.save(update_fields=["unsubscribed_at"])
+        twins.filter(unsubscribed_at__isnull=True).update(unsubscribed_at=timezone.now())
     elif action == "resubscribe":
-        sub.unsubscribed_at = None
-        sub.save(update_fields=["unsubscribed_at"])
+        twins.update(unsubscribed_at=None)
     elif action == "remove":
+        if sub.unsubscribed_at:
+            messages.error(request, "Unsubscribed addresses are kept, so a re-import can't put them back on the list.")
+            return _redirect_back(request, "panel:old_list")
         sub.delete()
     else:
         raise Http404

@@ -1,0 +1,5 @@
+# What the SRCF server needs on top of requirements.txt:
+#   .venv/bin/pip install -r requirements-srcf.txt
+-r requirements.txt
+gunicorn>=21.0
+mysqlclient>=2.2
