@@ -143,6 +143,10 @@ class PanelTestCase(TestCase):
             reverse("panel:whatsapp_handle", args=[1]),
             reverse("panel:testimonials"),
             reverse("panel:testimonial_action", args=[1]),
+            reverse("panel:health"),
+            reverse("panel:health_run"),
+            reverse("panel:health_error_resolve", args=[1]),
+            reverse("panel:health_mail_handled", args=[1]),
         ]
 
 
@@ -164,7 +168,8 @@ class PermissionTests(PanelTestCase):
         for name in ["home", "waitlist", "members", "members_cleanup", "events",
                      "messages", "whatsapp_requests", "content", "contact_map",
                      "pages", "navigation", "testimonials", "terms", "stats",
-                     "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures", "old_list"]:
+                     "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures", "old_list",
+                     "health"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -1330,6 +1335,9 @@ class VisualToolsTests(PanelTestCase):
 
 
 class SiteHealthTests(TestCase):
+    """The static files half of the site health checks (panel/health.py): the
+    copy in STATIC_ROOT, and what the site serves, file by file."""
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username="sh001", password="pw", first_name="Ada", last_name="Admin",
@@ -1337,18 +1345,20 @@ class SiteHealthTests(TestCase):
         )
         self.client.force_login(self.admin)
 
-    def test_the_super_admin_tab_checks_the_copy_and_what_is_served_only_when_asked(self):
-        import tempfile
-        import urllib.error
-        from io import BytesIO, StringIO
-
-        from django.core.management import call_command
-
+    @staticmethod
+    def current_base_css():
         from core.storage import static_sources
-        from panel import health
 
         with open(static_sources()["css/base.css"], "rb") as handle:
-            current = handle.read()
+            return handle.read()
+
+    def test_each_file_is_compared_with_what_this_version_ships(self):
+        import urllib.error
+        from io import BytesIO
+
+        from panel import health
+
+        current = self.current_base_css()
 
         def fake_open(request, timeout=0):
             url = request.full_url.split("?")[0]
@@ -1360,65 +1370,75 @@ class SiteHealthTests(TestCase):
                 raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
             raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
 
-        with tempfile.TemporaryDirectory() as root, override_settings(STATIC_ROOT=root):
-            with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open) as opened:
-                page = self.client.get(reverse("panel:superadmin"))
-                self.assertContains(page, "Check now")
-                self.assertEqual(opened.call_count, 0)  # nothing is fetched until asked
-                page = self.client.get(reverse("panel:superadmin") + "?health=1", HTTP_HOST="testserver:8443")
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open):
+            result = health.static_health(origin="http://testserver")
+        rows = {row["name"]: row["status"] for row in result["served"]}
+        self.assertEqual(rows["css/base.css"], "ok")
+        self.assertEqual(rows["css/panel.css"], "stale")
+        self.assertEqual(rows["css/posters.css"], "HTTP 403")
+        self.assertEqual(rows["admin/css/base.css"], "missing")  # only a real copy has Django's own files
+        self.assertIn("fonts/SourceSans3-Variable.ttf", rows)  # fonts and scripts are checked too
+        self.assertIn("js/editor.js", rows)
+        self.assertEqual(result["cause"], "permissions")
+        with mock.patch.object(health.urllib.request, "urlopen", side_effect=urllib.error.URLError("no route")):
+            self.assertEqual(health.static_health(origin="http://testserver")["cause"], "fetch")
+
+    def test_the_run_button_fetches_from_the_sites_own_host_and_explains_the_cause(self):
+        import tempfile
+        import urllib.error
+        from io import BytesIO, StringIO
+
+        from django.core.management import call_command
+
+        from panel import health
+        from panel.healthchecks import core, probes
+        from panel.models import HealthSnapshot
+
+        current = self.current_base_css()
+
+        def other_folder(request, timeout=0):  # served, but not what was copied
+            url = request.full_url.split("?")[0]
+            if url.endswith("css/panel.css"):
+                return BytesIO(b"old bytes")
+            if url.endswith("/css/base.css") and "/admin/" not in url:
+                return BytesIO(current)
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        with tempfile.TemporaryDirectory() as root, \
+                override_settings(STATIC_ROOT=root, STATIC_VERSION_FROM_ROOT=True, SITE_URL=""):
+            page = self.client.get(reverse("panel:health"))
+            self.assertContains(page, "In the folder Apache serves")  # nothing copied yet
+            call_command("sync_static", stdout=StringIO())
+            with mock.patch.dict(core.PROBES, {"static": probes.static_files}, clear=True), \
+                    mock.patch.object(health.urllib.request, "urlopen", side_effect=other_folder) as opened:
+                self.client.get(reverse("panel:health"))
+                self.assertEqual(opened.call_count, 0)  # opening the page fetches nothing
+                self.client.post(reverse("panel:health_run"), HTTP_HOST="testserver:8443")
+            self.assertTrue(opened.call_count)
             for call in opened.call_args_list:
                 self.assertTrue(call.args[0].full_url.startswith("http://testserver/static/"))  # the host, never its port
-            result = page.context["static_health"]
-            rows = {row["name"]: row["status"] for row in result["served"]}
-            self.assertEqual(rows["css/base.css"], "ok")
-            self.assertEqual(rows["css/panel.css"], "stale")
-            self.assertEqual(rows["css/posters.css"], "HTTP 403")
-            self.assertEqual(rows["admin/css/base.css"], "missing")  # only a real copy has Django's own files
-            self.assertIn("fonts/SourceSans3-Variable.ttf", rows)  # fonts and scripts are checked too
-            self.assertIn("js/editor.js", rows)
-            self.assertContains(page, "not copied")  # nothing has been copied into the empty folder
-            call_command("sync_static", stdout=StringIO())
-
-            def other_folder(request, timeout=0):  # served, but not what was copied
-                url = request.full_url.split("?")[0]
-                if url.endswith("css/panel.css"):
-                    return BytesIO(b"old bytes")
-                if url.endswith("/css/base.css") and "/admin/" not in url:
-                    return BytesIO(current)
-                raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-
-            with mock.patch.object(health.urllib.request, "urlopen", side_effect=other_folder):
-                page = self.client.get(reverse("panel:superadmin") + "?health=1")
-            self.assertTrue(page.context["static_health"]["copy"]["current"])
-            self.assertEqual(page.context["static_health"]["cause"], "folder")
-            self.assertContains(page, "Apache is reading a different folder")
-            with mock.patch.object(health.urllib.request, "urlopen", side_effect=fake_open):  # includes a 403
-                page = self.client.get(reverse("panel:superadmin") + "?health=1")
-            self.assertEqual(page.context["static_health"]["cause"], "permissions")
-            self.assertNotContains(page, "Apache is reading a different folder")
-            with mock.patch.object(health.urllib.request, "urlopen", side_effect=urllib.error.URLError("no route")):
-                page = self.client.get(reverse("panel:superadmin") + "?health=1")
-            self.assertEqual(page.context["static_health"]["cause"], "fetch")
-            self.assertContains(page, "couldn't fetch its own site")
-            self.assertNotContains(page, "Apache is reading a different folder")
-        # the admin forms go back to the plain tab, so they never re-run the check
-        self.assertContains(page, f'name="next" value="{reverse("panel:superadmin")}"')
+            rows = {row["key"]: row for row in HealthSnapshot.objects.get().results}
+            self.assertEqual(rows["static_copy"]["status"], "ok")
+            self.assertEqual(rows["static_served"]["status"], "fail")
+            self.assertIn("another folder", rows["static_served"]["webmaster"])
+            page = self.client.get(reverse("panel:health"))
+            self.assertContains(page, "Visitors get old or missing stylesheets")
+            self.assertContains(page, "css/panel.css")
 
     def test_a_source_file_that_cannot_be_read_is_reported_not_raised(self):
         from io import BytesIO
 
+        from django.conf import settings
+
         from core.storage import static_sources
         from panel import health
-
-        from django.conf import settings
 
         missing = str(settings.BASE_DIR / "static" / "css" / "no-such-file.css")  # under static/, so it's checked
         sources = dict(static_sources(), **{"css/base.css": missing})
         with mock.patch.object(health, "static_sources", return_value=sources), \
                 mock.patch.object(health.urllib.request, "urlopen", side_effect=lambda *a, **k: BytesIO(b"x")):
-            page = self.client.get(reverse("panel:superadmin") + "?health=1")
-        self.assertEqual(page.status_code, 200)
-        rows = {row["name"]: row["status"] for row in page.context["static_health"]["served"]}
+            result = health.static_health(origin="http://testserver")
+        rows = {row["name"]: row["status"] for row in result["served"]}
         self.assertEqual(rows["css/base.css"], "unreadable here")
 
 
@@ -1713,7 +1733,8 @@ class MailerAudienceTests(TestCase):
         self.assertFalse(MailLog.objects.exists())
 
     def test_a_send_that_is_cut_off_leaves_a_record(self):
-        with mock.patch("panel.services.send_mailer", side_effect=RuntimeError("worker killed")):
+        with mock.patch("panel.services.send_mailer", side_effect=RuntimeError("worker killed")), \
+                self.assertLogs("django.request", "ERROR"):  # the crash is logged, quietly here
             with self.assertRaises(RuntimeError):
                 self.client.post(reverse("panel:mailer"), {
                     "audience": "members", "subject": "What's On", "body": "Hello all", "action": "send",

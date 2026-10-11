@@ -106,9 +106,11 @@ Always **restart**, never "reload": a reload skips `run_on_srcf.sh`, so
 migrations and static files wouldn't be applied.
 
 **4. Check the site.** Open https://www.cambridgematuresoc.com/ logged out,
-then log in with Raven and open /me/ and /admin/. On the Super admin tab press
-**Check now** under Site health: both lines should be green. If the site
-shows "Service Unavailable", see "If something goes wrong" below.
+then log in with Raven and open /me/ and /admin/. Open **Admin → Overview →
+Site health** and press **Run all checks**: the banner at the top says
+whether anything is broken, and every red or amber row says what to do and
+who should do it. If the site shows "Service Unavailable", see "If
+something goes wrong" below.
 
 ## One-time setup (October 2026 release)
 
@@ -121,14 +123,16 @@ Do these once, in order, between steps 2 and 3.
    stat -c '%A %U:%G %n' .env media
    ```
    The last three characters of each mode are what *other* users may do;
-   they must be `---`. Each fix is run by the owner (the `%U` column; when
-   that is `mss`, put `sudo -u mss` in front):
-   - `.env`: `chgrp mss .env && chmod 660 .env` (the society's admins can
-     still read and edit it). If it was readable by others, also change the
+   they must be `---`. Each fix is run by the owner (the `%U` column):
+   - `.env`: `chgrp mss .env && chmod 660 .env`, or when mss owns it,
+     `sudo -u mss sh -c 'chgrp mss .env && chmod 660 .env'` (`sudo` in
+     front of the first command alone wouldn't cover the second). The
+     society's admins can still read and edit it. If it was readable by others, also change the
      MySQL password (control.srcf.net) and `DJANGO_SECRET_KEY` (this logs
      everyone out; tell members), because the SRCF's snapshots keep old
      copies of the file.
-   - `media`: `chmod o-rwx media`.
+   - `media`: `chmod o-rwx media` (with `sudo -u mss` in front when mss
+     owns it).
 
    The portal's socket closes itself to other users from this release on
    (`gunicorn.conf.py`); after the restart, `stat -c '%A %G' sockets/web.sock`
@@ -145,11 +149,62 @@ Do these once, in order, between steps 2 and 3.
 3. **Let the portal keep that folder current.** Whoever owns it (`stat -c %U /public/societies/mss/public_html/static`)
    runs `srcf-soc-permfix mss`, so the account that runs the portal can
    replace the files there.
-4. Restart (step 3 above) and press **Check now** on the Super admin tab. If
-   it says the files weren't copied, run
+4. Restart (step 3 above) and press **Run all checks** on Admin → Overview →
+   Site health. If “This version's stylesheets are in place” is amber, run
    `set -a; . ./.env; set +a; .venv/bin/python manage.py sync_static` and restart again.
+5. **Schedule the daily health check** on sinkhole (`crontab -e`, next to
+   the `close_polls` line below). Cron mails its owner only when something
+   needs attention, and the run also tidies old records:
+   ```
+   30 7 * * * cd /public/societies/mss/mature-student-society && set -a && . ./.env && set +a && .venv/bin/python manage.py health_check --trigger cron --quiet --prune
+   ```
+6. **Back the database up every night** (strongly advised: the SRCF's own
+   snapshots are best-effort). Keep the MySQL password where only you can
+   read it, then add the dump to the same crontab:
+   ```bash
+   ( umask 077 && printf '[client]\nhost=mysql\nuser=mss\npassword=%s\n' '<password>' > /societies/mss/.my.cnf )
+   ```
+   ```
+   15 3 * * * bash -o pipefail -c 'mysqldump --defaults-extra-file=/societies/mss/.my.cnf mss | gzip > /societies/mss/backups/.db.part && mv /societies/mss/backups/.db.part /societies/mss/backups/db-$(date +\%u).sql.gz'
+   ```
+   That keeps seven files, one per weekday, and a dump that fails leaves
+   the last good file in place rather than an empty one (cron mails you
+   mysqldump's error). Then tell the portal where they go, so Site health
+   checks that a fresh one arrives every night:
+   `printf '\nMSS_BACKUP_DIR=/societies/mss/backups\n' >> .env` and restart.
+7. **Ask an outside monitor to watch the site** (free, five minutes): at
+   uptimerobot.com, add a *keyword* monitor for
+   `https://www.cambridgematuresoc.com/healthz` that expects the word `ok`,
+   alerting the webmaster and the committee address. Site health shows it
+   working within the hour.
 
 ## After this release: three settings and one cron line
+
+- **Site health** (Admin → Overview → Site health) checks 23 things in
+  eight groups: whether the site answers and how fast, whether visitors get
+  this version's stylesheets, whether a Raven login can be faked, the
+  certificate, private files, email, scheduled jobs, backups, the database,
+  storage and the society's own setup. Each row says what to do and who
+  should do it; super admins also see the technical detail. Most checks run
+  whenever the page opens. **Run all checks** adds the ones that fetch the
+  site over the internet or look through files on the server, which takes up
+  to 20 seconds. A red mark on the Overview tab means something is broken
+  (super admins see amber too), the dashboard has a one-line summary, and a
+  30-day strip shows how each day went. Server errors are now recorded, by
+  where in the code they happen (never the page's address, nor anything a
+  member typed), and visitors get a friendly page instead of "Server Error
+  (500)". `/healthz` answers `ok` for an outside monitor, and
+  `manage.py health_check` gives the same report on the server (exit status
+  0, 1 or 2). New tables: the restart's `migrate` adds them. Optional
+  settings in `.env`: `MSS_BACKUP_DIR` (see one-time step 6),
+  `MSS_QUOTA_MB` (the society's disk quota, for the storage gauge) and
+  `MSS_PUBLIC_HTML` (only if Apache's web folder isn't the one holding
+  `DJANGO_STATIC_ROOT`).
+- **gunicorn 23.** Step 2's `pip install` brings it in. With
+  `header_map = "drop"` in `gunicorn.conf.py` it ignores look-alike
+  headers such as `X_MSS_Remote_User`, which older gunicorn read as the Raven
+  login header that Apache removes. Site health's "Nobody can fake a Raven
+  login" tests exactly this, from outside, through Apache.
 
 - **Messaging is now off between members by default.** Everyone can still
   message a committee admin and the host of an event they're going to. If
@@ -171,10 +226,9 @@ Do these once, in order, between steps 2 and 3.
   `run_on_srcf.sh` runs `manage.py sync_static`, which compares file
   contents (so ZIP and WinSCP deploys work) and copies into
   `DJANGO_STATIC_ROOT`, the folder Apache serves. Every stylesheet link
-  carries a new version stamp, so browsers fetch fresh copies. The Super
-  admin "Site health" card checks both the copy and what visitors are
-  actually served, file by file. If a copy fails the site still starts and
-  the card says so.
+  carries a new version stamp, so browsers fetch fresh copies. The Site
+  health page checks both the copy and what visitors are actually served,
+  file by file. If a copy fails the site still starts and the page says so.
 - **The launcher refuses to start a half-configured site.** Without a
   readable `.env`, or with one not set up for production, it stops instead
   of starting in development mode.
@@ -237,6 +291,7 @@ Do these once, in order, between steps 2 and 3.
   ```
   */15 * * * * cd /path/to/portal && set -a && . ./.env && set +a && .venv/bin/python manage.py close_polls
   ```
+  It prints nothing unless it closed something, so cron only mails you then.
 
 Two commands help you understand the live data without touching it:
 `manage.py profile_audit` lists accounts that never finished signing up and
@@ -245,6 +300,10 @@ button.
 
 ## If something goes wrong
 
+- **Something is red on Site health:** each red row says what's wrong and
+  who should act. On the server, the same report with all the technical
+  detail is
+  `set -a; . ./.env; set +a; .venv/bin/python manage.py health_check`.
 - **Site shows an error after restart:** see why with
   `cd /public/societies/mss/mature-student-society && set -a && . ./.env && set +a && .venv/bin/python manage.py check`,
   and the unit's status (`... systemctl --user status <unit>`, with the
@@ -258,9 +317,16 @@ button.
   when it couldn't, the socket is left open and the site works. If the
   socket *was* handed to mss and Apache still can't reach it, add
   `MSS_SOCKET_OPEN=1` to `.env`, restart, and tell David: that brings back
-  the old, open socket while it's sorted out.
-- **Need to go back:** restore the backup and the previous code.
+  the old, open socket while it's sorted out. Site health shows an open
+  socket in red, because any SRCF user could then log in as anyone.
+- **Need to go back:** empty the database, restore the backup, and put
+  the previous code back. Emptying it first matters: a restore only
+  replaces the tables in the backup, so tables this release added would
+  stay behind and make the next attempt at the upgrade fail at `migrate`.
+  Each `mysql` line asks for the MySQL password.
   ```bash
+  mysql -h mysql -u mss -p mss -N -e "SELECT CONCAT('DROP TABLE \`', table_name, '\`;') FROM information_schema.tables WHERE table_schema = 'mss'" > /societies/mss/backups/drop-all.sql
+  ( echo 'SET FOREIGN_KEY_CHECKS=0;'; cat /societies/mss/backups/drop-all.sql ) | mysql -h mysql -u mss -p mss
   gunzip < /societies/mss/backups/mss-YYYY-MM-DD.sql.gz | mysql -h mysql -u mss -p mss
   cd /public/societies/mss/mature-student-society && git checkout main   # or re-upload the previous ZIP
   # then restart as in step 3

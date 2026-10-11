@@ -4,6 +4,8 @@ __pycache__/
 db.sqlite3
 media/
 staticfiles/
+# gunicorn's worker-timeout log, for the Site health page
+state/
 .DS_Store
 .env
 

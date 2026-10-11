@@ -20,6 +20,7 @@ def panel_nav(context):
         return {"tag_owner_only": True, "groups": [], "subtabs": []}
 
     counts = badge_counts()
+    health = _health_flag(user)
     groups, subtabs = [], []
     for key, label, pages in PANEL_GROUPS:
         if key == "superadmin" and not user.is_super_admin:
@@ -31,6 +32,7 @@ def panel_nav(context):
             "url": reverse(pages[0][2]),
             "active": active,
             "badge": counts.get(key, 0),
+            "health": health if key == "overview" else None,
         })
         if active and len(pages) > 1:
             subtabs = [
@@ -42,6 +44,24 @@ def panel_nav(context):
                 for tab, page_label, url_name in pages
             ]
     return {"tag_owner_only": False, "groups": groups, "subtabs": subtabs}
+
+
+def _health_flag(user):
+    """The site health summary, when the Overview tab should show it: a
+    breakage for every admin, a warning for super admins only (they're the
+    ones who act on it). It matches the Site health page, however old the
+    last full run; the dashboard says when it's time to run the checks again."""
+    from panel.healthchecks import latest_summary
+
+    try:
+        summary = latest_summary()
+    except Exception:
+        return None
+    if not summary:
+        return None
+    if summary["status"] == "fail" or (summary["status"] == "warn" and user.is_super_admin):
+        return summary
+    return None
 
 
 @register.filter

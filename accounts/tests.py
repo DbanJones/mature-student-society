@@ -285,7 +285,8 @@ class PageRenderTests(TestCase):
 
     @override_settings(RAVEN_MODE="header")
     def test_raven_error_page_when_header_auth_missing(self):
-        response = self.client.get(reverse("accounts:raven"))
+        with self.assertLogs("django.request", "ERROR"):  # a 500 is logged (and recorded for Site health)
+            response = self.client.get(reverse("accounts:raven"))
         self.assertEqual(response.status_code, 500)
         self.assertContains(
             response, "Raven", status_code=500,

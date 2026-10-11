@@ -6,7 +6,7 @@
       {% for group in groups %}
         <a href="{{ group.url }}"
            class="{% if group.active %}active{% endif %}{% if group.key == 'superadmin' %} tab-super{% endif %}"
-           {% if group.active %}aria-current="page"{% endif %}>{{ group.label }}{% if group.badge %}<span class="nav-badge">{{ group.badge }}</span>{% endif %}</a>
+           {% if group.active %}aria-current="page"{% endif %}>{{ group.label }}{% if group.health %}{% include "panel/_health_icon.html" with status=group.health.status label="Site health: "|add:group.health.label extra="nav-health" only %}{% endif %}{% if group.badge %}<span class="nav-badge">{{ group.badge }}</span>{% endif %}</a>
       {% endfor %}
     {% endif %}
   </nav>

@@ -45,7 +45,6 @@ from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
 from . import ai, services, sheets
-from .health import static_health
 from .forms import (
     ActivityForm,
     BannerForm,
@@ -66,7 +65,7 @@ from .forms import (
     TagAdminForm,
     WhatsAppSettingsForm,
 )
-from .models import AuditLog, MailLog, OldSubscriber
+from .models import AuditLog, ErrorEvent, MailLog, OldSubscriber
 
 
 def _display_name(member):
@@ -92,9 +91,12 @@ def home(request):
     # panel — their tagged-events workspace — so /admin/ takes them there.
     if not request.user.is_portal_admin:
         return redirect("panel:tagged_events")
+    from .healthchecks import latest_summary
+
     return render(request, "panel/home.html", {
         "nav_active": "panel",
         "panel_tab": "home",
+        "health": latest_summary(),
         "counts": services.home_counts(),
         "recent_audit": AuditLog.objects.select_related("actor")[:10],
     })
@@ -1366,7 +1368,6 @@ def superadmin(request):
     return render(request, "panel/superadmin.html", {
         "nav_active": "panel",
         "panel_tab": "superadmin",
-        "static_health": static_health(request) if "health" in request.GET else None,
         "admins": admins,
         "non_admins": non_admins,
         "tags": tags,
@@ -1798,6 +1799,7 @@ def stats(request):
 
 RESEND_GUARD = datetime.timedelta(minutes=10)
 STARTED = "Started; if this stays, the send was cut off part-way."
+HANDLED = "marked handled by"  # an admin has dealt with a cut-off or failed send (Site health)
 # Audiences that share people: a send to one blocks a send to the others for a while.
 OVERLAPS = {
     "members": ("members", "old", "both"),
@@ -2476,3 +2478,78 @@ def old_list_action(request, pk):
         raise Http404
     AuditLog.record(request.user, f"old_list_{action}", target=sub.email[:200])
     return _redirect_back(request, "panel:old_list")
+
+
+# --- site health ---------------------------------------------------------------------------
+
+@portal_admin_required
+def health(request):
+    """Is the website working? Quick checks run now; the network and disk
+    checks show their latest run (press "Run all checks" to repeat them)."""
+    from .healthchecks import page_context
+
+    return render(request, "panel/health.html", {
+        "nav_active": "panel",
+        "panel_tab": "health",
+        **page_context(request),
+    })
+
+
+@portal_admin_required
+@require_POST
+def health_run(request):
+    from .healthchecks import LABELS, run_locked
+
+    snapshot = run_locked(request)
+    if snapshot is None:
+        messages.info(request, "The checks ran less than a minute ago, so these are their results.")
+        return redirect("panel:health")
+    AuditLog.record(request.user, "run_health_check", detail=f"{snapshot.overall}, {snapshot.duration_ms} ms")
+    text = f"Checked in {snapshot.duration_ms / 1000:.1f} s: {LABELS.get(snapshot.overall, snapshot.overall).lower()}."
+    if snapshot.overall == "fail":
+        messages.error(request, text)
+    elif snapshot.overall == "warn":
+        messages.warning(request, text)
+    else:
+        messages.success(request, text)
+    return redirect("panel:health")
+
+
+@super_admin_required
+@require_POST
+def health_error_resolve(request, pk):
+    error = get_object_or_404(ErrorEvent, pk=pk)
+    error.resolved_at, error.resolved_by, error.reopened = timezone.now(), request.user, False
+    error.save(update_fields=["resolved_at", "resolved_by", "reopened"])
+    AuditLog.record(request.user, "resolve_error", target=(error.view_name or error.route)[:200],
+                    detail=f"{error.exc_type} ×{error.count}"[:300])
+    _quick_recheck(request)
+    messages.success(request, "Marked fixed. If it happens again it comes back, marked “came back”.")
+    return redirect(reverse("panel:health") + "#errors")
+
+
+@portal_admin_required
+@require_POST
+def health_mail_handled(request, pk):
+    log = get_object_or_404(MailLog.objects.exclude(error__contains=HANDLED), pk=pk, ok=False)
+    note = f"{HANDLED} {_display_name(request.user)} on {timezone.localtime():%d %b %Y}"
+    if log.error == STARTED:
+        log.error = f"Cut off part-way; {note}."[:300]
+    else:
+        log.error = f"{log.error[:300 - len(note) - 3]} ({note})"
+    log.save(update_fields=["error"])
+    AuditLog.record(request.user, "mailer_cut_off_handled", target=log.subject[:200])
+    _quick_recheck(request)
+    messages.success(request, "Marked as handled.")
+    return redirect("panel:health")
+
+
+def _quick_recheck(request):
+    """Re-run the quick checks after an admin deals with something, so the
+    Overview tab and the dashboard follow at once. Never in the way."""
+    from .healthchecks import run
+
+    try:
+        run(request, full=False, trigger="button", user=request.user)
+    except Exception:
+        pass

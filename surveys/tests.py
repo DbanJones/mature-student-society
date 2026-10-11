@@ -2,6 +2,7 @@
 anonymously, and what the results give away."""
 
 import datetime
+from io import StringIO
 
 from django.core.management import call_command
 from django.test import TestCase
@@ -194,7 +195,7 @@ class RunningTests(SurveyTestCase):
         # A closing time in the past closes it: lazily on a visit, and from cron.
         self.survey.closes_at = timezone.now() - datetime.timedelta(minutes=1)
         self.survey.save()
-        call_command("close_polls")
+        call_command("close_polls", stdout=StringIO())
         self.survey.refresh_from_db()
         self.assertEqual(self.survey.status, Survey.Status.CLOSED)
         self.client.post(reverse("surveys:delete", args=[self.survey.slug]))

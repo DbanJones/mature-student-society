@@ -222,6 +222,14 @@ or fetch the member and start a session → redirect to their dashboard.
 2. The app listens on a UNIX socket (not TCP), so other SRCF users cannot
    bypass Apache and inject the header directly.
 3. `RAVEN_MODE=header` is only set in production where 1–2 hold.
+4. gunicorn is version 22 or later and `gunicorn.conf.py` sets
+   `header_map = "drop"`, so a look-alike `X_MSS_Remote_User` header (which
+   Apache doesn't remove) can't stand in for `X-MSS-Remote-User`.
+
+Admin → Overview → Site health tests 1 and 4 from outside, through Apache,
+whenever someone presses "Run all checks" and in the daily `health_check`
+cron job. It checks 2 from the socket's permissions (it can't tell whether
+gunicorn is listening on TCP instead).
 
 Verify after setup: visit `/accounts/raven/` in a private window → you should
 bounce via nevar.srcf.net to a University login and land on the profile-setup
@@ -299,16 +307,27 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   can take up to twenty seconds to show its map; the venue is then remembered
   on the event. A lookup that fails is simply tried again later.
 - **Cron**: polls close themselves when loaded, but to apply results (and
-  email attendees) on time even when nobody visits, add on sinkhole:
+  email attendees) on time even when nobody visits, add on sinkhole (it
+  prints only when it closes something, so cron mails only then):
   `*/15 * * * * cd /societies/<soc>/portal && set -a && . ./.env && set +a && .venv/bin/python manage.py close_polls`
 - **Backups**: SRCF keeps best-effort snapshots (`.snapshot` dirs). Add a cron
-  job on sinkhole for DB dumps into private space:
-  `sudo -u <soc> crontab -e` →
-  `0 4 * * * pg_dump -h postgres <soc> | gzip > /societies/<soc>/backups/db-$(date +\%u).sql.gz`
-- **Upgrades**: see UPGRADING.md (backup first; keep `.env` and `media/`;
-  `git pull && .venv/bin/pip install -r requirements.txt &&
-  manage.py migrate && manage.py collectstatic --noinput`, then
-  `systemctl --user restart mssportal`).
+  job on sinkhole for nightly DB dumps into private space, with the MySQL
+  password in a file only the crontab's owner can read
+  (`( umask 077 && printf '[client]\nhost=mysql\nuser=<soc>\npassword=%s\n' '<password>' > /societies/<soc>/.my.cnf )`):
+  `15 3 * * * bash -o pipefail -c 'mysqldump --defaults-extra-file=/societies/<soc>/.my.cnf <soc> | gzip > /societies/<soc>/backups/.db.part && mv /societies/<soc>/backups/.db.part /societies/<soc>/backups/db-$(date +\%u).sql.gz'`
+  (a failed dump leaves the last good file in place, and cron mails the error)
+  Then add `MSS_BACKUP_DIR=/societies/<soc>/backups` to `.env`, so the Site
+  health page checks that a fresh dump arrives every night.
+- **Health**: `/healthz` answers `ok` while the site and its database work;
+  point a free outside monitor (an UptimeRobot keyword monitor) at it. A
+  daily cron line runs every site health check, keeps the result for Admin →
+  Overview → Site health, and mails the crontab's owner only when something
+  needs attention:
+  `30 7 * * * cd /public/societies/<soc>/<portal folder> && set -a && . ./.env && set +a && .venv/bin/python manage.py health_check --trigger cron --quiet --prune`
+- **Upgrades**: follow UPGRADING.md (backup first; keep `.env` and `media/`;
+  new code, `.venv/bin/pip install -r requirements-srcf.txt`, then restart).
+  With `run_on_srcf.sh` the restart migrates and copies the static files
+  itself; with §4's `run.sh`, run `manage.py migrate` before restarting.
 - **Handover**: future committee needs (a) SRCF group account membership,
   (b) this file, (c) the control-panel DB password location, (d) Toolkit app
   registration ownership if on Track B. Keep at least two admins on the SRCF

@@ -74,6 +74,10 @@ urlpatterns = [
     path("stats/", views.stats, name="stats"),
     path("mailer/", views.mailer, name="mailer"),
     path("audit/", views.audit, name="audit"),
+    path("health/", views.health, name="health"),
+    path("health/run/", views.health_run, name="health_run"),
+    path("health/errors/<int:pk>/fixed/", views.health_error_resolve, name="health_error_resolve"),
+    path("health/mail/<int:pk>/handled/", views.health_mail_handled, name="health_mail_handled"),
     # Super admin (webmaster) only.
     path("super/", views.superadmin, name="superadmin"),
     path("super/email/", views.superadmin_email, name="superadmin_email"),

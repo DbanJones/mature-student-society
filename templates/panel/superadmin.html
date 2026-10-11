@@ -64,45 +64,10 @@
     <div class="card">
       <h2>Site health</h2>
       <p class="small muted">
-        Checks that visitors get this version's stylesheets, scripts and fonts. The server
-        copies them into place each time the portal starts (<code>sync_static</code>), and
-        Apache serves them from that folder.
+        Whether visitors get this version's stylesheets, whether logins can be faked, email, backups,
+        certificates, scheduled jobs and more, each with what to do about it.
       </p>
-      {% if static_health %}
-        {% with copy=static_health.copy %}
-          {% if copy %}
-            <p class="small" style="margin:0 0 .5rem">
-              {% if copy.current %}<span class="badge badge-ok">copied</span> All {{ copy.total }} files are in place in <code>{{ copy.root }}</code>.
-              {% else %}<span class="badge badge-danger">not copied</span> In <code>{{ copy.root }}</code>, {{ copy.missing }} file{{ copy.missing|pluralize }} missing and {{ copy.differ }} out of date: the last start didn't copy them (restart the portal, or run <code>manage.py sync_static</code>).{% endif %}
-            </p>
-          {% endif %}
-          <p class="small" style="margin:0 0 .5rem">
-            {% if not static_health.problems %}<span class="badge badge-ok">served</span> The website serves all {{ static_health.ok }} checked files as they should be.
-            {% else %}<span class="badge badge-danger">not served</span> The website serves {{ static_health.ok }} of {{ static_health.served|length }} checked files correctly.
-              {% if static_health.cause == "folder" and copy and copy.current %}The copy is right, so Apache is reading a different folder: set <code>DJANGO_STATIC_ROOT</code> in <code>.env</code> to the folder it serves for <code>/static/</code> (UPGRADING.md).
-              {% elif static_health.cause == "folder" %}Restart the portal so it copies them, then check again.
-              {% elif static_health.cause == "permissions" %}Apache isn't allowed to read some files: run <code>srcf-soc-permfix mss</code> (or <code>chmod -R a+rX</code> on the folder) as their owner.
-              {% elif static_health.cause == "fetch" %}The server couldn't fetch its own site, so this says nothing about the files: open a <code>/static/</code> link in a browser to check.{% endif %}
-            {% endif %}
-          </p>
-        {% endwith %}
-        {% if static_health.problems %}
-          <table class="data">
-            <thead><tr><th>File</th><th>Status</th></tr></thead>
-            <tbody>
-              {% for row in static_health.problems %}
-                <tr><td class="small">{{ row.name }}</td><td><span class="badge badge-danger">{{ row.status }}</span></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        {% endif %}
-        <p class="small muted" style="margin:.6rem 0 0">
-          Checked just now. “HTTP 403” means Apache can't read the folder; “unreachable” means the
-          server couldn't fetch its own site. <a href="?health=1">Check again</a>
-        </p>
-      {% else %}
-        <p style="margin:0"><a class="btn btn-small" href="?health=1">Check now</a></p>
-      {% endif %}
+      <p style="margin:0"><a class="btn btn-small" href="{% url 'panel:health' %}">Open site health</a></p>
     </div>
     <div class="card">
       <h2>Poster maps</h2>

@@ -2,6 +2,7 @@ import re
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class MailLog(models.Model):
@@ -94,3 +95,119 @@ class OldSubscriber(models.Model):
     def save(self, *args, **kwargs):
         self.email = self.email.strip().lower()
         super().save(*args, **kwargs)
+
+
+# --- site health ----------------------------------------------------------------------------
+
+class HealthSnapshot(models.Model):
+    """One run of the site health checks (Admin → Overview → Site health),
+    kept so the page can show a history and how long a problem has lasted."""
+
+    class Trigger(models.TextChoices):
+        BUTTON = "button", "Run by an admin"
+        CRON = "cron", "Scheduled"
+        DEPLOY = "deploy", "At a restart"
+        COMMAND = "command", "From the command line"
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    trigger = models.CharField(max_length=10, choices=Trigger.choices)
+    full = models.BooleanField(default=False, help_text="The network and disk checks ran too.")
+    overall = models.CharField(max_length=8)
+    statuses = models.JSONField(default=dict, help_text="{check key: status}, for cheap reads.")
+    results = models.JSONField(default=list)
+    schema = models.PositiveSmallIntegerField(default=1)
+    duration_ms = models.PositiveIntegerField(default=0)
+    version = models.CharField(max_length=60, blank=True)
+    run_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_trigger_display()} {self.created_at:%Y-%m-%d %H:%M}: {self.overall}"
+
+
+class JobHeartbeat(models.Model):
+    """When a scheduled job (close_polls, health_check, a restart's
+    sync_static) last ran, and how it went."""
+
+    name = models.CharField(max_length=40, unique=True)
+    last_started = models.DateTimeField(null=True, blank=True)
+    last_finished = models.DateTimeField(null=True, blank=True)
+    last_ok = models.BooleanField(default=False)
+    last_error = models.CharField(max_length=300, blank=True)
+    detail = models.CharField(max_length=200, blank=True)
+    host = models.CharField(max_length=60, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class ErrorEvent(models.Model):
+    """A kind of server error, grouped by where it happens. Recorded by
+    panel.errorlog from Django's own error logging; holds the page's route
+    (never its address, which can carry tokens) and no personal data."""
+
+    class Kind(models.TextChoices):
+        EXCEPTION = "exception", "Server error"
+        SECURITY = "security", "Refused request"
+        WARNING = "warning", "Warning"
+
+    fingerprint = models.CharField(max_length=40, unique=True)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.EXCEPTION)
+    exc_type = models.CharField(max_length=120, blank=True)
+    message = models.CharField(max_length=300, blank=True)
+    route = models.CharField(max_length=200, blank=True)
+    view_name = models.CharField(max_length=120, blank=True)
+    method = models.CharField(max_length=10, blank=True)
+    frames = models.TextField(blank=True)
+    count = models.PositiveIntegerField(default=1)
+    first_seen = models.DateTimeField(default=timezone.now)
+    last_seen = models.DateTimeField(default=timezone.now, db_index=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+    reopened = models.BooleanField(default=False, help_text="Came back after being marked fixed.")
+
+    class Meta:
+        ordering = ["-last_seen"]
+
+    def __str__(self):
+        return f"{self.exc_type or self.kind} at {self.route or '?'} ×{self.count}"
+
+
+class RequestStats(models.Model):
+    """Requests per hour (UTC, bucketed in Python, never by the database),
+    by status and by how long they took."""
+
+    hour = models.DateTimeField(unique=True)
+    requests = models.PositiveIntegerField(default=0)
+    s4xx = models.PositiveIntegerField(default=0)
+    s5xx = models.PositiveIntegerField(default=0)
+    under_half = models.PositiveIntegerField(default=0)
+    under_1 = models.PositiveIntegerField(default=0)
+    under_2 = models.PositiveIntegerField(default=0)
+    under_5 = models.PositiveIntegerField(default=0)
+    under_10 = models.PositiveIntegerField(default=0)
+    under_20 = models.PositiveIntegerField(default=0)
+    over_20 = models.PositiveIntegerField(default=0)
+    monitor_hits = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-hour"]
+
+
+class SlowRequest(models.Model):
+    """A request that took five seconds or more."""
+
+    at = models.DateTimeField(default=timezone.now, db_index=True)
+    route = models.CharField(max_length=200, blank=True)
+    view_name = models.CharField(max_length=120, blank=True)
+    duration_ms = models.PositiveIntegerField()
+    status = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-at"]

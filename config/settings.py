@@ -118,6 +118,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Site health (panel/middleware.py): times every request, and answers
+    # /healthz for an uptime monitor before sessions or logins are touched.
+    "panel.middleware.RequestTimingMiddleware",
+    "panel.middleware.HealthEndpointMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -285,6 +289,31 @@ else:
 DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", "MSS <mss-webmaster@srcf.net>"
 )
+
+# --- Logging ------------------------------------------------------------------
+# Errors go to stderr (the service's journal on the SRCF) and are recorded
+# for the Site health page (panel/errorlog.py), which keeps where in the
+# code they happen but never the address, form data or cookies.
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "stderr": {"class": "logging.StreamHandler", "formatter": "plain", "level": "WARNING"},
+        "record": {"class": "panel.errorlog.DatabaseErrorHandler", "level": "ERROR"},
+    },
+    "loggers": {
+        "django.request": {"handlers": ["stderr", "record"], "level": "ERROR", "propagate": False},
+        **{
+            app: {"handlers": ["stderr", "record"], "level": "WARNING", "propagate": False}
+            for app in ("core", "accounts", "events", "panel", "posters", "polls", "surveys", "inbox",
+                        "notifications", "dashboard", "guide", "supper", "faq", "testimonials")
+        },
+    },
+}
 
 # --- Uploads ------------------------------------------------------------------
 

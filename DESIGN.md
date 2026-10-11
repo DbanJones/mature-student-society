@@ -32,7 +32,7 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
 | posters | EventPoster, PosterScan | One-button event posters: laid out server-side as SVG, printed and exported in the browser, nothing stored |
 | faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
-| panel | MailLog, AuditLog, OldSubscriber | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
+| panel | MailLog, AuditLog, OldSubscriber, HealthSnapshot, JobHeartbeat, ErrorEvent, RequestStats, SlowRequest | Admin panel (two-tier nav), stats, What's-On mailer, audit trail, Site health |
 | dashboard | KeepyUppyScore | Member dashboard |
 
 ## Membership model
@@ -271,6 +271,40 @@ Once anyone has answered, questions and choices can be reworded but not
 added or removed, since existing answers point at them. Surveys close on
 their date lazily (the first page load) and from the `close_polls` cron
 command. The What's On mailer lists live surveys under "Have your say".
+
+## Site health
+
+`panel/healthchecks` holds 23 checks in eight sections. A check is a
+function registered with `@check(key, title, section, slow=...)` that
+returns a `Result`: a status (ok, warn, fail, unknown, off or na; only
+warn and fail colour a verdict), a plain sentence and next step for the
+committee, and details and a next step for the webmaster, which only super
+admins see. Quick checks read the database, the settings and a few files,
+and run on every view of Admin → Overview → Site health. Slow checks read
+what their probe found. Probes (`probes.py`) fetch the site through
+Apache, check certificates and the mail server, and walk the disk. They
+run all at once in threads within a 15-second budget, never touch the
+database, and run only from "Run all checks" (once a minute at most), the
+daily `manage.py health_check --trigger cron`, or a shell. Every run is
+kept as a `HealthSnapshot`. The page shows the newest full run's slow
+results with their age; the Overview tab icon and the dashboard merge the
+newest full run with any newer quick run (a restart's), so a restart
+can't hide a failure; the 30-day strip groups runs by local day in Python.
+
+What feeds the checks: `RequestTimingMiddleware` counts requests per UTC
+hour by status and duration (`RequestStats`, written once a minute per
+worker with F() updates) and keeps requests over five seconds
+(`SlowRequest`). `panel.errorlog.DatabaseErrorHandler`, wired in
+`settings.LOGGING`, groups server errors into `ErrorEvent`s by type,
+innermost project frame and route pattern; it keeps no addresses, form
+data or cookies, and blanks secrets and email addresses. Scheduled jobs
+record `JobHeartbeat`s; gunicorn's `worker_abort` hook appends to
+`state/worker-timeouts.log`; web workers fingerprint the code as they
+start (`deploy.py`), so new code waiting for a restart shows.
+`HealthEndpointMiddleware` answers `/healthz`, for an outside uptime
+monitor, and `/healthz/probe`, which answers only a token signed with the
+secret key in the last minute, and reports whether a forged Raven login header got past Apache.
+Both run before sessions and logins, so neither can log anyone in.
 
 ## Visual layer
 

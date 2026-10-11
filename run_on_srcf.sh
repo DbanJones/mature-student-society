@@ -23,10 +23,18 @@ set -eu
 
 # Copy any changed stylesheets, scripts and fonts into the folder Apache
 # serves (DJANGO_STATIC_ROOT in .env). A failure leaves the files already
-# there and the Super admin "Site health" card says so; it never stops the site.
+# there and Admin > Overview > Site health says so; it never stops the site.
 ( umask 002 && .venv/bin/python manage.py sync_static ) \
   || echo "run_on_srcf.sh: sync_static failed; serving the static files already on disk" >&2
 
+# The quick site health checks, kept for the Site health page. Problems are
+# printed to the service log; they never stop the site starting.
+.venv/bin/python manage.py health_check --quick --trigger deploy --quiet \
+  || echo "run_on_srcf.sh: the start-up health check found something (above, and on the Site health page)" >&2
+
 mkdir -p "$(dirname "$SOCKET")"
+# The web workers note which code they started with, so the Site health page
+# can tell when new code is waiting for a restart, and where the socket is.
+export MSS_WEB_PROCESS=1 MSS_SOCKET="$SOCKET"
 # gunicorn.conf.py closes the socket to other SRCF users (see there).
 exec .venv/bin/gunicorn -c gunicorn.conf.py -w 2 -b "unix:$SOCKET" --log-file - config.wsgi:application

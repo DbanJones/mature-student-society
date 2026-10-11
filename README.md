@@ -54,6 +54,8 @@ Run the test suite:
 | `/me/` | Member dashboard |
 | `/accounts/…` | Login (Raven / associate), profile, waitlist, WhatsApp invite |
 | `/admin/` | Society admin panel (approvals, members, stats, mailer, audit) |
+| `/admin/health/` | Site health: 23 checks with what to do about each, a 30-day history, "Run all checks" |
+| `/healthz` | Answers `ok` while the site and its database work, for an outside uptime monitor |
 | `/dj-admin/` | Django admin (superusers/tech officer only) |
 
 ## Configuration
@@ -61,4 +63,6 @@ Run the test suite:
 Everything is environment-driven — see the top of `config/settings.py` and
 DEPLOYMENT_SRCF.md. Key variables: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`,
 `DJANGO_ALLOWED_HOSTS`, `DB_ENGINE` (`sqlite`/`postgres`/`mysql` + `DB_*`),
-`RAVEN_MODE` (`dev`/`header`/`oidc`), `REAL_EMAIL`.
+`RAVEN_MODE` (`dev`/`header`/`oidc`), `REAL_EMAIL`. Optional, for the Site health page: `MSS_BACKUP_DIR`,
+`MSS_QUOTA_MB`, `MSS_PUBLIC_HTML` (UPGRADING.md); `manage.py health_check`
+runs the same checks from a shell or cron.
