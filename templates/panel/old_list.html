@@ -40,7 +40,13 @@
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, college or notes" aria-label="Search the old list">
   <button type="submit" class="btn btn-small">Search</button>
-  <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}export=csv">Download these as CSV</a>
+  <button type="submit" form="old-list-export" class="btn btn-small btn-ghost">Download these as CSV</button>
+</form>
+<form method="post" id="old-list-export" hidden>
+  {% csrf_token %}
+  <input type="hidden" name="export" value="csv">
+  <input type="hidden" name="status" value="{{ status }}">
+  <input type="hidden" name="q" value="{{ q }}">
 </form>
 
 {% if page.object_list %}

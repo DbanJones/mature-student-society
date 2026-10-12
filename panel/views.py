@@ -39,12 +39,13 @@ from core.models import (
     TermsRevision,
     TermsVersion,
 )
+from core import mailinglist
 from core.richtext import richtext_problem
 from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
 from inbox.models import DirectMessage
 
-from . import ai, services, sheets
+from . import ai, listsync, services, sheets
 from .forms import (
     ActivityForm,
     BannerForm,
@@ -57,6 +58,7 @@ from .forms import (
     MapSettingsForm,
     MemberEditForm,
     MessagingSettingsForm,
+    ListPasteForm,
     OldListUploadForm,
     PictureForm,
     SitePageForm,
@@ -65,7 +67,7 @@ from .forms import (
     TagAdminForm,
     WhatsAppSettingsForm,
 )
-from .models import AuditLog, ErrorEvent, MailLog, OldSubscriber
+from .models import AuditLog, ErrorEvent, ListMember, ListSync, MailLog, OldSubscriber
 
 
 def _display_name(member):
@@ -263,7 +265,12 @@ def members(request):
     only_admins = request.GET.get("admin") == "1"
     only_banned = request.GET.get("banned") == "1"
     only_incomplete = request.GET.get("incomplete") == "1"
+    only_unlisted = request.GET.get("unlisted") == "1"
     current_terms = TermsVersion.current_number()
+    # The society's mailing list, as the site last knew it (People > Mailing list).
+    list_known = ListSync.objects.filter(kind=ListSync.Kind.UPDATE).exists() or ListMember.objects.exists()
+    list_keys = listsync.list_keys() if list_known else set()
+    list_stop = listsync.stopped_keys() if list_known else set()
 
     members_qs = User.objects.all()
     if q:
@@ -285,6 +292,11 @@ def members(request):
         members_qs = members_qs.filter(is_banned=True)
     if only_incomplete:
         members_qs = members_qs.filter(User.incomplete_q(current_terms))
+    if only_unlisted:
+        unlisted = [user.pk for user in members_qs.exclude(email="").only(
+                        "id", "email", "crsid", "is_active", "is_banned", "wants_mailer")
+                    if listsync.gets_mailer(user) and not listsync.on_list(user.email, list_keys)]
+        members_qs = members_qs.filter(pk__in=unlisted)
 
     page = Paginator(members_qs, 50).get_page(request.GET.get("page"))
     params = request.GET.copy()
@@ -293,6 +305,9 @@ def members(request):
     # admin can see at a glance why a member has no college or mobile.
     for member in page.object_list:
         member.onboarding = member.onboarding_status(current_terms)
+        member.on_list = listsync.on_list(member.email, list_keys) if list_known else None
+        member.gets_mailer = listsync.gets_mailer(member)
+        member.list_stopped = bool(member.on_list) and listsync.mailbox_key(member.email) in list_stop
 
     return render(request, "panel/members.html", {
         "nav_active": "panel",
@@ -303,6 +318,8 @@ def members(request):
         "only_admins": only_admins,
         "only_banned": only_banned,
         "only_incomplete": only_incomplete,
+        "only_unlisted": only_unlisted,
+        "list_known": list_known,
         "incomplete_count": User.objects.filter(is_banned=False)
         .filter(User.incomplete_q(current_terms))
         .count(),
@@ -338,6 +355,8 @@ def member_edit(request, pk):
                     "member": member, "form": form,
                 })
             updated.save()
+            if old_email and listsync.mailbox_key(old_email) != listsync.mailbox_key(updated.email):
+                listsync.queue_removal([], request.user, "a member's email address changed", addresses=[old_email])
             AuditLog.record(
                 request.user, "edit_member", target=member,
                 detail="details updated from the panel",
@@ -542,9 +561,13 @@ def member_delete(request, pk):
             f"{cascades['ratings']} own ratings, plus {others_rsvps} RSVPs and "
             f"{others_ratings} ratings by others on their events"
         )
-        member.delete()
+        with listsync.deleting(request.user, "an account was deleted") as queued:
+            member.delete()
         AuditLog.record(request.user, "delete_user", target=target, detail=detail)
         messages.success(request, f"Deleted {target}.")
+        if queued:
+            messages.warning(request, "If they're on the society's mailing list, take them off there too: their "
+                                      "address is waiting on People → Mailing list.")
         return redirect("panel:members")
 
     return render(request, "panel/member_delete_confirm.html", {
@@ -636,8 +659,12 @@ def members_cleanup(request):
     if request.method == "POST":
         count = len(candidates)
         names = ", ".join(u.email or u.username for u in candidates[:20])
-        for user in candidates:
-            user.delete()
+        with listsync.deleting(request.user, "unfinished accounts were deleted") as queued:
+            for user in candidates:
+                user.delete()
+        if queued:
+            messages.warning(request, "If any of them are on the society's mailing list, take them off there too: "
+                                      "their addresses are waiting on People → Mailing list.")
         AuditLog.record(
             request.user, "cleanup_incomplete",
             detail=f"deleted {count} account(s): {names}"[:300],
@@ -1812,11 +1839,18 @@ OVERLAPS = {
 def _earlier_send(audience, subject, to=""):
     """A send of this mailer in the last ten minutes that may have reached
     some of the same people: finished with at least one delivery, or still
-    going (or cut off). A send that reached nobody doesn't count."""
-    if audience == "address":
+    going (or cut off). A send that reached nobody doesn't count. The
+    society's mailing list holds the same people as every website audience,
+    so a send to it and a send to any of them overlap."""
+    listed = (SiteConfig.get().mailing_list_address or "").strip().lower()
+    to_list = audience == "address" and bool(listed) and to.strip().lower() == listed
+    if audience == "address" and not to_list:
         logs = MailLog.objects.filter(audience="address", recipients=to[:200])
     else:
-        logs = MailLog.objects.filter(audience__in=OVERLAPS[audience])
+        overlapping = Q(audience__in=OVERLAPS["both"] if to_list else OVERLAPS[audience])
+        if listed:
+            overlapping |= Q(audience="address", recipients__iexact=listed)
+        logs = MailLog.objects.filter(overlapping)
     reached = Q(ok=True) | Q(error=STARTED) | (~Q(audience="address") & ~Q(recipients="nobody"))
     return (logs.filter(reached, subject=subject, sent_at__gte=timezone.now() - RESEND_GUARD)
             .order_by("-sent_at").first())
@@ -1862,7 +1896,8 @@ def _send_mailer(request, config, form):
     earlier = _earlier_send(audience, subject, form.cleaned_data.get("recipient", ""))
     if earlier:
         when = f"{timezone.localtime(earlier.sent_at):%H:%M}"
-        label = services.AUDIENCE_LABELS.get(earlier.audience, earlier.audience)
+        label = (earlier.recipients if earlier.audience == "address"
+                 else services.AUDIENCE_LABELS.get(earlier.audience, earlier.audience))
         if earlier.error == STARTED:
             said = f"A send of this mailer to “{label}” started at {when} and hasn't finished, or was cut off part-way."
         elif earlier.audience == audience:
@@ -1907,12 +1942,16 @@ def _send_mailer(request, config, form):
 
 
 def _mailer_form(*args, **kwargs):
-    """A MailerForm whose audience labels carry today's counts."""
+    """A MailerForm whose audience labels carry today's counts, and whose
+    address field names the society's mailing list."""
     form = MailerForm(*args, **kwargs)
     counts = services.audience_counts()
     form.fields["audience"].choices = [
         (key, f"{label} ({counts[key]})" if key in counts else label) for key, label in services.AUDIENCES
     ]
+    listed = SiteConfig.get().mailing_list_address
+    if listed:
+        form.fields["recipient"].help_text = f"Only for “One address”. The society's mailing list is {listed}."
     return form
 
 
@@ -1977,6 +2016,13 @@ def mailer(request):
         "nav_active": "panel",
         "panel_tab": "mailer",
         "form": form,
+        "download_audiences": [(key, label) for key, label in form.fields["audience"].choices
+                               if key in services.LIST_AUDIENCES]
+                              + [(services.STOPPED, f"{services.STOPPED_LABEL} ({len(services.stopped_rows())})")],
+        "list_pages": {
+            "members": mailinglist.list_url(config.mailing_list_address, "admin", "members/list"),
+            "held": mailinglist.list_url(config.mailing_list_address, "admindb"),
+        },
         "email_live": "smtp" in settings.EMAIL_BACKEND,
         "email_from": settings.DEFAULT_FROM_EMAIL,
         "email_from_ok": settings.DEFAULT_FROM_EMAIL.rstrip("> ").lower().endswith("@srcf.net"),
@@ -1985,6 +2031,48 @@ def mailer(request):
         "event_count": services.whats_on_events().count(),
         "recent_logs": MailLog.objects.select_related("sent_by")[:5],
     })
+
+
+@portal_admin_required
+@require_POST
+def mailer_download(request):
+    """Everyone on the mailing list, for a spreadsheet or for copying into
+    the society's Mailman list: the addresses the mailer reaches for the
+    chosen audience, each inbox once, with opted-out, banned and
+    unsubscribed people left out. Every download is in the audit log."""
+    import csv
+
+    from core.csvsafe import cell
+
+    audience = request.POST.get("audience", "")
+    if audience not in services.DOWNLOADS:
+        messages.error(request, "Choose who to download first.")
+        return redirect(reverse("panel:mailer") + "#download")
+    as_text = request.POST.get("format") == "text"
+    if audience == services.STOPPED:
+        rows, label = services.stopped_rows(), services.STOPPED_LABEL
+    else:
+        rows, label = services.mailing_list_rows(audience), services.AUDIENCE_LABELS[audience]
+    name = f"{SiteConfig.get().short_name or 'society'}-mailing-list-{audience}-{timezone.localdate():%Y-%m-%d}"
+    name = "".join(char if char.isalnum() or char in "-_" else "-" for char in name).lower()
+    if as_text:
+        # One address per line: what Mailman's mass subscription box takes.
+        response = HttpResponse("".join(row["email"] + "\n" for row in rows),
+                                content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{name}.txt"'
+    else:
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="{name}.csv"'
+        response.write("\ufeff")  # so Excel reads accented names as UTF-8
+        writer = csv.writer(response)
+        writer.writerow(["email", "first name", "last name",
+                         "why" if audience == services.STOPPED else "on the list as"])
+        for row in rows:
+            writer.writerow([cell(row["email"]), cell(row["first_name"]), cell(row["last_name"]), row["source"]])
+    response["Cache-Control"] = "no-store, private"
+    AuditLog.record(request.user, "download_mailing_list", target=label,
+                    detail=f"{len(rows)} address{'es' if len(rows) != 1 else ''}, {'text' if as_text else 'CSV'}")
+    return response
 
 
 # --- audit log ---------------------------------------------------------------------------
@@ -2255,6 +2343,8 @@ def members_bulk(request):
     if action == "export":
         import csv
 
+        from core.csvsafe import cell
+
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="members.csv"'
         writer = csv.writer(response)
@@ -2262,8 +2352,8 @@ def members_bulk(request):
         current = TermsVersion.current_number()
         for m in members:
             writer.writerow([
-                m.get_full_name() or m.username, m.email,
-                m.get_college_display() if m.college else "", m.mobile,
+                cell(m.get_full_name() or m.username), cell(m.email),
+                m.get_college_display() if m.college else "", cell(m.mobile),
                 m.get_account_type_display(), m.created_at.strftime("%Y-%m-%d"),
                 m.onboarding_status(current).label,
             ])
@@ -2369,8 +2459,9 @@ def term_dates(request):
 def old_list(request):
     """The mailing list from before the website: import a spreadsheet, see
     who has moved over, download the rest."""
-    form = OldListUploadForm(request.POST or None, request.FILES or None)
-    if request.method == "POST" and form.is_valid():
+    export = request.method == "POST" and request.POST.get("export") == "csv"
+    form = OldListUploadForm(None if export else request.POST or None, None if export else request.FILES or None)
+    if request.method == "POST" and not export and form.is_valid():
         upload = form.cleaned_data["sheet"]
         try:
             entries, stats = sheets.parse_old_list(sheets.read_rows(upload))
@@ -2411,8 +2502,11 @@ def old_list(request):
         )
         return redirect("panel:old_list")
 
-    status = request.GET.get("status", "")
-    q = request.GET.get("q", "").strip()
+    filters = request.POST if export else request.GET
+    status = filters.get("status", "")
+    if status not in ("unsubscribed", "moved", "waiting"):
+        status = ""  # an unknown filter shows (and exports) everything, so say so
+    q = filters.get("q", "").strip()[:200]
     subs = services.old_list_status(list(OldSubscriber.objects.all()))
     counts = {
         "all": len(subs),
@@ -2429,11 +2523,14 @@ def old_list(request):
     if q:
         needle = q.lower()
         subs = [s for s in subs if needle in f"{s.name} {s.email} {s.college} {s.notes}".lower()]
-    if request.GET.get("export") == "csv":
+    if export:
         import csv
+
+        from core.csvsafe import cell
 
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="old-mailing-list.csv"'
+        response["Cache-Control"] = "no-store, private"
         writer = csv.writer(response)
         writer.writerow(["email", "first name", "last name", "college", "status"])
         for s in subs:
@@ -2445,7 +2542,9 @@ def old_list(request):
                 state = "on the website, opted out"
             else:
                 state = "on the website" if s.member else "not yet"
-            writer.writerow([s.email, s.first_name, s.last_name, s.college, state])
+            writer.writerow([cell(s.email), cell(s.first_name), cell(s.last_name), cell(s.college), state])
+        AuditLog.record(request.user, "export_old_list", detail=f"{len(subs)} row{'s' if len(subs) != 1 else ''}"
+                        + (f", {status}" if status else "") + (", searched" if q else ""))
         return response
     page = Paginator(subs, 100).get_page(request.GET.get("page"))
     params = request.GET.copy()
@@ -2553,3 +2652,293 @@ def _quick_recheck(request):
         run(request, full=False, trigger="button", user=request.user)
     except Exception:
         pass
+
+
+# --- the society's mailing list: which accounts are on it -----------------------------------
+
+LIST_FILTERS = (
+    ("missing", "Want the mailer, not on the list"),
+    ("stopped", "Stopped the mailer, still on the list"),
+    ("on", "On the list"),
+    ("all", "Everyone with an address"),
+)
+LIST_STALE = datetime.timedelta(days=31)
+LIST_SHRINK = 0.8  # a paste this much smaller than the copy is probably one page of several
+
+
+def _sender_address():
+    from email.utils import parseaddr
+
+    return parseaddr(settings.DEFAULT_FROM_EMAIL)[1].lower()
+
+
+def _how_to_copy(address):
+    from django.utils.html import format_html
+
+    roster = mailinglist.list_url(address, "roster")
+    if not roster:
+        return "open the list's page of members, select the whole page and copy it."
+    return format_html(
+        "sign in to the list's <a href=\"{}\" rel=\"noopener\">admin pages</a>, then open its "
+        "<a href=\"{}\" rel=\"noopener\">subscriber list</a>, which has everyone on one page (members who chose "
+        "to hide as well), select the whole page and copy it. The Membership List works too, once “Maximum number "
+        "of members to show on one page” on the list's <a href=\"{}\" rel=\"noopener\">General options</a> is "
+        "more than the list has; until then it shows a page at a time.",
+        mailinglist.list_url(address, "admin"), roster, mailinglist.list_url(address, "admin", "general"))
+
+
+def _mailing_list_page(request, form=None, shrink=None):
+    config = SiteConfig.get()
+    keys = listsync.list_keys()
+    reached = listsync.reached_keys()
+    stop = listsync.stopped_keys(reached)
+    rows = listsync.account_rows(keys, stop)
+    owed_batches, owed_addresses = listsync.owed(reached)
+    removing = sorted(set(listsync.to_remove(stop)) | set(owed_addresses))
+    show = request.GET.get("show", "missing")
+    if show not in dict(LIST_FILTERS):
+        show = "missing"
+    q = request.GET.get("q", "").strip()[:200]
+    shown = {
+        "missing": [row for row in rows if row["wants"] and not row["on_list"]],
+        "stopped": [row for row in rows if row["stopped"]],
+        "on": [row for row in rows if row["on_list"]],
+        "all": rows,
+    }[show]
+    if q:
+        needle = q.lower()
+        shown = [row for row in shown
+                 if needle in f"{row['user'].get_full_name()} {row['user'].username} {row['user'].email}".lower()]
+    page = Paginator(shown, 100).get_page(request.GET.get("page"))
+    params = request.GET.copy()
+    params.pop("page", None)
+    # the last paste of the whole list; a part pasted since only adds to it
+    updates = ListSync.objects.filter(kind=ListSync.Kind.UPDATE).select_related("created_by")
+    last_update = updates.filter(note="").first()
+    last_part = updates.exclude(note="").first()
+    if last_part and last_update and last_part.created_at < last_update.created_at:
+        last_part = None
+    since_update = ""
+    if last_update:
+        # what the copy has gained and lost since, from this page
+        added = ListMember.objects.filter(added_at__gt=last_update.created_at).count()
+        removed = max(0, last_update.count + added - ListMember.objects.count())
+        since_update = " and ".join(part for part in (
+            f"{added} added" if added else "", f"{removed} taken off" if removed else "") if part)
+    # Addresses that must come off because accounts went or moved wait until a
+    # take-off file with them in is done; a download waits a fortnight.
+    owed = None
+    if owed_addresses:
+        owed = {"addresses": owed_addresses, "batches": owed_batches[:8], "more": max(0, len(owed_batches) - 8)}
+    downloads = list(ListSync.objects.filter(kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE], done_at__isnull=True,
+                                             note="", created_at__gte=timezone.now() - datetime.timedelta(days=14))
+                     .select_related("created_by")[:6])
+    return render(request, "panel/mailing_list.html", {
+        "nav_active": "panel",
+        "panel_tab": "mailing_list",
+        "list_address": config.mailing_list_address,
+        "pages": {
+            name: mailinglist.list_url(config.mailing_list_address, view, page)
+            for name, view, page in (
+                ("subscribe", "admin", "members/add"), ("remove", "admin", "members/remove"),
+                ("members", "admin", "members/list"), ("held", "admindb", ""),
+                ("roster_privacy", "admin", "privacy/subscribing"), ("senders", "admin", "privacy/sender"),
+                ("archive", "admin", "archive"), ("general", "admin", "general"),
+                ("footer", "admin", "nondigest"),
+            )
+        },
+        "public_archive": (f"https://lists.srcf.net/pipermail/{config.mailing_list_address.split('@')[0]}/"
+                           if mailinglist.list_url(config.mailing_list_address) else ""),
+        "leave_address": mailinglist.leave_address(config.mailing_list_address),
+        "contact_email": config.contact_email,
+        "sender_address": _sender_address(),
+        "own_on_list": [address for address in {config.contact_email, _sender_address()} if address
+                        and listsync.mailbox_key(address) in keys],
+        "how_to_copy": _how_to_copy(config.mailing_list_address),
+        "last_update": last_update,
+        "last_part": last_part,
+        "update_old": bool(last_update) and timezone.now() - last_update.created_at > LIST_STALE,
+        "since_update": since_update,
+        "owed": owed,
+        "downloads": downloads,
+        "counts": listsync.summary(rows, keys, removing),
+        "filters": LIST_FILTERS,
+        "show": show,
+        "q": q,
+        "page": page,
+        "qs": params.urlencode(),
+        "form": form or ListPasteForm(),
+        "shrink": shrink,
+    })
+
+
+@portal_admin_required
+def mailing_list(request):
+    """Which website accounts are on the society's mailing list (as the
+    site last knew it), filtered, with the downloads to add the rest or take
+    off those who stopped the mailer."""
+    return _mailing_list_page(request)
+
+
+@portal_admin_required
+@require_POST
+def mailing_list_update(request):
+    """Replace (or add to) the site's copy of the list with addresses pasted
+    from Mailman's pages."""
+    from django.db import transaction
+
+    config = SiteConfig.get()
+    form = ListPasteForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Paste the list's members into the box first.")
+        return redirect(reverse("panel:mailing_list") + "#update")
+    addresses = listsync.addresses_in(form.cleaned_data["members"], config.mailing_list_address)
+    if not addresses:
+        messages.error(request, "No email addresses found in what you pasted, so nothing changed.")
+        return redirect(reverse("panel:mailing_list") + "#update")
+    partial = form.cleaned_data["partial"]
+    counted = listsync.mailman_counts(form.cleaned_data["members"])
+    if counted.get("shown") and not partial:
+        messages.error(
+            request,
+            f"That's one page of the Membership List ({counted['shown']} of its {counted['total']} members), so "
+            "nothing changed. Copy the subscriber list instead, which has everyone on one page, or tick “This is "
+            "only part of the list” to add just these.",
+        )
+        return redirect(reverse("panel:mailing_list") + "#update")
+    current = ListMember.objects.count()
+    digest = listsync.paste_digest(addresses)
+    if not partial and current and len(addresses) < current * LIST_SHRINK and form.cleaned_data["confirm"] != digest:
+        form = ListPasteForm(initial={"members": form.cleaned_data["members"], "confirm": digest})
+        messages.warning(
+            request,
+            f"That paste has {len(addresses)} address{'es' if len(addresses) != 1 else ''}, but the site's copy has "
+            f"{current}. If you copied only one page of the membership list, tick “This is only part of the list” "
+            "and paste again. If the list really has shrunk, press Update again to replace the copy.",
+        )
+        return _mailing_list_page(request, form=form, shrink=len(addresses))
+    now = timezone.now()
+    pasted = {address: listsync.mailbox_key(address) for address in addresses}
+    with transaction.atomic():
+        existing = set(ListMember.objects.values_list("email", flat=True))
+        new = [address for address in pasted if address not in existing]
+        ListMember.objects.bulk_create([
+            ListMember(email=address, key=pasted[address], source=ListMember.Source.LIST, added_at=now)
+            for address in new
+        ], ignore_conflicts=True)  # another request may have just added one
+        ListMember.objects.filter(email__in=list(pasted)).update(source=ListMember.Source.LIST)
+        gone = 0
+        if not partial:
+            gone_ids = [pk for pk, email in ListMember.objects.values_list("pk", "email") if email not in pasted]
+            gone = len(gone_ids)
+            for start in range(0, len(gone_ids), 500):
+                ListMember.objects.filter(pk__in=gone_ids[start:start + 500]).delete()
+        total = ListMember.objects.count()
+        ListSync.objects.create(kind=ListSync.Kind.UPDATE, created_by=request.user, created_at=now, count=total,
+                                note="part of the list" if partial else "")
+    AuditLog.record(request.user, "update_mailing_list", target=config.mailing_list_address,
+                    detail=f"{len(addresses)} pasted{' (part of the list)' if partial else ''}: {len(new)} new, "
+                           f"{gone} no longer on it, {total} in all")
+    messages.success(request, f"The site's copy of the list has {total} address{'es' if total != 1 else ''}: "
+                              f"{len(new)} new{'' if partial else f', {gone} no longer on it'}.")
+    expected = counted.get("shown") or counted.get("total")
+    if counted.get("hidden"):
+        hidden = counted["hidden"]
+        messages.warning(
+            request,
+            f"Mailman's subscriber list left out {hidden} member{'s' if hidden != 1 else ''} who chose to hide, "
+            "because it took you for a member, not the list's admin (you may be signed in to your own subscription "
+            "in this browser). They show here as not on the list. Copy it again from a private window, signed in "
+            "only to the list's admin pages.",
+        )
+    elif expected and len(addresses) < expected:
+        messages.warning(
+            request,
+            f"Mailman's page counted {expected} members, but what you pasted had {len(addresses)} "
+            f"address{'es' if len(addresses) != 1 else ''}. If you didn't copy the whole page, copy it again.",
+        )
+    return redirect("panel:mailing_list")
+
+
+@portal_admin_required
+@require_POST
+def mailing_list_download(request):
+    """The addresses to add to the list, or to take off it, one per line for
+    Mailman's Mass Subscription or Mass Removal box. Each download is kept,
+    so an admin can say afterwards that it was done."""
+    kind = request.POST.get("kind", "")
+    if kind not in (ListSync.Kind.ADD, ListSync.Kind.REMOVE):
+        messages.error(request, "Choose what to download.")
+        return redirect("panel:mailing_list")
+    keys = listsync.list_keys()
+    if kind == ListSync.Kind.ADD:
+        addresses = listsync.to_add(listsync.account_rows(keys, stop=set()), keys,
+                                    old_list=request.POST.get("old_list") == "1")
+    else:
+        reached = listsync.reached_keys()
+        addresses = sorted(set(listsync.to_remove(listsync.stopped_keys(reached))) | set(listsync.owed(reached)[1]))
+    if not addresses:
+        messages.info(request, "There's nobody to " + ("add." if kind == ListSync.Kind.ADD else "take off."))
+        return redirect("panel:mailing_list")
+    config = SiteConfig.get()
+    ListSync.objects.create(kind=kind, created_by=request.user, count=len(addresses), addresses=addresses)
+    AuditLog.record(request.user, f"download_list_{kind}", target=config.mailing_list_address,
+                    detail=f"{len(addresses)} address{'es' if len(addresses) != 1 else ''}"
+                           + (", old list included" if request.POST.get("old_list") == "1" else ""))
+    return _address_file(addresses, "to-add" if kind == ListSync.Kind.ADD else "to-take-off", config)
+
+
+def _address_file(addresses, what, config):
+    """Addresses one per line, as a file for Mailman's Mass Subscription or
+    Mass Removal page, which no browser or proxy keeps."""
+    name = f"{config.short_name or 'society'}-mailing-list-{what}-{timezone.localdate():%Y-%m-%d}"
+    name = "".join(char if char.isascii() and char.isalnum() or char in "-_" else "-" for char in name).lower()
+    response = HttpResponse("".join(address + "\n" for address in addresses),
+                            content_type="text/plain; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{name}.txt"'
+    response["Cache-Control"] = "no-store, private"
+    return response
+
+
+@portal_admin_required
+@require_POST
+def mailing_list_forget(request, pk):
+    """A download that was never used: forget it, so it stops waiting to be
+    marked done. (Addresses owed because accounts went can't be forgotten.)"""
+    batch = get_object_or_404(ListSync, pk=pk, kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE], note="",
+                              done_at__isnull=True)
+    batch.delete()
+    AuditLog.record(request.user, "forget_list_download", target=SiteConfig.get().mailing_list_address,
+                    detail=f"{batch.count} address{'es' if batch.count != 1 else ''} to "
+                           + ("add" if batch.kind == ListSync.Kind.ADD else "take off"))
+    messages.success(request, "Forgotten: that download no longer waits to be marked done.")
+    return redirect("panel:mailing_list")
+
+
+@portal_admin_required
+@require_POST
+def mailing_list_done(request, pk):
+    """An admin added (or took off) a downloaded batch on Mailman: record it
+    in the site's copy, so the page shows it before the next update."""
+    batch = get_object_or_404(ListSync, pk=pk, kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE])
+    now = timezone.now()
+    addresses = list(dict.fromkeys(address.strip().lower() for address in batch.addresses if address.strip()))
+    with transaction.atomic():
+        # claimed once, however many times the button is pressed
+        if not ListSync.objects.filter(pk=batch.pk, done_at__isnull=True).update(done_at=now, done_by=request.user):
+            messages.info(request, "That was already recorded.")
+            return redirect("panel:mailing_list")
+        if batch.kind == ListSync.Kind.ADD:
+            ListMember.objects.bulk_create([
+                ListMember(email=address, key=listsync.mailbox_key(address), source=ListMember.Source.SITE,
+                           added_at=now)
+                for address in addresses
+            ], ignore_conflicts=True)  # some may be in the copy already
+        else:
+            ListMember.objects.filter(email__in=addresses).delete()
+            listsync.close_owed(addresses, listsync.reached_keys(), request.user, now)
+    AuditLog.record(request.user, f"list_{batch.kind}_done", target=SiteConfig.get().mailing_list_address,
+                    detail=f"{batch.count} address{'es' if batch.count != 1 else ''}")
+    messages.success(request, f"Recorded: the {batch.count} address{'es' if batch.count != 1 else ''} in that file "
+                              + ("are on the list now." if batch.kind == ListSync.Kind.ADD else "are off the list now."))
+    return redirect("panel:mailing_list")

@@ -200,6 +200,99 @@ Do these once, in order, between steps 2 and 3.
   `MSS_QUOTA_MB` (the society's disk quota, for the storage gauge) and
   `MSS_PUBLIC_HTML` (only if Apache's web folder isn't the one holding
   `DJANGO_STATIC_ROOT`).
+- **The society's addresses.** The mailing list is `mss-members@srcf.net`
+  (a Mailman 2.1 list; its admin pages are at
+  https://lists.srcf.net/mailman/admin/mss-members, behind the SRCF login
+  and then the list's own admin password, which the SRCF emailed to
+  mss-admins when the list was made and which the control panel can reset).
+  `mss-admins@srcf.net` reaches every admin of the mss account and owns the
+  list. The Mailer's "One address" now starts on the list (a migration
+  fills it in), and the site sends from `MSS <mss-admins@srcf.net>` unless
+  `.env` names another sender.
+- **Download the website's mailing addresses.** Admin → Mailer gives
+  everyone the website mails, for an audience (website members, the old
+  list, or both, each inbox once; opted-out, banned and unsubscribed people
+  are left out), as a spreadsheet with names or as addresses only, one per
+  line. A fifth choice, "People who stopped the mailer", lists those who
+  opted out, were banned or unsubscribed. Every download is recorded in the
+  audit log, and so is a download of the old list's CSV. These files are
+  people's personal details: keep them to committee business and delete
+  them afterwards.
+- **Admin → People → Mailing list** shows which website accounts are on
+  `mss-members`. The site can't read Mailman itself (SRCF lists have no
+  export and sit behind the SRCF login), so a list admin signs in to the
+  list's admin pages, opens its subscriber list
+  (https://lists.srcf.net/mailman/roster/mss-members: everyone on one page,
+  members who chose to hide included), copies the whole page and pastes it
+  into the site, which picks out the addresses ("someone at example.com"
+  too) and leaves out the list's own. (The Membership List works as well
+  once General options → "Maximum number of members to show on one page" is
+  more than the list has; one page of a split Membership List is refused.
+  Don't use Mailman's "who" email command: it sends the list's admin
+  password by email.) The page checks the paste against Mailman's own count
+  and says if anything is missing.
+  That copy is "the most recent list": each account then shows as on it,
+  not on it, or stopped the mailer but still on it, and the Members page
+  has the same badges and a "Not on the mailing list" filter. "Download
+  the addresses to add" gives everyone who gets the mailer but isn't on
+  the list (and, ticked, the old list's people), for Mailman's Mass
+  Subscription page; "Mark them as added" then records them ("Not used"
+  forgets a download that wasn't). Taking off works the same way through
+  Mass Removal, for everyone the mailer mustn't reach: accounts that opted
+  out, are banned or were closed, and old-list people who unsubscribed (a
+  Cambridge address's two spellings count as one mailbox throughout).
+  Deleting an account, however it's deleted, queues both spellings of its
+  address to take off, whether or not the site's copy has it; so does a
+  member moving to a new address, when the list may have the old one, and
+  someone only on the list asking to leave on the unsubscribe page (the
+  address is emailed to say so). These wait at the top of the page and go
+  into "Download the addresses to take off"; marking that file done clears
+  the ones it had. Nothing the mailer still reaches, through an account or
+  the old list, is ever taken off. A paste much smaller than the last one
+  asks first, in case it was only one page; a part of the list pasted with
+  the box ticked adds to the copy without counting as a fresh one.
+- **Setting up `mss-members` (once, before anyone is added).** The
+  Mailing list page links to each of these:
+  1. Privacy options → Subscription rules: "What steps are required for
+     subscription?" → Confirm and approve (otherwise anyone can join by
+     emailing mss-members-request), and "Who can view subscription list?"
+     → List admin only.
+  2. Privacy options → Sender filters: "By default, should new list member
+     postings be moderated?" → Yes, and "Action to take when a moderated
+     member posts to the list" → Reject. Leave "Action to take for postings
+     from non-members for which no explicit action is defined" on Hold. For
+     anyone already on the list: Membership List → "Set everyone's
+     moderation bit" → On → Set.
+  3. Archiving options: "Is archive file source for public or private
+     archival?" → private, then check
+     https://lists.srcf.net/pipermail/mss-members/ no longer opens without
+     a login. (It opened for anyone on 12 Oct 2026, and the What's On lists
+     members-only events.)
+  4. General options: "Send monthly password reminders?" → No.
+  5. Non-digest options: add to "Footer added to mail sent to regular list
+     members": To leave this list, email mss-members-request@srcf.net from
+     the address this came to, with the subject unsubscribe, and reply to
+     the confirmation it sends. (The list's own pages need an SRCF or
+     University login, which some old-list people don't have.)
+  6. Keep the mailer's own addresses off the list: the one it sends from
+     (`mss-admins@srcf.net` unless `.env` names another) and the society's
+     contact address (its Reply-To). Mailman treats a post from a member's
+     address as that member's, so it would skip approval, or be rejected
+     once members are moderated. The Mailing list page warns if either
+     turns up.
+- **Posting the mailer to the list.** Send with "One address" (it starts on
+  the list). Mailman holds it, because the site isn't a subscriber, and
+  emails mss-admins. The waiting-posts page
+  (https://lists.srcf.net/mailman/admindb/mss-members) groups held posts by
+  sender, and Accept there releases every post held from that address. If
+  yours (check its subject and time) is the only one, choose Accept; if
+  anything else is held from it, open yours by its number, choose
+  Approve, and Discard the rest. Leave the boxes to add the sender to a
+  filter or ban it unticked: anyone can forge a From address, so never add
+  the site's address to the list's accepted senders. The site
+  won't send the same mailer to the list and to a website audience within
+  ten minutes, but a held post can be approved much later, so send each
+  What's On to the list or to the website's audiences, not both.
 - **gunicorn 23.** Step 2's `pip install` brings it in. With
   `header_map = "drop"` in `gunicorn.conf.py` it ignores look-alike
   headers such as `X_MSS_Remote_User`, which older gunicorn read as the Raven
@@ -255,11 +348,13 @@ Do these once, in order, between steps 2 and 3.
   the server and has a "Send a test to me" button. Delivery needs
   `REAL_EMAIL=true` in `.env` (mail then goes through the SRCF's own mail
   server on localhost); without it "Send" only writes to the log. Set
-  `DEFAULT_FROM_EMAIL="MSS <mss-webmaster@srcf.net>"` (quoted: `.env` is read
+  `DEFAULT_FROM_EMAIL="MSS <mss-admins@srcf.net>"` (quoted: `.env` is read
   by bash and an unquoted `<` stops the service from starting; this is also
   the fallback when the variable is unset): mail from the SRCF claiming to
   come from another domain is likely to be refused or junked by Gmail and
-  Outlook. Watch "Recent sends" after the first real send: a failed batch
+  Outlook. (`mss-webmaster@srcf.net`, the address earlier versions used, is
+  by default an alias of `mss-admins@srcf.net`, so either reaches the
+  admins.) Watch "Recent sends" after the first real send: a failed batch
   means the mail server refused it, and the error text says why.
 - **Pictures on pages.** Admin → Content → Pictures takes uploads (shrunk
   on the way in, served to everyone) and shows the line to paste into a

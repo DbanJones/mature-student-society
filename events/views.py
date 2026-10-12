@@ -505,13 +505,16 @@ def export(request, slug):
     ]
 
     if request.GET.get("format") == "csv":
+        from core.csvsafe import cell
+
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         filename = f"{slugify(event.title) or 'event'}-attendees.csv"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
         writer.writerow(["Name", "College", "Mobile"])
         for row in rows:
-            writer.writerow([row["name"], row["college"], row["mobile"]])
+            # names are free text: never let a spreadsheet run one as a formula
+            writer.writerow([cell(row["name"]), row["college"], row["mobile"]])
         return response
 
     if request.GET.get("format") == "vcf":

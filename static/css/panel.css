@@ -98,6 +98,23 @@ table.data input[type="checkbox"] { width: auto; }
 .picture-card figcaption { font-size: .9rem; }
 .picture-card input[readonly] { margin-top: .4rem; font-family: ui-monospace, monospace; font-size: .78rem; }
 
+/* the Mailer tab's download form */
+.download-form p { margin: 0 0 .7rem; }
+.download-form select { width: auto; max-width: 100%; }
+
+/* --- the society's mailing list ------------------------------------------- */
+.ml-pending { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem;
+  border-top: 1px solid var(--line); padding-top: .8rem; margin-top: .8rem; }
+.ml-pending > p { flex: 1 1 20rem; }
+.ml-pending code { overflow-wrap: anywhere; }
+.ml-pending-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ml-pending-actions form { margin: 0; }
+a.ml-tile { color: inherit; text-decoration: none; }
+a.ml-tile:hover, a.ml-tile:focus-visible { border-color: var(--sage); }
+.ml-tile.ml-attention { border-top: 3px solid var(--amber); }
+.ml-checklist li { margin-bottom: .45rem; }
+.ml-reasons { margin: .3rem 0 0; padding-left: 1.2rem; }
+
 /* --- site health ---------------------------------------------------------- */
 /* Every status has a shape as well as a colour (see _health_icon.html), and
    the history strip's bars grow with severity, so none of it relies on

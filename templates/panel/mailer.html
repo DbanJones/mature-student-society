@@ -33,8 +33,14 @@
   <strong>Both</strong> reaches each person once. Members who are banned or opted out are never mailed, whichever
   list they are on. Every copy goes bcc'd in batches of {{ batch_size }}, addressed to the society
   ({{ email_from }}), so nobody sees anyone else's address; it carries an unsubscribe line, and you are sent
-  a copy of each version (members' and old list's, when sending to both). “Sent” means the SRCF mail server took it. <strong>One address</strong> is for a mailing list or a
-  check. The same mailer can't go to overlapping audiences twice within ten minutes.
+  a copy of each version (members' and old list's, when sending to both). “Sent” means the SRCF mail server took it.
+  <strong>One address</strong> is for the society's mailing list{% if site_config.mailing_list_address %}
+  ({{ site_config.mailing_list_address }}), which sends it on to its own subscribers{% if list_pages.held %}
+  once a list admin approves it on the list's <a href="{{ list_pages.held }}" rel="noopener">waiting posts</a>
+  page{% endif %}{% endif %}, or for a check. The same mailer can't go to overlapping audiences twice within ten
+  minutes, and the society's list counts as overlapping every website audience. A post to the list waits for
+  approval, though, so after that anyone on both would get it twice: send each mailer to the list or to the
+  website's audiences, not both.
 </p>
 
 {% if site_config.email_tone %}
@@ -70,6 +76,43 @@
       events, dates and links are kept exactly; you review before sending.
     </p>
   </form>
+</div>
+
+<div class="card" id="download" style="margin-top:1.2rem">
+  <h2>Download the website's mailing addresses</h2>
+  <p class="small muted">
+    Who the website mails, as a send to that audience would go: each inbox once, with members who opted out or
+    are banned, and anyone who unsubscribed, left out. The spreadsheet has names and says where each address
+    comes from; “Addresses only” has one address per line.
+    {% if site_config.mailing_list_address %}This is the website's own list. {{ site_config.mailing_list_address }}
+    keeps its own subscribers{% if list_pages.members %}, which are on its
+    <a href="{{ list_pages.members }}" rel="noopener">membership list</a> (Mailman can't export them){% endif %}.{% endif %}
+  </p>
+  <form method="post" action="{% url 'panel:mailer_download' %}" class="download-form">
+    {% csrf_token %}
+    <p>
+      <label for="download-audience">Who</label>
+      <select name="audience" id="download-audience">
+        {% for key, label in download_audiences %}
+          <option value="{{ key }}"{% if key == "both" %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </p>
+    <div class="actions">
+      <button type="submit" name="format" value="csv" class="btn btn-small">Spreadsheet (CSV)</button>
+      <button type="submit" name="format" value="text" class="btn btn-small btn-ghost">Addresses only</button>
+    </div>
+  </form>
+  {% if site_config.mailing_list_address %}
+    <p class="small" style="margin:.8rem 0 0">
+      To see which accounts are on {{ site_config.mailing_list_address }}, add the ones who aren't and take off the
+      ones who stopped, use <a href="{% url 'panel:mailing_list' %}">People → Mailing list</a>.
+    </p>
+  {% endif %}
+  <p class="small muted" style="margin:.6rem 0 0">
+    These are people's personal details: keep the file to committee business and delete it when you're done.
+    Every download is recorded in the audit log.
+  </p>
 </div>
 
 <h2>Recent sends</h2>

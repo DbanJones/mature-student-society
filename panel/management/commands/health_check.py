@@ -104,10 +104,12 @@ class Command(BaseCommand):
 
     def prune(self):
         """Keep every run from the last two weeks, then the worst run of each
-        day for six months; old fixed errors, slow requests and hourly
-        counts; and expired login sessions."""
+        day for six months; old fixed errors, slow requests, hourly counts
+        and mailing-list downloads; and expired login sessions."""
+        from django.db.models import Q
+
         from panel.healthchecks.core import SEVERITY
-        from panel.models import ErrorEvent, HealthSnapshot, RequestStats, SlowRequest
+        from panel.models import ErrorEvent, HealthSnapshot, ListSync, RequestStats, SlowRequest
 
         now = timezone.now()
         newest_full = HealthSnapshot.objects.filter(full=True).values_list("pk", flat=True).first()
@@ -128,6 +130,12 @@ class Command(BaseCommand):
             "fixed errors": ErrorEvent.objects.filter(resolved_at__lt=now - datetime.timedelta(days=90)).delete()[0],
             "slow requests": SlowRequest.objects.filter(at__lt=now - datetime.timedelta(days=30)).delete()[0],
             "hourly counts": RequestStats.objects.filter(hour__lt=now - KEEP_DAILY).delete()[0],
+            # downloads of addresses to add to or take off the mailing list hold people's addresses;
+            # addresses still to come off because an account went are kept until they have
+            "mailing list downloads": ListSync.objects.filter(
+                kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE],
+                created_at__lt=now - datetime.timedelta(days=90),
+            ).exclude(Q(done_at__isnull=True) & ~Q(note="")).delete()[0],
         }
         call_command("clearsessions")
         self._trim_timeouts()

@@ -167,6 +167,16 @@ class DateRotaAndVisibilityTests(PollTestCase):
         csv_response = self.client.get(roster + "?format=csv")
         self.assertIn("Stall 10-12,Test Ali1", csv_response.content.decode())
 
+    def test_the_rota_csv_never_lets_a_name_or_slot_run_as_a_formula(self):
+        poll, (slot,) = self.make_poll("volunteers", [("=SUM(1,2)", {"capacity": 2})], allow_multiple=True)
+        type(self.alice).objects.filter(pk=self.alice.pk).update(first_name="@cmd")
+        self.alice.refresh_from_db()
+        self.vote(self.alice, poll, slot)
+        self.client.force_login(self.host)
+        body = self.client.get(reverse("polls:roster", args=[poll.pk]) + "?format=csv").content.decode()
+        self.assertIn("'=SUM(1,2)", body)
+        self.assertIn("'@cmd", body)
+
     def test_results_hidden_until_close_when_asked(self):
         poll, (a, b) = self.make_poll("venue", ["A", "B"], show_results="after_close")
         self.vote(self.alice, poll, a)

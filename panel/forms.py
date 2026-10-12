@@ -52,7 +52,7 @@ class MailerForm(forms.Form):
             ("old", "The old mailing list, everyone still on it"),
             ("old_new", "The old mailing list, only those not yet on the website"),
             ("both", "Both: website members and the old list, each person once"),
-            ("address", "One address (a mailing list, or a check)"),
+            ("address", "One address: the society's mailing list, or a check"),
         ],  # the view adds today's counts to the labels
     )
     recipient = forms.CharField(required=False, label="Address", help_text="Only for “One address”.")
@@ -448,3 +448,17 @@ class OldListUploadForm(forms.Form):
         if not sheet.name.lower().endswith((".xlsx", ".csv", ".txt")):
             raise forms.ValidationError("Upload an .xlsx or .csv file.")
         return sheet
+
+
+class ListPasteForm(forms.Form):
+    """The society's list's members, copied from Mailman's pages."""
+
+    members = forms.CharField(
+        label="The list's members, copied from Mailman",
+        widget=forms.Textarea(attrs={"rows": 8, "spellcheck": "false", "autocomplete": "off"}),
+        max_length=2_000_000,
+    )
+    partial = forms.BooleanField(
+        required=False, label="This is only part of the list: add these to the site's copy, don't replace it",
+    )
+    confirm = forms.CharField(required=False, widget=forms.HiddenInput, max_length=64)  # the paste's fingerprint

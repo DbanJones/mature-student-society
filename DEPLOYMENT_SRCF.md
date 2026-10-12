@@ -73,7 +73,7 @@ DB_PASSWORD=<from control.srcf.net>
 DB_HOST=postgres
 RAVEN_MODE=header
 REAL_EMAIL=true
-DEFAULT_FROM_EMAIL="MSS <<soc>-webmaster@srcf.net>"
+DEFAULT_FROM_EMAIL="MSS <<soc>-admins@srcf.net>"
 EOF
 chmod 600 /societies/<soc>/portal/.env
 ```
@@ -268,9 +268,11 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   `EMAIL_HOST=localhost`) straight to every member with an email address,
   bcc'd in batches of 50 so no address is shown to anyone; members opt out
   on their profile. Group web scripts' mail appears from
-  `<soc>-webmaster@srcf.net` by default; use that (or another srcf.net
-  address the society owns) as `DEFAULT_FROM_EMAIL`, since mail sent from
-  the SRCF in another domain's name tends to fail SPF/DMARC checks. The
+  `<soc>-webmaster@srcf.net` by default, which is an alias of
+  `<soc>-admins@srcf.net` (every admin of the society account); use
+  `<soc>-admins@srcf.net` as `DEFAULT_FROM_EMAIL` (the site's fallback), since
+  mail sent from the SRCF in another domain's name tends to fail SPF/DMARC
+  checks. The
   Mailer tab says whether `REAL_EMAIL` is on and has a "Send a test to me"
   button. After the first real send, look at the tab's "Recent sends" table:
   a failed batch means the mail server refused it (the SRCF may rate-limit
@@ -278,9 +280,23 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 - The society's old mailing list (a spreadsheet) is imported once from
   Admin → People → Old mailing list; the mailer can then reach those people
   too, and the page shows who has since joined the website.
-- A Mailman list is optional: the Mailer tab's "One address" option posts to
-  one, in which case the list must accept mail from `DEFAULT_FROM_EMAIL`
-  (Privacy options → Sender filters at https://lists.srcf.net).
+- The society's mailing list is `mss-members@srcf.net` (SRCF lists are
+  Mailman 2.1, administered at https://lists.srcf.net/mailman/admin/<list>,
+  owned by `<soc>-admins@srcf.net`). Admin → People → Mailing list keeps the
+  site's copy of its members (pasted from Mailman's pages), shows which
+  accounts are on it and gives the addresses to add (Mass Subscription) or
+  take off (Mass Removal); deleted accounts' addresses wait there to come
+  off too. Set the list up once before anyone is added: subscription by
+  confirm-and-approve, roster admin-only, members moderated (announce-only),
+  non-member posts on Hold, the archive private, no password reminders, a
+  footer saying how to leave by email, and the society's own addresses
+  unsubscribed; the page and UPGRADING.md list each setting. The Mailer tab's "One address" posts
+  to the list; Mailman holds the post (the site isn't a subscriber) until a
+  list admin approves it at https://lists.srcf.net/mailman/admindb/<list>
+  (Accept there releases every post held from that sender: if anything
+  else is held, Approve yours on its own page and Discard the rest).
+  Never put `DEFAULT_FROM_EMAIL` in accept_these_nonmembers instead: a From
+  address can be forged by anyone.
 
 ## 10. Custom domain (cambridgematuresoc.com)
 

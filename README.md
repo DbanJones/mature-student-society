@@ -54,6 +54,8 @@ Run the test suite:
 | `/me/` | Member dashboard |
 | `/accounts/…` | Login (Raven / associate), profile, waitlist, WhatsApp invite |
 | `/admin/` | Society admin panel (approvals, members, stats, mailer, audit) |
+| `/admin/people/mailing-list/` | Which accounts are on the society's mailing list, and the addresses to add or take off |
+| `/admin/mailer/` | The What's On mailer, and the website's mailing addresses to download (CSV, or one per line for Mailman) |
 | `/admin/health/` | Site health: 23 checks with what to do about each, a 30-day history, "Run all checks" |
 | `/healthz` | Answers `ok` while the site and its database work, for an outside uptime monitor |
 | `/dj-admin/` | Django admin (superusers/tech officer only) |

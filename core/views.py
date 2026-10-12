@@ -28,6 +28,7 @@ from core.forms import SitePageContentForm
 from core.models import (
     Activity,
     CommitteeMember,
+    SiteConfig,
     SitePage,
     SitePageRevision,
     TermsVersion,
@@ -181,15 +182,45 @@ def _allow(key, limit, seconds):
         return True
 
 
+def _only_on_the_list(email):
+    """Someone on the society's list who has no account and isn't on the old
+    list: the website's mailer never reached them, but the page promised the
+    committee would take them off the list, so their address waits on Admin
+    > People > Mailing list. As with everything here, the address itself is
+    told (anyone can type any address in)."""
+    from panel import listsync
+    from panel.models import ListMember, ListSync
+
+    if not ListMember.objects.filter(key=listsync.mailbox_key(email)).exists():
+        return
+    waiting = ListSync.objects.filter(kind=ListSync.Kind.REMOVE, done_at__isnull=True).values_list("addresses", flat=True)
+    if any(email in addresses for addresses in waiting):
+        return  # already waiting
+    if listsync.queue_removal([], None, "someone asked to leave on the website's unsubscribe page",
+                              addresses=[email]):
+        try:
+            send_mail(
+                "You asked to leave the society's mailing list",
+                f"Someone asked, on the website's unsubscribe page, for this address ({email}) to come off the "
+                f"society's mailing list. The committee will take it off when it next tidies the list.\n\n"
+                f"If that wasn't you, reply to this email and they'll leave you on it.\n",
+                None, [email],
+            )
+        except Exception:
+            logger.warning("Could not send the list-leaving confirmation", exc_info=True)
+
+
 def unsubscribe(request):
     """Stop the What's On mailer for an address: a member's profile setting
     and the old mailing list both. Anyone can ask for any address (there
     is no login), so the address itself is told by email about every
     change, with a link that undoes exactly what was changed; an address on
     neither list gets the same page and no mail."""
+    from core.mailinglist import leave_note
     from panel.models import OldSubscriber
 
     done, email = False, ""
+    list_note = leave_note(SiteConfig.get().mailing_list_address)
     if request.method == "POST":
         if not _allow(f"unsubscribe-rate:{client_ip(request)}", UNSUBSCRIBES_PER_MINUTE, 60):
             return HttpResponse("Too many requests; try again in a minute.", status=429,
@@ -207,16 +238,20 @@ def unsubscribe(request):
             rows = OldSubscriber.objects.filter(email__in=emails, unsubscribed_at__isnull=True)
             row_ids = list(rows.values_list("pk", flat=True))
             rows.update(unsubscribed_at=now)
+            if not user_ids and not row_ids and list_note:
+                _only_on_the_list(email)
             if user_ids or row_ids:
                 token = signing.dumps(
                     {"e": email, "t": now.isoformat(), "u": user_ids, "o": row_ids},
                     salt=RESUBSCRIBE_SALT, compress=True,
                 )
                 undo = absolute_url(request, reverse("core:resubscribe", args=[token]))
+                also = f"{list_note}\n\n" if list_note else ""
                 try:
                     send_mail(
                         "You've been unsubscribed from the What's On mailer",
-                        f"This address ({email}) won't get the society's What's On mailer any more.\n\n"
+                        f"This address ({email}) won't get the website's What's On mailer any more.\n\n"
+                        f"{also}"
                         f"If that wasn't you, or you change your mind, put it back with this link "
                         f"(it works for {RESUBSCRIBE_DAYS} days):\n{undo}\n",
                         None, [email],
@@ -224,7 +259,7 @@ def unsubscribe(request):
                 except Exception:
                     logger.warning("Could not send the unsubscribe confirmation", exc_info=True)
             done = True
-    return render(request, "core/unsubscribe.html", {"done": done, "email": email})
+    return render(request, "core/unsubscribe.html", {"done": done, "email": email, "list_note": list_note})
 
 
 def resubscribe(request, token):

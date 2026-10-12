@@ -21,11 +21,24 @@
   <label class="check-inline"><input type="checkbox" name="admin" value="1" {% if only_admins %}checked{% endif %}> Admins only</label>
   <label class="check-inline"><input type="checkbox" name="banned" value="1" {% if only_banned %}checked{% endif %}> Banned only</label>
   <label class="check-inline"><input type="checkbox" name="incomplete" value="1" {% if only_incomplete %}checked{% endif %}> Unfinished sign-ups</label>
+  <label class="check-inline"><input type="checkbox" name="unlisted" value="1" {% if only_unlisted %}checked{% endif %}> Not on the mailing list</label>
   <button type="submit" class="btn btn-small">Filter</button>
-  {% if q or type_filter or only_admins or only_banned or only_incomplete %}
+  {% if q or type_filter or only_admins or only_banned or only_incomplete or only_unlisted %}
     <a class="btn btn-small btn-ghost" href="{% url 'panel:members' %}">Clear</a>
   {% endif %}
 </form>
+
+{% if only_unlisted and not list_known %}
+  <div class="flash flash-info" style="margin:0 0 1rem">
+    The site doesn't know who is on the mailing list yet, so everyone who gets the mailer is shown.
+    Paste the list's members on <a href="{% url 'panel:mailing_list' %}">People → Mailing list</a> first.
+  </div>
+{% elif only_unlisted %}
+  <p class="small muted" style="margin:0 0 1rem">
+    Everyone shown gets the website's mailer but isn't on the society's mailing list.
+    <a href="{% url 'panel:mailing_list' %}">People → Mailing list</a> downloads their addresses to add.
+  </p>
+{% endif %}
 
 {% if incomplete_count %}
   <p class="small muted" style="margin:.8rem 0 0">
@@ -98,6 +111,9 @@
               {% if member.is_banned %}<span class="badge badge-danger">Banned</span>{% endif %}
               {% if member.is_shadow_banned %}<span class="badge badge-danger">Shadow-banned</span>{% endif %}
               {% if member.messaging == 'muted' %}<span class="badge badge-danger">Muted</span>{% elif member.messaging == 'enabled' and not member.is_portal_admin %}<span class="badge badge-ok">Messaging on</span>{% endif %}
+              {% if member.list_stopped %}<span class="badge badge-warn" title="Stopped the website's mailer, but still on the society's mailing list">Still on the mailing list</span>
+              {% elif member.on_list %}<span class="badge badge-ok" title="On the society's mailing list, as the site last knew it">On the mailing list</span>
+              {% elif member.on_list is False and member.gets_mailer %}<span class="badge badge-warn" title="Gets the website's mailer but isn't on the society's mailing list">Not on the mailing list</span>{% endif %}
             </td>
             <td>
               <div class="row-actions">

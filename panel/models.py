@@ -50,7 +50,9 @@ class AuditLog(models.Model):
 
     @classmethod
     def record(cls, actor, action, target="", detail=""):
-        cls.objects.create(actor=actor, action=action, target=str(target), detail=detail)
+        # Cut to the columns' sizes: strict MySQL would otherwise refuse the row.
+        cls.objects.create(actor=actor, action=str(action)[:60], target=str(target)[:200],
+                           detail=str(detail)[:300])
 
 
 class OldSubscriber(models.Model):
@@ -211,3 +213,58 @@ class SlowRequest(models.Model):
 
     class Meta:
         ordering = ["-at"]
+
+
+# --- the society's mailing list ---------------------------------------------------------------
+
+class ListMember(models.Model):
+    """An address on the society's Mailman list, as far as the site knows:
+    from an admin's latest paste of the list's members (Admin > People >
+    Mailing list), or added since then by a download an admin marked as
+    done. Mailman is the truth; this is the site's most recent copy."""
+
+    class Source(models.TextChoices):
+        LIST = "list", "Copied from the list"
+        SITE = "site", "Added from the website"
+
+    email = models.EmailField(unique=True, help_text="As on the list, lower-cased.")
+    key = models.CharField(max_length=254, db_index=True,
+                           help_text="The mailbox it belongs to (a Cambridge address's two spellings are one).")
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.LIST)
+    added_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["email"]
+
+    def __str__(self):
+        return self.email
+
+
+class ListSync(models.Model):
+    """A change to the site's copy of the list: an update pasted from
+    Mailman, or addresses downloaded to add to it or take off it, and when
+    an admin said that was done."""
+
+    class Kind(models.TextChoices):
+        UPDATE = "update", "Updated from the list"
+        ADD = "add", "Downloaded to add"
+        REMOVE = "remove", "Downloaded to take off"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+    count = models.PositiveIntegerField(default=0)
+    addresses = models.JSONField(default=list, blank=True)
+    note = models.CharField(max_length=200, blank=True, help_text="Why, when it wasn't a download (an account deleted).")
+    done_at = models.DateTimeField(null=True, blank=True)
+    done_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} {self.created_at:%Y-%m-%d %H:%M}: {self.count}"

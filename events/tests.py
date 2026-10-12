@@ -218,6 +218,13 @@ class PermissionTests(EventTestCase):
         self.assertIn("Member Tester", body)
         self.assertIn(self.member.mobile, body)
 
+    def test_export_csv_never_lets_a_name_run_as_a_formula(self):
+        type(self.member).objects.filter(pk=self.member.pk).update(first_name='=HYPERLINK("https://x.example","y")')
+        self.client.force_login(self.creator)
+        body = self.client.get(reverse("events:export", args=[self.public_event.slug]), {"format": "csv"}).content.decode()
+        self.assertIn("'=HYPERLINK", body)
+        self.assertNotIn('\n"=HYPERLINK', body)
+
 
 class RSVPTests(EventTestCase):
     def rsvp_url(self, event):

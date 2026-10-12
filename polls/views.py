@@ -226,12 +226,14 @@ def roster(request, pk):
         )
         writer = csv.writer(response)
         writer.writerow(["Slot", "Name", "College", "Mobile", "Email"])
+        from core.csvsafe import cell
+
         for slot in slots:
             for person in slot["people"]:
                 writer.writerow([
-                    slot["option"].label, person.get_full_name() or person.username,
+                    cell(slot["option"].label), cell(person.get_full_name() or person.username),
                     person.get_college_display() if person.college else "",
-                    person.mobile, person.email,
+                    person.mobile, cell(person.email),
                 ])
         return response
     paste = "\n".join(

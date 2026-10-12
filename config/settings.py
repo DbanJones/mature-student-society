@@ -286,8 +286,11 @@ if env_bool("REAL_EMAIL", default=False):
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+# The society's own addresses: mss-admins@srcf.net reaches the admins of the
+# mailing list (so replies and bounces find a person), and the list itself,
+# mss-members@srcf.net, is SiteConfig.mailing_list_address.
 DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "MSS <mss-webmaster@srcf.net>"
+    "DEFAULT_FROM_EMAIL", "MSS <mss-admins@srcf.net>"
 )
 
 # --- Logging ------------------------------------------------------------------

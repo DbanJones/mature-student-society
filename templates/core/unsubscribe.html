@@ -25,12 +25,14 @@
       If that address was on our list, it gets an email with a link to undo this. Members can also turn
       the mailer on or off with “Email me the What's On mailer” on their profile.
     </p>
+    {% if list_note %}<p class="small">{{ list_note }}</p>{% endif %}
   {% else %}
     <h1>Stop the What's On mailer</h1>
     <p class="muted">
       Enter the address the mailer reaches you at. Members can also untick “Email me the What's On
       mailer” on their profile.
     </p>
+    {% if list_note %}<p class="small muted">{{ list_note }}</p>{% endif %}
     <form method="post">
       {% csrf_token %}
       <p><label for="id_email">Email address</label> <input type="email" name="email" id="id_email" required></p>

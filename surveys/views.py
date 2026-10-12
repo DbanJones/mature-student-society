@@ -160,10 +160,10 @@ def results(request, slug):
 
 
 def _cell(text):
-    """Text safe to open in a spreadsheet: a leading =, +, -, @, tab or
-    return would otherwise be run as a formula."""
-    text = str(text or "")
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+    """Text safe to open in a spreadsheet (core.csvsafe)."""
+    from core.csvsafe import cell
+
+    return cell(text or "")
 
 
 def _csv(survey):

@@ -55,9 +55,9 @@ class SiteConfig(models.Model):
     about_text = models.TextField(blank=True, help_text="Markdown; shown on the public About page.")
     contact_email = models.EmailField(default="maturesoc@cambridgesu.co.uk")
     mailing_list_address = models.EmailField(
-        default="", blank=True,
-        help_text="Optional: a mailing list the What's On mailer can also post to "
-                  "(Mailer → “One address”). The mailer reaches members directly.",
+        default="mss-members@srcf.net", blank=True,
+        help_text="The society's mailing list, which the What's On mailer can post to "
+                  "(Mailer → “One address”). The mailer also reaches members directly.",
     )
     whatsapp_group_link = models.URLField(
         blank=True,

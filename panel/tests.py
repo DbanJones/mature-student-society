@@ -1981,7 +1981,7 @@ class OldListTests(TestCase):
         waiting = self.client.get(reverse("panel:old_list") + "?status=waiting")
         self.assertContains(waiting, "vr45@cam.ac.uk")
         self.assertNotContains(waiting, "ss123@cam.ac.uk")
-        export = self.client.get(reverse("panel:old_list") + "?status=waiting&export=csv")
+        export = self.client.post(reverse("panel:old_list"), {"export": "csv", "status": "waiting"})
         self.assertEqual(export["Content-Type"], "text/csv; charset=utf-8")
         self.assertIn("someone@gmail.com", export.content.decode())
         self.assertNotIn("ss123@cam.ac.uk", export.content.decode())

@@ -716,8 +716,8 @@ def email_setup(ctx):
         return Result(
             "warn", f"Mail claims to come from {domain}, which other mail servers may treat as forged and junk.",
             metric=metric, fix="Tell the webmaster.", who="webmaster", details=details,
-            webmaster=f"Set DEFAULT_FROM_EMAIL to an @srcf.net address ({UPGRADING}); keep the society's own "
-                      "address as the reply-to.")
+            webmaster=f"Set DEFAULT_FROM_EMAIL=\"MSS <mss-admins@srcf.net>\" in .env ({UPGRADING}); the "
+                      "society's own address stays the reply-to.")
     return Result("ok", f"The mailer sends through the mail server, from {address or sender}.", metric=metric,
                   details=details)
 

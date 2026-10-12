@@ -575,7 +575,7 @@ AUDIENCES = (
     ("old", "The old mailing list, everyone still on it"),
     ("old_new", "The old mailing list, only those not yet on the website"),
     ("both", "Both: website members and the old list, each person once"),
-    ("address", "One address (a mailing list, or a check)"),
+    ("address", "One address: the society's mailing list, or a check"),
 )
 AUDIENCE_LABELS = dict(AUDIENCES)
 
@@ -660,6 +660,75 @@ def mailer_recipients(audience):
             taken.add(sub.email)
             people.add(person)
     return members, old
+
+
+LIST_AUDIENCES = ("members", "old", "old_new", "both")  # the mailer's audiences a download can be of
+STOPPED = "stopped"  # the download of people who stopped the mailer, for a list's mass removal page
+DOWNLOADS = LIST_AUDIENCES + (STOPPED,)
+STOPPED_LABEL = "People who stopped the mailer, to take off the mailing list"
+
+
+def mailing_list_rows(audience):
+    """Everyone an audience reaches, exactly as the mailer would send it:
+    one row per inbox, in sending order, with the name the site knows and
+    where the address comes from. Opted-out, banned and unsubscribed people
+    are left out, as mailer_recipients leaves them out."""
+    members, old = mailer_recipients(audience)
+    known = {}
+    for email, first, last in mailer_audience().values_list("email", "first_name", "last_name"):
+        known.setdefault(email.strip().lower(), (first, last))
+    old_known = {email: (first, last)
+                 for email, first, last in OldSubscriber.objects.values_list("email", "first_name", "last_name")}
+    rows = []
+    for source, emails, lookup, folded in (("website member", members, known, True),
+                                           ("old mailing list", old, old_known, False)):
+        for email in emails:
+            first, last = lookup.get(email.lower() if folded else email, ("", ""))
+            rows.append({"email": email, "first_name": first, "last_name": last, "source": source})
+    return rows
+
+
+def _mailboxes(sub):
+    """An old-list address and, for a Cambridge one, its @hermes twin."""
+    crsid = sub.crsid
+    return [f"{crsid}@{domain}" for domain in OldSubscriber.CRSID_DOMAINS] if crsid else [sub.email]
+
+
+def stopped_rows(reached=None):
+    """Everyone who must not get the mailer, for taking off a mailing list:
+    members who opted out on their profile, are banned or whose account was
+    closed, and old-list entries that unsubscribed (both of a Cambridge
+    address's spellings) or belong to such a member. Mailman's mass removal ignores addresses that
+    aren't on the list, so the whole list can be pasted every time.
+    An address the mailer still reaches is never on it (a member can stop
+    one spelling of a Cambridge address and keep the mailer at the other)."""
+    from panel.listsync import mailbox_key, reached_keys
+
+    # compared as mailboxes: a Cambridge address the mailer reaches under one
+    # spelling isn't taken off under the other
+    reached = reached_keys() if reached is None else reached
+    rows, seen = [], set()
+
+    def add(email, first, last, why):
+        email = (email or "").strip()
+        if email and email.lower() not in seen and mailbox_key(email) not in reached:
+            seen.add(email.lower())
+            rows.append({"email": email, "first_name": first, "last_name": last, "source": why})
+
+    for email, first, last, banned, wants in (User.objects.filter(Q(wants_mailer=False) | Q(is_banned=True)
+                                                                  | Q(is_active=False))
+                                              .exclude(email="").order_by("email")
+                                              .values_list("email", "first_name", "last_name", "is_banned",
+                                                           "wants_mailer")):
+        add(email, first, last, "banned" if banned else "opted out on the website" if not wants else "account closed")
+    for sub in old_list_status(list(OldSubscriber.objects.order_by("email"))):
+        if sub.unsubscribed_at:
+            for email in _mailboxes(sub):
+                add(email, sub.first_name, sub.last_name, "unsubscribed")
+        elif left_out(sub.member):
+            add(sub.email, sub.first_name, sub.last_name,
+                "banned" if sub.member.is_banned else "opted out on the website")
+    return rows
 
 
 def audience_counts():
