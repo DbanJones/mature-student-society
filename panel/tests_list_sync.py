@@ -514,3 +514,15 @@ class MailingListPageTests(TestCase):
         page = self.client.get(reverse("panel:members"))
         self.assertNotContains(page, ">Still on the mailing list</span>")
         self.assertContains(page, ">On the mailing list</span>")
+
+    def test_a_member_who_moved_has_their_old_list_address_taken_off(self):
+        mover = member("mv123", crsid="mv123")
+        OldSubscriber.objects.create(email="mv123@cam.ac.uk")  # on the old list too
+        self.update(MAILMAN_PAGE + "\nmv123@cam.ac.uk\n")
+        self.client.post(reverse("panel:member_edit", args=[mover.pk]), {
+            "first_name": mover.first_name, "last_name": mover.last_name, "email": "mv.new@example.org",
+            "college": "darwin", "mobile": "+44 7700 900100",
+        })
+        # the old-list entry is theirs, and they get the mail at the new address, so the old one comes off
+        self.assertEqual(ListSync.objects.get(kind=ListSync.Kind.REMOVE).addresses,
+                         ["mv123@cam.ac.uk", "mv123@hermes.cam.ac.uk"])

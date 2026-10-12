@@ -139,12 +139,15 @@ def gets_mailer(user):
 
 
 def reached_keys():
-    """The mailboxes the website's mailer reaches, in any of its audiences:
-    nothing in here is ever to come off the list."""
+    """The mailboxes the society's mail should reach: the mailer's "both"
+    audience (members, and old-list people not on the website). Nothing in
+    here is ever to come off the list. Not the old list as a whole: that
+    still holds the old address of a member who moved to a new one, which
+    is exactly what should come off."""
     from panel.services import mailer_recipients
 
     members, old = mailer_recipients("both")
-    return {mailbox_key(email) for email in members + old + mailer_recipients("old")[1]}
+    return {mailbox_key(email) for email in members + old}
 
 
 def stopped_keys(reached=None):
