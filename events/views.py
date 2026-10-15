@@ -212,6 +212,7 @@ def calendar_view(request):
         "all_query": _month_query(year, month, [], q),
         "prev_query": _month_query(prev_year, prev_month, active_slugs, q),
         "next_query": _month_query(next_year, next_month, active_slugs, q),
+        "today": today,
         "today_query": _month_query(today.year, today.month, active_slugs, q),
         "is_current_month": (year, month) == (today.year, today.month),
     })

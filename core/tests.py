@@ -787,6 +787,28 @@ class StaticDeployTests(TestCase):
                 self.assertEqual(copy.read(), source.read())
             self.assertTrue(os.path.exists(leftover))  # nothing is ever deleted
 
+    def test_a_live_site_finds_the_folder_apache_serves_without_being_told(self):
+        import os
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from config import settings as live
+
+        with tempfile.TemporaryDirectory() as parent:
+            app = Path(parent) / "mature-student-society"
+            app.mkdir()
+            served = Path(parent) / "public_html" / "static"
+            with mock.patch.object(live, "BASE_DIR", app), mock.patch.dict(os.environ, {"DJANGO_STATIC_ROOT": ""}):
+                with mock.patch.object(live, "DEBUG", False):
+                    self.assertEqual(live._served_static_folder(), "")  # nothing beside it: nothing guessed
+                    served.mkdir(parents=True)
+                    self.assertEqual(live._served_static_folder(), str(served.resolve()))
+                    with mock.patch.dict(os.environ, {"DJANGO_STATIC_ROOT": "/elsewhere/static"}):
+                        self.assertEqual(live._served_static_folder(), "/elsewhere/static")  # .env wins
+                with mock.patch.object(live, "DEBUG", True):
+                    self.assertEqual(live._served_static_folder(), "")  # never on a development copy
+
     def test_the_srcf_launcher_fails_closed_and_keeps_static_files_current(self):
         from django.conf import settings
 

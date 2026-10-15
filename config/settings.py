@@ -243,14 +243,25 @@ def _static_root(value):
     return path
 
 
-STATIC_ROOT = _static_root(os.environ.get("DJANGO_STATIC_ROOT", "").strip() or str(BASE_DIR / "staticfiles"))
-# With the served folder configured (production), each ?v= stamp is taken from
-# the copy Apache serves, so a URL changes exactly when what visitors get
-# changes; a copy that failed keeps its old, consistent URL. Locally, from the
-# source, which runserver serves.
-STATIC_VERSION_FROM_ROOT = env_bool(
-    "DJANGO_STATIC_VERSION_FROM_ROOT", default=bool(os.environ.get("DJANGO_STATIC_ROOT", "").strip()),
-)
+def _served_static_folder():
+    """The folder Apache serves /static/ from: DJANGO_STATIC_ROOT in .env, or
+    on a live site without it, the society's public_html/static beside this
+    folder, where it is on the SRCF. Without that, every restart copied new
+    stylesheets somewhere Apache never looks, and visitors kept old ones."""
+    named = os.environ.get("DJANGO_STATIC_ROOT", "").strip()
+    if named or DEBUG:
+        return named
+    beside = BASE_DIR.parent / "public_html" / "static"
+    return str(beside.resolve()) if beside.is_dir() else ""
+
+
+_SERVED_STATIC = _served_static_folder()
+STATIC_ROOT = _static_root(_SERVED_STATIC or str(BASE_DIR / "staticfiles"))
+# With the served folder known (production), each ?v= stamp is taken from the
+# copy Apache serves, so a URL changes exactly when what visitors get changes;
+# a copy that failed keeps its old, consistent URL. Locally, from the source,
+# which runserver serves.
+STATIC_VERSION_FROM_ROOT = env_bool("DJANGO_STATIC_VERSION_FROM_ROOT", default=bool(_SERVED_STATIC))
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",

@@ -572,6 +572,17 @@ class CalendarViewsTests(EventTestCase):
         response = self.client.get(reverse("events:calendar") + "?view=grid")
         self.assertContains(response, 'class="cal-grid forced"')
 
+    def test_the_list_marks_today_and_fades_days_gone_by(self):
+        now = timezone.now()
+        Event.objects.create(title="Happening today", category=self.category, start=now, created_by=self.creator)
+        response = self.client.get(reverse("events:calendar") + "?view=list")
+        self.assertContains(response, '<section class="agenda-day today"')
+        self.assertContains(response, '<span class="agenda-dow">Today</span>', html=True)
+        past = timezone.localtime(self.past_event.start)
+        response = self.client.get(reverse("events:calendar"), {"view": "list", "y": past.year, "m": past.month})
+        self.assertContains(response, '<section class="agenda-day past"')
+        self.assertContains(response, "Bygone gathering")
+
     def test_term_week_labels_appear_when_term_dates_are_set(self):
         from core.models import SiteConfig
         config = SiteConfig.get()
