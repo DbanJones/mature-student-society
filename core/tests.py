@@ -803,9 +803,15 @@ class StaticDeployTests(TestCase):
                 with mock.patch.object(live, "DEBUG", False):
                     self.assertEqual(live._served_static_folder(), "")  # nothing beside it: nothing guessed
                     served.mkdir(parents=True)
-                    self.assertEqual(live._served_static_folder(), str(served.resolve()))
+                    self.assertEqual(live._served_static_folder(), str(served))
                     with mock.patch.dict(os.environ, {"DJANGO_STATIC_ROOT": "/elsewhere/static"}):
                         self.assertEqual(live._served_static_folder(), "/elsewhere/static")  # .env wins
+                with mock.patch.object(live, "DEBUG", False):
+                    (served / ".htaccess").write_text("")  # not a folder of its own: no guess, no failure
+                    self.assertEqual(live._served_static_folder(), "")
+                    (served / ".htaccess").unlink()
+                    with mock.patch.object(live, "STATICFILES_DIRS", [served]):
+                        self.assertEqual(live._served_static_folder(), "")  # the source itself: no guess
                 with mock.patch.object(live, "DEBUG", True):
                     self.assertEqual(live._served_static_folder(), "")  # never on a development copy
 

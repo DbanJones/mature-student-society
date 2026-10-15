@@ -2882,6 +2882,10 @@ def mailing_list_update(request):
             for start in range(0, len(gone_ids), 500):
                 ListMember.objects.filter(pk__in=gone_ids[start:start + 500]).delete()
         total = ListMember.objects.count()
+        if not partial:
+            # the whole list, just pasted, says who is on it: unmarked downloads are past
+            ListSync.objects.filter(kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE], note="",
+                                    done_at__isnull=True).delete()
         ListSync.objects.create(kind=ListSync.Kind.UPDATE, created_by=request.user, created_at=now, count=total,
                                 note="part of the list" if partial else "")
     AuditLog.record(request.user, "update_mailing_list", target=config.mailing_list_address,
@@ -2929,8 +2933,12 @@ def mailing_list_download(request):
         messages.info(request, "There's nobody to " + ("add." if kind == ListSync.Kind.ADD else "take off."))
         return redirect("panel:mailing_list")
     config = SiteConfig.get()
-    # a new download holds everything still to do, so it replaces an unmarked older one
-    ListSync.objects.filter(kind=kind, note="", done_at__isnull=True).delete()
+    # it replaces an unmarked older download it covers (one that also had the
+    # old list's people, say, stays until marked or forgotten)
+    covering = set(addresses)
+    for older in ListSync.objects.filter(kind=kind, note="", done_at__isnull=True):
+        if set(older.addresses) <= covering:
+            older.delete()
     ListSync.objects.create(kind=kind, created_by=request.user, count=len(addresses), addresses=addresses)
     AuditLog.record(request.user, f"download_list_{kind}", target=config.mailing_list_address,
                     detail=f"{len(addresses)} address{'es' if len(addresses) != 1 else ''}"

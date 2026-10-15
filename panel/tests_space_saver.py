@@ -82,6 +82,21 @@ class SpaceSaverTests(TestCase):
         again = self.client.post(reverse("panel:space_saver"), follow=True)
         self.assertContains(again, "Nothing to clear.")
 
+    def test_a_repeated_event_s_shared_picture_stays_for_the_copies_to_come(self):
+        shared = self.old.image.name  # Event > Repeat gives every copy the same file
+        coming = Event.objects.create(title="next week", category=self.old.category, created_by=self.admin,
+                                      start=timezone.now() + datetime.timedelta(days=4), image=shared)
+        also_old = Event.objects.create(title="old too", category=self.old.category, created_by=self.admin,
+                                        start=timezone.now() - datetime.timedelta(days=20), image=shared)
+        sizes = {event.title: size for event, size in self.client.get(reverse("panel:space_saver")).context["events"]}
+        self.assertEqual((sizes["old"], sizes["old too"]), (0, 0))  # not counted: the file isn't going
+        self.client.post(reverse("panel:space_saver"))
+        for event in (self.old, also_old, coming):
+            event.refresh_from_db()
+        self.assertEqual((self.old.image.name, also_old.image.name), ("", ""))
+        self.assertEqual(coming.image.name, shared)
+        self.assertTrue(os.path.exists(self.old_path))  # next week's event still shows it
+
     def test_only_admins(self):
         member = User.objects.create_user(username="ss002", password="pw", email="ss002@cam.ac.uk", first_name="Mo",
                                           last_name="Member", college="darwin", mobile="+44 7700 900101")

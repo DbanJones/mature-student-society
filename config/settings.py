@@ -252,7 +252,13 @@ def _served_static_folder():
     if named or DEBUG:
         return named
     beside = BASE_DIR.parent / "public_html" / "static"
-    return str(beside.resolve()) if beside.is_dir() else ""
+    if not beside.is_dir() or beside.resolve() in {Path(folder).resolve() for folder in STATICFILES_DIRS}:
+        return ""
+    try:
+        _static_root(str(beside))  # a guess must never stop the site starting
+    except ImproperlyConfigured:
+        return ""
+    return str(beside)
 
 
 _SERVED_STATIC = _served_static_folder()

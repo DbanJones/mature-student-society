@@ -19,7 +19,7 @@ def protected_media(request, path):
     if "\\" in path:
         raise Http404
     clean = posixpath.normpath(path).lstrip("/")
-    if clean == "private" or clean.startswith("private/"):
+    if clean.split("/")[0].rstrip(". ").lower() == "private":
         # admins' files (the old list's spreadsheets): only the panel hands them out
         raise Http404
     if clean.startswith("public/"):

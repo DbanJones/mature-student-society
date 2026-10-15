@@ -542,3 +542,15 @@ class MailingListPageTests(TestCase):
         self.assertContains(page, 'action="' + reverse("panel:mailing_list_done", args=[second.pk]) + '"')
         self.assertContains(page, "Ready once you've downloaded the file.", count=1)  # only the take-off card waits
         self.assertContains(page, 'href="' + reverse("panel:old_list") + '"')
+
+    def test_a_download_replaces_only_one_it_covers_and_a_whole_paste_clears_them(self):
+        download = reverse("panel:mailing_list_download")
+        self.update(MAILMAN_PAGE)
+        self.client.post(download, {"kind": "add", "old_list": "1"})  # with old.only@example.org too
+        wider = ListSync.objects.get(kind=ListSync.Kind.ADD)
+        self.client.post(download, {"kind": "add"})
+        self.assertTrue(ListSync.objects.filter(pk=wider.pk).exists())  # it had more, so it stays
+        self.client.post(download, {"kind": "add"})
+        self.assertEqual(ListSync.objects.filter(kind=ListSync.Kind.ADD).count(), 2)  # the same again replaced
+        self.update(MAILMAN_PAGE)  # the whole list, pasted again
+        self.assertFalse(ListSync.objects.filter(kind=ListSync.Kind.ADD, done_at__isnull=True).exists())

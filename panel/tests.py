@@ -1809,6 +1809,9 @@ class OldListTests(TestCase):
         self.assertIn("no-store", response["Cache-Control"])
         self.assertTrue(AuditLog.objects.filter(action="download_old_list_file").exists())
         self.assertEqual(self.client.get("/media/" + record.file.name).status_code, 404)  # never through /media/
+        rest = record.file.name.split("/", 1)[1]
+        for spelling in ("Private", "PRIVATE", "private.", "private ."):  # one folder, to a Windows disk
+            self.assertEqual(self.client.get(f"/media/{spelling}/{rest}").status_code, 404, spelling)
         member = User.objects.create_user(username="ol002", password="pw", email="ol002@cam.ac.uk")
         self.client.force_login(member)
         self.assertNotEqual(self.client.post(url, {"action": "download"}).status_code, 200)
