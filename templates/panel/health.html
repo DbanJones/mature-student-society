@@ -7,7 +7,7 @@
 <div class="page-head">
   <div>
     <h1>Site health</h1>
-    <p class="muted">Whether the website is working for visitors and members, and what to do when it isn't.</p>
+    <p class="muted">Is the website working, and what to do if it isn't.</p>
   </div>
 </div>
 
@@ -18,13 +18,11 @@
     <p>{{ verdict.text }}</p>
     <p class="small muted">
       {% if latest_full %}
-        The network and disk checks last ran {{ latest_full_ago }}
-        ({{ latest_full.get_trigger_display|lower }}{% if latest_full.run_by %}: {{ latest_full.run_by.get_full_name|default:latest_full.run_by.username }}{% endif %}).
+        All checks last ran {{ latest_full_ago }}{% if latest_full.run_by %} ({{ latest_full.run_by.get_full_name|default:latest_full.run_by.username }}){% endif %}.
         {% if latest_full_stale %}<strong>That's a while ago, so run them again.</strong>{% endif %}
       {% else %}
-        The network and disk checks haven't run yet.
+        Some checks haven't run yet: press “Run all checks”.
       {% endif %}
-      Everything else was checked just now.
     </p>
   </div>
   <form method="post" action="{% url 'panel:health_run' %}" class="hs-run">
@@ -34,6 +32,106 @@
   </form>
 </section>
 
+{% if problems %}
+  <section class="hs-todo" aria-labelledby="hs-todo-title">
+    <h2 id="hs-todo-title" class="hs-h">To sort out</h2>
+    <ul class="hs-issues">
+      {% for row in problems %}
+        <li id="check-{{ row.key }}" class="hs-issue hs-{{ row.status }}">
+          <div class="hs-issue-head">
+            {% include "panel/_health_icon.html" with status=row.status only %}
+            <span class="hs-issue-title">{{ row.title }}</span>
+            <span class="hs-badge hs-{{ row.status }}">{% if row.status == "fail" %}Fix now{% else %}Sort out soon{% endif %}</span>
+          </div>
+          <p>{{ row.summary }}</p>
+          {% if row.fix %}<p class="hs-issue-fix"><strong>What to do:</strong> {{ row.fix }}</p>{% endif %}
+          {% if row.who == "webmaster" %}
+            <p class="small muted">A job for the webmaster.{% if webmasters %} The webmaster: {{ webmasters|join:", " }}.{% endif %}</p>
+          {% elif row.who == "committee" %}
+            <p class="small muted">A job for the committee.</p>
+          {% endif %}
+          {% if row.action and row.action.url %}
+            <form method="post" action="{{ row.action.url }}" class="hs-action">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-small">{{ row.action.label }}</button>
+            </form>
+          {% endif %}
+          {% if show_webmaster and row.webmaster or show_webmaster and row.details %}
+            <details class="hs-tech">
+              <summary>Technical details</summary>
+              {% if row.webmaster %}<p class="small"><strong>For the webmaster:</strong> {{ row.webmaster }}</p>{% endif %}
+              {% if row.details %}
+                <dl class="hs-details">
+                  {% for item in row.details %}<dt>{{ item.0 }}</dt><dd>{{ item.1 }}</dd>{% endfor %}
+                </dl>
+              {% endif %}
+            </details>
+          {% endif %}
+          <p class="small muted hs-when">
+            {% if row.live %}Checked just now.{% elif row.never %}Runs with “Run all checks”.{% else %}Checked {{ row.checked_ago }}, with “Run all checks”.{% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}
+
+{% if show_webmaster and errors %}
+  <section id="errors" class="card hs-section" aria-labelledby="hs-errors-title">
+    <h2 id="hs-errors-title" class="hs-h">Server errors in the last 7 days</h2>
+    {% if errors %}
+      <div class="table-scroll">
+        <table class="data">
+          <thead><tr><th>Where</th><th>What</th><th>Times</th><th>Last</th><th></th></tr></thead>
+          <tbody>
+            {% for error in errors %}
+              <tr>
+                <td class="small">{{ error.view_name|default:"-" }}<br><span class="muted">{{ error.method }} {{ error.route|default:"" }}</span></td>
+                <td class="small"><strong>{{ error.exc_type|default:error.get_kind_display }}</strong>{% if error.reopened %} <span class="badge badge-warn">came back</span>{% endif %}<br>{{ error.message }}
+                  {% if error.frames %}<details><summary class="muted">In the code</summary><pre class="hs-frames">{{ error.frames }}</pre></details>{% endif %}
+                </td>
+                <td>{{ error.count }}</td>
+                <td class="small">{{ error.last_seen|timesince }} ago</td>
+                <td>
+                  <form method="post" action="{% url 'panel:health_error_resolve' error.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-small btn-ghost">Mark fixed</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">None. Errors show here as they happen, grouped by where in the code they come from. Only the page's pattern is kept, never its address or anything a member typed.</p>
+    {% endif %}
+  </section>
+{% endif %}
+
+<div class="hs-folds">
+  {% if unchecked %}
+    <details class="card hs-fold">
+      <summary>{% include "panel/_health_icon.html" with status="unknown" only %}Not checked yet or no answer ({{ unchecked|length }})</summary>
+      <p class="small muted" style="margin:0 0 .4rem">These run with “Run all checks”. No answer isn't a fault in itself.</p>
+      <ul class="hs-rows">{% for row in unchecked %}{% include "panel/_health_row.html" %}{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if not_set_up %}
+    <details class="card hs-fold">
+      <summary>{% include "panel/_health_icon.html" with status="off" only %}Not set up yet ({{ not_set_up|length }})</summary>
+      <p class="small muted" style="margin:0 0 .4rem">Optional extras; each says how to set it up.</p>
+      <ul class="hs-rows">{% for row in not_set_up %}{% include "panel/_health_row.html" %}{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if working %}
+    <details class="card hs-fold">
+      <summary>{% include "panel/_health_icon.html" with status="ok" only %}Working ({{ working|length }})</summary>
+      <ul class="hs-rows">{% for row in working %}{% include "panel/_health_row.html" %}{% endfor %}</ul>
+    </details>
+  {% endif %}
+  <details class="card hs-fold">
+    <summary>More detail: history, visits and how the checks work</summary>
 {% if vitals %}
   <ul class="hs-vitals" aria-label="Vital signs">
     {% for tile in vitals %}
@@ -79,88 +177,10 @@
   </div>
 </div>
 
-{% for key, section_label, status, rows in sections %}
-  <section class="card hs-section" aria-labelledby="hs-section-{{ key }}">
-    <h2 id="hs-section-{{ key }}" class="hs-h">{% include "panel/_health_icon.html" with status=status only %}{{ section_label }}<span class="visually-hidden">: {{ status_labels|get_item:status }}</span></h2>
-    <ul class="hs-rows">
-      {% for row in rows %}
-        <li id="check-{{ row.key }}" class="hs-row hs-{{ row.status }}">
-          <details{% if row.status == "fail" or row.status == "warn" %} open{% endif %}>
-            <summary>
-              {% include "panel/_health_icon.html" with status=row.status only %}
-              <span class="hs-row-main">
-                <span class="hs-row-title">{{ row.title }}</span>
-                <span class="hs-row-summary">{{ row.summary }}</span>
-              </span>
-              <span class="hs-row-side">
-                <span class="hs-badge hs-{{ row.status }}">{% if row.never %}Not checked yet{% else %}{{ status_labels|get_item:row.status }}{% endif %}</span>
-                {% if row.metric %}<span class="hs-metric">{{ row.metric }}</span>{% endif %}
-              </span>
-            </summary>
-            <div class="hs-row-body">
-              {% if row.fix %}<p><strong>What to do:</strong> {{ row.fix }}</p>{% endif %}
-              {% if row.who == "webmaster" and webmasters %}{% if row.status == "fail" or row.status == "warn" or row.status == "off" %}
-                <p class="small">The webmaster: {{ webmasters|join:", " }}.</p>
-              {% endif %}{% endif %}
-              {% if row.action and row.action.url %}
-                <form method="post" action="{{ row.action.url }}" class="hs-action">
-                  {% csrf_token %}
-                  <button type="submit" class="btn btn-small btn-ghost">{{ row.action.label }}</button>
-                </form>
-              {% endif %}
-              {% if show_webmaster %}
-                {% if row.webmaster %}<p class="small"><strong>For the webmaster:</strong> {{ row.webmaster }}</p>{% endif %}
-                {% if row.details %}
-                  <dl class="hs-details">
-                    {% for item in row.details %}<dt>{{ item.0 }}</dt><dd>{{ item.1 }}</dd>{% endfor %}
-                  </dl>
-                {% endif %}
-              {% endif %}
-              <p class="small muted hs-when">
-                {% if row.live %}Checked just now.{% elif row.never %}Runs with “Run all checks”.{% else %}Checked {{ row.checked_ago }}, with “Run all checks”.{% endif %}
-              </p>
-            </div>
-          </details>
-        </li>
-      {% endfor %}
-    </ul>
-  </section>
-{% endfor %}
-
-{% if show_webmaster %}
-  <section id="errors" class="card hs-section" aria-labelledby="hs-errors-title">
-    <h2 id="hs-errors-title" class="hs-h">Server errors in the last 7 days</h2>
-    {% if errors %}
-      <div class="table-scroll">
-        <table class="data">
-          <thead><tr><th>Where</th><th>What</th><th>Times</th><th>Last</th><th></th></tr></thead>
-          <tbody>
-            {% for error in errors %}
-              <tr>
-                <td class="small">{{ error.view_name|default:"-" }}<br><span class="muted">{{ error.method }} {{ error.route|default:"" }}</span></td>
-                <td class="small"><strong>{{ error.exc_type|default:error.get_kind_display }}</strong>{% if error.reopened %} <span class="badge badge-warn">came back</span>{% endif %}<br>{{ error.message }}
-                  {% if error.frames %}<details><summary class="muted">In the code</summary><pre class="hs-frames">{{ error.frames }}</pre></details>{% endif %}
-                </td>
-                <td>{{ error.count }}</td>
-                <td class="small">{{ error.last_seen|timesince }} ago</td>
-                <td>
-                  <form method="post" action="{% url 'panel:health_error_resolve' error.pk %}">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-small btn-ghost">Mark fixed</button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="muted">None. Errors show here as they happen, grouped by where in the code they come from. Only the page's pattern is kept, never its address or anything a member typed.</p>
+    {% if show_webmaster and not errors %}
+      <p class="small muted">No server errors in the last 7 days.</p>
     {% endif %}
-  </section>
-{% endif %}
-
-<section class="card hs-section">
+<section class="hs-section">
   <h2 class="hs-h">About these checks</h2>
   <ul class="hs-key small">
     <li>{% include "panel/_health_icon.html" with status="ok" only %}<strong>Working.</strong> Nothing to do.</li>
@@ -177,4 +197,7 @@
     <code>/healthz</code>, which answers “ok” while the site and its database work.
   </p>
 </section>
+    {% if na_count %}<p class="small muted">{{ na_count }} check{{ na_count|pluralize }} only matter{{ na_count|pluralize:"s," }} on the live site, so {{ na_count|pluralize:"it isn't,they aren't" }} shown here.</p>{% endif %}
+  </details>
+</div>
 {% endblock %}

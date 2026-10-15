@@ -130,7 +130,7 @@ def site_reachable(ctx):
                   details=details)
 
 
-@check("static_copy", "This version's stylesheets are in place", "visitors")
+@check("static_copy", "The site's look is ready on the server", "visitors")
 def static_copy(ctx):
     from panel import health
 
@@ -160,7 +160,7 @@ def static_copy(ctx):
                   "it says; most often the folder's permissions (srcf-soc-permfix mss, as the folder's owner).")
 
 
-@check("static_served", "Visitors get this version's stylesheets", "visitors", slow=True)
+@check("static_served", "Pages look right for visitors", "visitors", slow=True)
 def static_served(ctx):
     data = ctx.probe("static")
     if data.get("skipped"):
@@ -195,7 +195,7 @@ def static_served(ctx):
                     "unstyled or broken.", metric=metric,
             fix="Ask the webmaster to restart the portal (it copies them as it starts), then run the checks again.",
             who="webmaster", details=details,
-            webmaster="The copy isn't current either: see “This version's stylesheets are in place”.")
+            webmaster="The copy isn't current either: see “The site's look is ready on the server”.")
     if cause == "permissions":
         return Result(
             "fail", "Apache isn't allowed to read some of the site's files, so visitors get errors instead of styles.",
@@ -415,7 +415,7 @@ def login_guard(ctx):
                         "people to the University login.", details=details)
 
 
-@check("socket_private", "Only Apache can reach the portal", "security")
+@check("socket_private", "Logins can't be faked from inside the server", "security")
 def socket_private(ctx):
     if getattr(settings, "RAVEN_MODE", "dev") != "header":
         return Result("na", "Not applicable here: Raven logins don't come through Apache on this copy.")
@@ -488,7 +488,7 @@ def _settings_changed(**kwargs):
 setting_changed.connect(_settings_changed)
 
 
-@check("production_settings", "Security settings suit a live site", "security")
+@check("production_settings", "Live-site security settings are on", "security")
 def production_settings(ctx):
     if not ctx.production:
         return Result("na", "Not applicable here: this copy runs with development settings.")
@@ -912,7 +912,7 @@ def backups(ctx):
 
 # --- Deployment ------------------------------------------------------------------------------
 
-@check("deploy_state", "The server runs the code that's on it", "deploy")
+@check("deploy_state", "The latest update is running", "deploy")
 def deploy_state(ctx):
     from panel.models import HealthSnapshot
 

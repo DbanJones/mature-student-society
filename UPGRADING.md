@@ -150,7 +150,7 @@ Do these once, in order, between steps 2 and 3.
    runs `srcf-soc-permfix mss`, so the account that runs the portal can
    replace the files there.
 4. Restart (step 3 above) and press **Run all checks** on Admin → Overview →
-   Site health. If “This version's stylesheets are in place” is amber, run
+   Site health. If “The site's look is ready on the server” is amber, run
    `set -a; . ./.env; set +a; .venv/bin/python manage.py sync_static` and restart again.
 5. **Schedule the daily health check** on sinkhole (`crontab -e`, next to
    the `close_polls` line below). Cron mails its owner only when something

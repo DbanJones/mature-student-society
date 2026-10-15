@@ -103,7 +103,14 @@ def page_context(request):
 
     webmasters = [user.get_full_name() or user.username
                   for user in User.objects.filter(is_super_admin=True, is_banned=False).order_by("first_name")[:3]]
+    order = {"fail": 0, "warn": 1}
     return {
+        # the page leads with what needs doing; the rest folds away
+        "problems": sorted((row for row in rows if row["status"] in order), key=lambda row: order[row["status"]]),
+        "unchecked": [row for row in rows if row["status"] == "unknown"],
+        "not_set_up": [row for row in rows if row["status"] == "off"],
+        "working": [row for row in rows if row["status"] == "ok"],
+        "na_count": sum(1 for row in rows if row["status"] == "na"),
         "verdict": verdict(rows),
         "vitals": vitals(rows),
         "sections": grouped(rows),

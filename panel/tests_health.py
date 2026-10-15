@@ -990,6 +990,24 @@ class HealthPageTests(TestCase):
         self.admin = make_user("hpadmin", is_portal_admin=True)
         self.member = make_user("hpmember")
 
+    def test_health_is_its_own_tab_and_leads_with_what_to_sort_out(self):
+        self.client.force_login(self.admin)
+        page = self.client.get(reverse("panel:health"))
+        html = page.content.decode()
+        tabs = html[html.index('class="panel-tabs"'):]
+        self.assertLess(tabs.index(">Overview<"), tabs.index(">Health<"))
+        self.assertLess(tabs.index(">Health<"), tabs.index(">People<"))
+        self.assertIn('aria-current="page">Health', tabs)
+        problems = page.context["problems"]
+        self.assertTrue(problems)  # a fresh site has things to set up
+        self.assertTrue(all(row["status"] in ("fail", "warn") for row in problems))
+        self.assertContains(page, "To sort out")
+        self.assertLess(html.index("To sort out"), html.index('<details class="card hs-fold">'))
+        self.assertContains(page, "What to do:")
+        dashboard = self.client.get(reverse("panel:home")).content.decode()
+        overview = dashboard[dashboard.index('class="panel-tabs"'):]
+        self.assertNotIn(">Site health<", overview[:overview.index("</nav>")])  # no longer under Overview
+
     def test_only_admins_see_the_page(self):
         url = reverse("panel:health")
         self.assertIn("/accounts/login/", self.client.get(url)["Location"])
@@ -1192,8 +1210,8 @@ class VisualsTests(TestCase):
 
     def test_the_verdict(self):
         rows = [{"status": "ok"}, {"status": "warn"}, {"status": "fail"}, {"status": "na"}]
-        self.assertEqual(visuals.verdict(rows)["title"], "1 thing broken, 1 more needs attention")
-        self.assertEqual(visuals.verdict(rows[:2])["title"], "1 thing needs attention")
+        self.assertEqual(visuals.verdict(rows)["title"], "1 thing to fix now, and 1 to sort out soon")
+        self.assertEqual(visuals.verdict(rows[:2])["title"], "Working, with 1 thing to sort out")
         self.assertEqual(visuals.verdict(rows[:1])["title"], "Everything is working")
         self.assertEqual(visuals.verdict([{"status": "na"}])["status"], "na")
 

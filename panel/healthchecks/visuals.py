@@ -30,17 +30,16 @@ def verdict(rows):
     overall = worst(row["status"] for row in rows)
     broken, attention = _count(rows, "fail"), _count(rows, "warn")
     if overall == "fail":
-        title = f"{broken} thing{'s' if broken != 1 else ''} broken"
+        title = f"{broken} thing{'s' if broken != 1 else ''} to fix now"
         if attention:
-            title += f", {attention} more need{'s' if attention == 1 else ''} attention"
-        text = ("Something needs fixing now: visitors or members are affected, or the site or its data is at "
-                "risk. Each red row below says what's wrong and who to tell.")
+            title += f", and {attention} to sort out soon"
+        text = "Members or visitors may be affected. Each one below says what to do, and whose job it is."
     elif overall == "warn":
-        title = f"{attention} thing{'s' if attention != 1 else ''} need{'s' if attention == 1 else ''} attention"
-        text = "The site works for visitors. The amber rows are worth doing before they become problems."
+        title = f"Working, with {attention} thing{'s' if attention != 1 else ''} to sort out"
+        text = "Nothing is broken. The things below are worth doing before they become problems."
     elif overall == "ok":
         title = "Everything is working"
-        text = "Every check that applies here passed."
+        text = "Nothing needs doing."
     else:
         title = "Not checked yet"
         text = "Press “Run all checks” to check the site now."

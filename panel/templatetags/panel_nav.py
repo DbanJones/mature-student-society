@@ -32,7 +32,7 @@ def panel_nav(context):
             "url": reverse(pages[0][2]),
             "active": active,
             "badge": counts.get(key, 0),
-            "health": health if key == "overview" else None,
+            "health": health if key == "health" else None,
         })
         if active and len(pages) > 1:
             subtabs = [
@@ -47,7 +47,7 @@ def panel_nav(context):
 
 
 def _health_flag(user):
-    """The site health summary, when the Overview tab should show it: a
+    """The site health summary, when the Health tab should show it: a
     breakage for every admin, a warning for super admins only (they're the
     ones who act on it). It matches the Site health page, however old the
     last full run; the dashboard says when it's time to run the checks again."""

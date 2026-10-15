@@ -270,3 +270,32 @@ a.ml-tile:hover, a.ml-tile:focus-visible { border-color: var(--sage); }
   .hs-spark-area { fill: rgba(46, 125, 79, .28); }
   .hs-strip .hs-go { color: var(--sage-dark); }
 }
+
+/* --- site health: what to sort out first, the rest folded ------------------ */
+.hs-todo { margin: 1.2rem 0; }
+.hs-issues { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .8rem; }
+.hs-issue {
+  background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--amber);
+  border-radius: var(--radius); padding: .9rem 1.1rem; box-shadow: var(--shadow);
+}
+.hs-issue.hs-fail { border-left-color: var(--danger); }
+.hs-issue-head { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
+.hs-issue-title { flex: 1; font-weight: 700; font-size: 1.05rem; color: var(--heading); }
+.hs-issue > p { margin: .45rem 0 0; }
+.hs-issue-fix { background: var(--sage-100); border-radius: var(--radius-small); padding: .5rem .7rem; }
+.hs-issue .hs-action { margin-top: .55rem; }
+.hs-tech { margin-top: .5rem; font-size: .88rem; }
+.hs-tech > summary { cursor: pointer; color: var(--pine-700); font-weight: 600; width: max-content; }
+.hs-folds { display: grid; gap: .8rem; margin: 1.2rem 0; }
+.hs-fold > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: .55rem;
+  font-weight: 650; color: var(--heading);
+}
+.hs-fold > summary::-webkit-details-marker { display: none; }
+.hs-fold > summary::after {
+  content: "Show"; margin-left: auto; font-size: .82rem; font-weight: 600; color: var(--pine-700);
+  border: 1px solid var(--line); border-radius: 99px; padding: .2rem .7rem;
+}
+.hs-fold[open] > summary::after { content: "Hide"; }
+.hs-fold[open] > summary { margin-bottom: .6rem; }
+.hs-fold .hs-vitals, .hs-fold .hs-trends { margin-top: .4rem; }

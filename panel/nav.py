@@ -13,8 +13,10 @@ from testimonials.models import Testimonial
 PANEL_GROUPS = [
     ("overview", "Overview", [
         ("home", "Dashboard", "panel:home"),
-        ("health", "Site health", "panel:health"),
         ("audit", "Audit log", "panel:audit"),
+    ]),
+    ("health", "Health", [
+        ("health", "Site health", "panel:health"),
     ]),
     ("people", "People", [
         ("members", "Members", "panel:members"),
