@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load md %}
+{% load static %}
+
+{% block title %}Polls{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}"><link rel="stylesheet" href="{% static 'css/surveys.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Polls</h1>
+    <div class="lede">{% text "polls.lede" %}</div>
+  </div>
+  <div class="actions">
+    {% include "core/_edit_text.html" with page_key="polls" %}
+    {% if user.is_portal_admin %}<a class="btn btn-accent" href="{% url 'polls:choose_general' %}">Ask the membership</a>{% endif %}
+  </div>
+</div>
+
+<section class="survey-section">
+  <h2>Open now</h2>
+  {% if open_polls %}
+    <div class="survey-grid">{% for poll in open_polls %}{% include "polls/_index_card.html" %}{% endfor %}</div>
+  {% else %}
+    <div class="empty">No poll is open at the moment.</div>
+  {% endif %}
+</section>
+
+<section class="survey-section">
+  <h2>Closed</h2>
+  {% if closed_polls %}
+    <div class="survey-grid">{% for poll in closed_polls %}{% include "polls/_index_card.html" %}{% endfor %}</div>
+  {% else %}
+    <div class="empty">No poll has closed yet.</div>
+  {% endif %}
+</section>
+{% endblock %}

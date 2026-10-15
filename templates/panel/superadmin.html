@@ -35,7 +35,7 @@
                 {% if admin != user %}
                   <form method="post" action="{% url 'panel:member_toggle_admin' admin.pk %}">
                     {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <input type="hidden" name="next" value="{{ request.path }}">
                     <button type="submit" class="btn btn-small btn-danger">Remove admin</button>
                   </form>
                 {% else %}
@@ -50,7 +50,7 @@
       <h3 style="margin-top:1.2rem">Appoint a new admin</h3>
       <form method="post" action="" class="filter-bar" id="appoint-form">
         {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="next" value="{{ request.path }}">
         <select name="member" aria-label="Member to promote" id="appoint-select">
           <option value="">Choose a member…</option>
           {% for member in non_admins %}
@@ -61,6 +61,14 @@
       </form>
     </div>
 
+    <div class="card">
+      <h2>Site health</h2>
+      <p class="small muted">
+        Whether visitors get this version's stylesheets, whether logins can be faked, email, backups,
+        certificates, scheduled jobs and more, each with what to do about it.
+      </p>
+      <p style="margin:0"><a class="btn btn-small" href="{% url 'panel:health' %}">Open site health</a></p>
+    </div>
     <div class="card">
       <h2>Poster maps</h2>
       <p class="small muted">

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
 {% block title %}The Mature Students Guide{% endblock %}
@@ -11,14 +12,10 @@
 <div class="page-head">
   <div>
     <h1>The Mature Students Guide</h1>
-    <p class="lede">
-      Written by mature students, for mature students: honest, current answers
-      about colleges, money, family and life in Cambridge. This is a community
-      wiki — every member can edit any page, so if something is out of date,
-      fix it.
-    </p>
+    <p class="lede">{% text "guide.lede" %}</p>
   </div>
   <div class="actions">
+    {% include "core/_edit_text.html" with page_key="guide" %}
     {% if user.is_authenticated %}
       <a class="btn btn-accent" href="{% url 'guide:new' %}">Write a new page</a>
     {% endif %}

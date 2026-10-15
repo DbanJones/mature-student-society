@@ -114,9 +114,14 @@ INSTALLED_APPS = [
     "polls",
     "notifications",
     "posters",
+    "surveys",
 ]
 
 MIDDLEWARE = [
+    # Site health (panel/middleware.py): times every request, and answers
+    # /healthz for an uptime monitor before sessions or logins are touched.
+    "panel.middleware.RequestTimingMiddleware",
+    "panel.middleware.HealthEndpointMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -222,7 +227,63 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-STATIC_ROOT = BASE_DIR / "staticfiles"
+
+
+def _static_root(value):
+    """Where sync_static (and collectstatic) put the files Apache serves. On
+    the SRCF set DJANGO_STATIC_ROOT in .env to the folder Apache serves for
+    /static/, so every restart puts new CSS live."""
+    path = Path(value)
+    if not path.is_absolute() or "~" in value:
+        raise ImproperlyConfigured("DJANGO_STATIC_ROOT must be an absolute path.")
+    if path.name in ("", "public_html") or (path / "manage.py").exists() or (path / ".htaccess").exists():
+        raise ImproperlyConfigured(
+            "DJANGO_STATIC_ROOT must be a folder of its own, such as .../public_html/static."
+        )
+    return path
+
+
+def _served_static_folder():
+    """The folder Apache serves /static/ from: DJANGO_STATIC_ROOT in .env, or
+    on a live site without it, the society's public_html/static beside this
+    folder, where it is on the SRCF. Without that, every restart copied new
+    stylesheets somewhere Apache never looks, and visitors kept old ones."""
+    named = os.environ.get("DJANGO_STATIC_ROOT", "").strip()
+    if named or DEBUG:
+        return named
+    beside = BASE_DIR.parent / "public_html" / "static"
+    if not beside.is_dir() or beside.resolve() in {Path(folder).resolve() for folder in STATICFILES_DIRS}:
+        return ""
+    try:
+        _static_root(str(beside))  # a guess must never stop the site starting
+    except ImproperlyConfigured:
+        return ""
+    return str(beside)
+
+
+_SERVED_STATIC = _served_static_folder()
+STATIC_ROOT = _static_root(_SERVED_STATIC or str(BASE_DIR / "staticfiles"))
+# With the served folder known (production), each ?v= stamp is taken from the
+# copy Apache serves, so a URL changes exactly when what visitors get changes;
+# a copy that failed keeps its old, consistent URL. Locally, from the source,
+# which runserver serves.
+STATIC_VERSION_FROM_ROOT = env_bool("DJANGO_STATIC_VERSION_FROM_ROOT", default=bool(_SERVED_STATIC))
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        # Uploads (member photos, page pictures) are only ever served through
+        # Django, so nobody else on the server needs to read them.
+        "OPTIONS": {"file_permissions_mode": 0o640, "directory_permissions_mode": 0o750},
+    },
+    # Static URLs carry ?v=<content hash> so a deploy never meets stale CSS.
+    "staticfiles": {"BACKEND": "core.storage.VersionedStaticFilesStorage"},
+}
+
+# The site's public address, for links in emails (e.g.
+# https://www.cambridgematuresoc.com). Unset, links follow the request.
+SITE_URL = os.environ.get("DJANGO_SITE_URL", "").strip().rstrip("/")
+if SITE_URL and not SITE_URL.startswith(("https://", "http://")):
+    raise ImproperlyConfigured("DJANGO_SITE_URL must start with https:// (or http://).")
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -237,12 +298,42 @@ if env_bool("REAL_EMAIL", default=False):
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
     EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
+    # Seconds to wait on the mail server before giving up on a message.
+    EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "20"))
 else:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
+# The society's own addresses: mss-admins@srcf.net reaches the admins of the
+# mailing list (so replies and bounces find a person), and the list itself,
+# mss-members@srcf.net, is SiteConfig.mailing_list_address.
 DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "Cambridge Mature Students Society <soc-maturesoc@srcf.net>"
+    "DEFAULT_FROM_EMAIL", "MSS <mss-admins@srcf.net>"
 )
+
+# --- Logging ------------------------------------------------------------------
+# Errors go to stderr (the service's journal on the SRCF) and are recorded
+# for the Site health page (panel/errorlog.py), which keeps where in the
+# code they happen but never the address, form data or cookies.
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "stderr": {"class": "logging.StreamHandler", "formatter": "plain", "level": "WARNING"},
+        "record": {"class": "panel.errorlog.DatabaseErrorHandler", "level": "ERROR"},
+    },
+    "loggers": {
+        "django.request": {"handlers": ["stderr", "record"], "level": "ERROR", "propagate": False},
+        **{
+            app: {"handlers": ["stderr", "record"], "level": "WARNING", "propagate": False}
+            for app in ("core", "accounts", "events", "panel", "posters", "polls", "surveys", "inbox",
+                        "notifications", "dashboard", "guide", "supper", "faq", "testimonials")
+        },
+    },
+}
 
 # --- Uploads ------------------------------------------------------------------
 

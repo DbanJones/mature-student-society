@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if survey %}Survey settings{% else %}New survey{% endif %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/surveys.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem">
+  <a href="{% if survey %}{{ survey.get_absolute_url }}{% else %}{% url 'surveys:index' %}{% endif %}">&larr; {% if survey %}{{ survey.title }}{% else %}Surveys{% endif %}</a>
+</p>
+<div class="page-head">
+  <div>
+    <h1>{% if survey %}Survey settings{% else %}New survey{% endif %}</h1>
+    {% if not survey %}<p class="lede">Set it up here, add the questions on the next page, then open it when you're ready.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>{{ form.title.label_tag }} {{ form.title }}{{ form.title.errors }}</p>
+    <p>{{ form.intro.label_tag }} {{ form.intro }}<span class="helptext" id="{{ form.intro.auto_id }}_helptext">{{ form.intro.help_text }}</span>{{ form.intro.errors }}</p>
+
+    {% if form.admins %}
+      <fieldset>
+        <legend>{{ form.admins.label }}</legend>
+        <p class="helptext" id="{{ form.admins.auto_id }}_helptext" style="margin-top:0">{{ form.admins.help_text }}</p>
+        <p><input type="search" id="admin-filter" placeholder="Find a member…" aria-label="Find a member" style="max-width:20rem"></p>
+        <div class="admin-pick" id="admin-pick">
+          {% for option in form.admins %}<label class="choice">{{ option.tag }}<span>{{ option.choice_label }}</span></label>{% endfor %}
+        </div>
+        {{ form.admins.errors }}
+      </fieldset>
+    {% endif %}
+
+    <div class="grid grid-2">
+      <p>{{ form.opens_at.label_tag }} {{ form.opens_at }}<span class="helptext" id="{{ form.opens_at.auto_id }}_helptext">{{ form.opens_at.help_text }}</span>{{ form.opens_at.errors }}</p>
+      <p>{{ form.closes_at.label_tag }} {{ form.closes_at }}<span class="helptext" id="{{ form.closes_at.auto_id }}_helptext">{{ form.closes_at.help_text }}</span>{{ form.closes_at.errors }}</p>
+    </div>
+    <p>{{ form.results_visibility.label_tag }} {{ form.results_visibility }}{{ form.results_visibility.errors }}</p>
+    <p class="check-row">{{ form.allow_anonymous }} <label for="{{ form.allow_anonymous.id_for_label }}" style="display:inline">{{ form.allow_anonymous.label }}</label></p>
+
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">{% if survey %}Save settings{% else %}Create survey{% endif %}</button>
+      <a class="btn btn-ghost" href="{% if survey %}{{ survey.get_absolute_url }}{% else %}{% url 'surveys:index' %}{% endif %}">Cancel</a>
+    </p>
+  </form>
+</div>
+<script>
+// Type to narrow the list of members; ticked members always stay visible.
+(function () {
+  var filter = document.getElementById("admin-filter"), list = document.getElementById("admin-pick");
+  if (!filter || !list) return;
+  filter.addEventListener("input", function () {
+    var needle = filter.value.trim().toLowerCase();
+    list.querySelectorAll("label").forEach(function (label) {
+      var ticked = label.querySelector("input").checked;
+      label.hidden = !!needle && !ticked && label.textContent.toLowerCase().indexOf(needle) < 0;
+    });
+  });
+})();
+</script>
+{% endblock %}

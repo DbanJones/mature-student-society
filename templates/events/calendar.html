@@ -1,17 +1,19 @@
 {% extends "base.html" %}
+{% load md %}
 {% load static %}
 
-{% block title %}What's on — {{ month_date|date:"F Y" }}{% endblock %}
+{% block title %}Event Calendar — {{ month_date|date:"F Y" }}{% endblock %}
 
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>What's on</h1>
-    <p class="lede">Suppers, socials, talks and walks — all welcome, partners included.</p>
+    <h1>Event Calendar</h1>
+    <p class="lede">{% text "calendar.lede" %}</p>
   </div>
   <div class="actions">
+    {% include "core/_edit_text.html" with page_key="calendar" %}
     {% if user.is_authenticated %}
       <a class="btn btn-accent" href="{% url 'events:create' %}">Add an event</a>
     {% else %}
@@ -73,22 +75,33 @@
 
 <div class="cal-agenda{% if view == 'list' %} forced{% elif view == 'grid' %} hidden-view{% endif %}">
   {% for day, day_events in agenda %}
-    <div class="agenda-day{% if day == today %} today{% endif %}">
-      <h3 class="agenda-date">{{ day|date:"l j F" }}</h3>
-      <ul class="up-list">
+    <section class="agenda-day{% if day == today %} today{% elif day < today %} past{% endif %}"
+             aria-label="{{ day|date:'l j F' }}{% if day == today %}, today{% endif %}">
+      <div class="agenda-date" aria-hidden="true">
+        <span class="agenda-dow">{% if day == today %}Today{% else %}{{ day|date:"D" }}{% endif %}</span>
+        <span class="agenda-num">{{ day|date:"j" }}</span>
+        <span class="agenda-mon">{{ day|date:"M" }}</span>
+      </div>
+      <ul class="agenda-events">
         {% for event in day_events %}
-          <li class="up-row">
-            <span class="up-main">
-              <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
-              {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
-              {% if event.open_poll_count %}<span class="badge badge-warn">📊 vote</span>{% endif %}
-              <br><a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
-              <span class="up-meta">{{ event.start|date:"H:i" }}{% if event.location %} · {{ event.location }}{% endif %}</span>
+          <li class="agenda-event{% if event.is_super %} super{% elif event.is_official %} official{% endif %}"
+              style="--c: {{ event.category.color }};">
+            <span class="agenda-time">{{ event.start|date:"H:i" }}</span>
+            <span class="agenda-main">
+              <a class="agenda-title" href="{{ event.get_absolute_url }}">{% if event.is_super %}🌟 {% elif event.is_official %}★ {% endif %}{{ event.title }}</a>
+              <span class="agenda-meta">
+                <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
+                {% if event.is_super %}<span class="badge badge-super">Super event</span>{% endif %}
+                {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
+                {% if event.open_poll_count %}<span class="badge badge-warn">📊 vote</span>{% endif %}
+                {% if event.location %}<span class="agenda-where">{{ event.location }}</span>{% endif %}
+              </span>
             </span>
+            {% if user.is_authenticated and event.image %}<img class="agenda-thumb" src="{{ event.image.url }}" alt="" loading="lazy">{% endif %}
           </li>
         {% endfor %}
       </ul>
-    </div>
+    </section>
   {% empty %}
     <div class="empty">Nothing on in {{ month_date|date:"F" }}{% if active_categories %} for those tags{% endif %}.</div>
   {% endfor %}
@@ -150,7 +163,7 @@
             {% else %}
               <span class="muted small">{{ event.going_list|length }} going</span>
             {% endif %}
-            {% if user.is_authenticated %}
+            {% if user.is_authenticated and event.show_attendees %}
               <span class="avatars">
                 {% for rsvp in event.going_list|slice:":6" %}
                   <a class="avatar-token" href="{% url 'members:profile' rsvp.user.username %}" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</a>

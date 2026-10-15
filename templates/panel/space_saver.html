@@ -1,0 +1,77 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Space saver{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Space saver</h1>
+    <p class="muted">
+      Event pictures take most of the site's upload space. Once an event is more than a week behind
+      us, its picture can go; the event and everything else about it stay.
+    </p>
+  </div>
+</div>
+
+<div class="stat-row" style="margin:0 0 1rem">
+  <div class="stat-tile">
+    <div class="stat-num">{{ total_bytes|filesizeformat }}</div>
+    <div class="stat-label">Event pictures in all</div>
+  </div>
+  <div class="stat-tile ml-tile{% if events %} ml-attention{% endif %}">
+    <div class="stat-num">{{ event_bytes|filesizeformat }}</div>
+    <div class="stat-label">{{ events|length }} from events over a week ago</div>
+  </div>
+  <div class="stat-tile ml-tile{% if unused %} ml-attention{% endif %}">
+    <div class="stat-num">{{ unused_bytes|filesizeformat }}</div>
+    <div class="stat-label">{{ unused|length }} not used by any event</div>
+  </div>
+</div>
+
+<div class="card">
+  {% if events or unused %}
+    <form method="post" style="margin:0">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-accent"
+              data-confirm="Delete {{ events|length }} picture{{ events|length|pluralize }} of past events and {{ unused|length }} unused file{{ unused|length|pluralize }}? The events stay. This can't be undone.">
+        Free up {{ free_bytes|filesizeformat }}
+      </button>
+    </form>
+    <p class="small muted" style="margin:.6rem 0 0">
+      Deletes the pictures listed below. Members' photos and the pages' pictures are never touched, and nothing
+      happens until you press the button.
+    </p>
+  {% else %}
+    <p style="margin:0"><strong>Nothing to clear.</strong> No event that ended over a week ago still has a picture,
+      and every picture belongs to an event.</p>
+  {% endif %}
+</div>
+
+{% if shown %}
+  <h2 style="margin-top:1.4rem">Pictures of past events</h2>
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Event</th><th>When</th><th>Picture</th></tr></thead>
+      <tbody>
+        {% for event, size in shown %}
+          <tr>
+            <td><a href="{{ event.get_absolute_url }}">{{ event.title }}</a></td>
+            <td class="small">{{ event.start|date:"j M Y" }}</td>
+            <td class="small">{{ size|filesizeformat }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if more %}<p class="small muted">and {{ more }} more.</p>{% endif %}
+{% endif %}
+
+{% if unused %}
+  <details class="card ml-guide" style="margin-top:1.2rem">
+    <summary><h2>Pictures no event uses ({{ unused|length }})</h2><span class="small muted">Left behind when a picture was replaced or an event deleted</span></summary>
+    <ul class="small" style="margin:0">
+      {% for name, size in unused %}<li><code>{{ name }}</code> ({{ size|filesizeformat }})</li>{% endfor %}
+    </ul>
+  </details>
+{% endif %}
+{% endblock %}

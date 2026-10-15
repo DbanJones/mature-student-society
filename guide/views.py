@@ -20,6 +20,8 @@ from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
+from core.richtext import richtext_problem
+
 from .forms import GuidePageForm
 from .models import SECTIONS, GuidePage, GuideRevision
 
@@ -167,6 +169,16 @@ def page(request, slug):
     })
 
 
+def _preview_text(request):
+    """The POSTed content for a preview, unless rendering it would be unsafe."""
+    text = request.POST.get("content", "")
+    problem = richtext_problem(text)
+    if problem:
+        messages.error(request, f"Can't preview: {problem}.")
+        return ""
+    return text
+
+
 @login_required
 def new(request):
     """Members only. Write a new page; slug auto-generated from the title."""
@@ -193,7 +205,7 @@ def new(request):
         "form": form,
         "page": None,
         "previewing": previewing,
-        "preview_content": request.POST.get("content", "") if previewing else "",
+        "preview_content": _preview_text(request) if previewing else "",
     })
 
 
@@ -220,7 +232,7 @@ def edit(request, slug):
         "form": form,
         "page": guide_page,
         "previewing": previewing,
-        "preview_content": request.POST.get("content", "") if previewing else "",
+        "preview_content": _preview_text(request) if previewing else "",
     })
 
 

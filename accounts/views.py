@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from core.models import SiteConfig, TermsVersion
+from core.net import client_ip as core_client_ip
 
 from .forms import (
     CRSID_RE,
@@ -158,16 +159,9 @@ class LogoutView(auth_views.LogoutView):
 # --- Terms and conditions ------------------------------------------------------
 
 
-def client_ip(request):
-    """Best-effort client IP, honouring the reverse proxy in front of us.
-
-    On the SRCF the app sits behind Apache, so REMOTE_ADDR is the proxy and the
-    real address is the first entry of X-Forwarded-For.
-    """
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip() or None
-    return request.META.get("REMOTE_ADDR") or None
+# The visitor's address: the last X-Forwarded-For entry, the one Apache adds
+# (anything before it was sent by the client and can't be trusted).
+client_ip = core_client_ip
 
 
 @login_required
@@ -220,12 +214,14 @@ def profile_setup(request):
     """The 'complete your details' form every new login is sent to by
     ProfileCompletionMiddleware."""
     if request.method == "POST":
+        old_email = request.user.email
         form = ProfileForm(request.POST, request.FILES, instance=request.user)
         if form.is_valid():
             user = form.save(commit=False)
             if user.account_type == User.AccountType.ASSOCIATE:
                 user.username = user.email  # associates' username IS their email
             user.save()
+            _list_follows_email(old_email, user)
             messages.success(request, "Thanks — your profile is complete.")
             if user.can_view_whatsapp_link:
                 return redirect("accounts:whatsapp")
@@ -235,16 +231,29 @@ def profile_setup(request):
     return render(request, "accounts/profile_setup.html", {"form": form})
 
 
+def _list_follows_email(old_email, user):
+    """A member moving to a new address: the old one comes off the society's
+    mailing list (queued on Admin > People > Mailing list), and the new one
+    shows there as one to add. Called once the new address is saved, or the
+    member's own row would still seem to want mail at the old one."""
+    from panel import listsync
+
+    if old_email and listsync.mailbox_key(old_email) != listsync.mailbox_key(user.email):
+        listsync.queue_removal([], user, "a member changed their email address", addresses=[old_email])
+
+
 @login_required
 def profile(request):
     """View and edit your own profile."""
     if request.method == "POST":
+        old_email = request.user.email
         form = ProfileForm(request.POST, request.FILES, instance=request.user)
         if form.is_valid():
             user = form.save(commit=False)
             if user.account_type == User.AccountType.ASSOCIATE:
                 user.username = user.email
             user.save()
+            _list_follows_email(old_email, user)
             messages.success(request, "Profile updated.")
             return redirect("accounts:profile")
     else:

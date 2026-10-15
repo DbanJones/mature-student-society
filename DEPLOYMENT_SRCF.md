@@ -5,6 +5,17 @@ account, and for handing it over to future committees. Everything here was
 checked against https://docs.srcf.net in July 2026 — the specific pages are
 linked so you can re-verify details that may have changed.
 
+> **The live site today (October 2026).** Since the move to
+> cambridgematuresoc.com the portal runs from **public space**,
+> `/public/societies/mss/mature-student-society`, started by the repository's
+> `run_on_srcf.sh` (not the `run.sh` shown in section 4), with its socket at
+> `/public/societies/mss/mature-student-society/sockets/web.sock`. Apache
+> serves `/static/` from `/public/societies/mss/public_html/static`, which the
+> launcher keeps current (`DJANGO_STATIC_ROOT` in `.env`). UPGRADING.md is the
+> day-to-day guide for that layout, including the permission checks that
+> public space needs. The rest of this file is the original private-space
+> setup, kept for a future move back.
+
 Throughout, `<soc>` is the society's SRCF group account short name (e.g.
 `mss`), and paths follow SRCF conventions:
 
@@ -62,10 +73,13 @@ DB_PASSWORD=<from control.srcf.net>
 DB_HOST=postgres
 RAVEN_MODE=header
 REAL_EMAIL=true
-DEFAULT_FROM_EMAIL=MSS <maturesoc@cambridgesu.co.uk>
+DEFAULT_FROM_EMAIL="MSS <<soc>-admins@srcf.net>"
 EOF
 chmod 600 /societies/<soc>/portal/.env
 ```
+
+Quote any value that has spaces or angle brackets (the From address above):
+`.env` is read by bash, and an unquoted `<` stops the service from starting.
 
 ## 4. Gunicorn on a UNIX socket + systemd
 
@@ -88,6 +102,7 @@ cd /societies/<soc>/portal
 [ -r .env ] || { echo "run.sh: .env missing or unreadable" >&2; exit 1; }
 set -a; source .env; set +a
 .venv/bin/python manage.py check          # aborts the boot on unsafe config
+.venv/bin/python manage.py collectstatic --noinput || echo "run.sh: collectstatic failed; serving the files already on disk (see Site health)" >&2
 exec .venv/bin/gunicorn -w 2 \
   -b unix:/societies/<soc>/portal/web.sock \
   --log-file - config.wsgi:application
@@ -131,12 +146,13 @@ ln -s /societies/<soc>/portal/staticfiles /public/societies/<soc>/public_html/st
 ```
 
 Then in the portal (`/dj-admin/` → Site configuration, or /admin/): set the
-WhatsApp Open Forum invite link, mailing list address, and promote the first
-committee accounts to portal admins.
+WhatsApp Open Forum invite link, and promote the first committee accounts
+to portal admins.
 
 **Media/member photos**: `MEDIA_ROOT` stays in private space
-(`/societies/<soc>/portal/media/`) and is served through Django with a
-login check — do **not** symlink it into `public_html` (public space is
+(`/societies/<soc>/portal/media/`) and is served through Django: pictures
+for the pages (`media/public/`) to anyone, everything else to logged-in
+members only — do **not** symlink it into `public_html` (public space is
 world-readable and would publish member photos).
 
 ## 6. Apache routing (.htaccess)
@@ -206,6 +222,14 @@ or fetch the member and start a session → redirect to their dashboard.
 2. The app listens on a UNIX socket (not TCP), so other SRCF users cannot
    bypass Apache and inject the header directly.
 3. `RAVEN_MODE=header` is only set in production where 1–2 hold.
+4. gunicorn is version 22 or later and `gunicorn.conf.py` sets
+   `header_map = "drop"`, so a look-alike `X_MSS_Remote_User` header (which
+   Apache doesn't remove) can't stand in for `X-MSS-Remote-User`.
+
+Admin → Health tests 1 and 4 from outside, through Apache,
+whenever someone presses "Run all checks" and in the daily `health_check`
+cron job. It checks 2 from the socket's permissions (it can't tell whether
+gunicorn is listening on TCP instead).
 
 Verify after setup: visit `/accounts/raven/` in a private window → you should
 bounce via nevar.srcf.net to a University login and land on the profile-setup
@@ -238,15 +262,41 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 3. UIS's own Django guidance uses `django-auth-adfs` with
    `USERNAME_CLAIM: "upn"` — an equally good choice if preferred.
 
-## 9. Email + mailing list
+## 9. Email
 
 - The "What's On" mailer sends via local SMTP (`REAL_EMAIL=true`,
-  `EMAIL_HOST=localhost`); group web scripts' mail appears from
-  `<soc>-webmaster@srcf.net` by default. Keep volumes low — announcements go
-  to one Mailman list address, not to individual members.
-- Create the newsletter list via https://control.srcf.net (Mailman, managed at
-  https://lists.srcf.net), and put its posting address into Site configuration
-  → mailing list address. Docs: https://docs.srcf.net/reference/other-services/mailing-lists/
+  `EMAIL_HOST=localhost`) straight to every member with an email address,
+  bcc'd in batches of 50 so no address is shown to anyone; members opt out
+  on their profile. Group web scripts' mail appears from
+  `<soc>-webmaster@srcf.net` by default, which is an alias of
+  `<soc>-admins@srcf.net` (every admin of the society account); use
+  `<soc>-admins@srcf.net` as `DEFAULT_FROM_EMAIL` (the site's fallback), since
+  mail sent from the SRCF in another domain's name tends to fail SPF/DMARC
+  checks. The
+  Mailer tab says whether `REAL_EMAIL` is on and has a "Send a test to me"
+  button. After the first real send, look at the tab's "Recent sends" table:
+  a failed batch means the mail server refused it (the SRCF may rate-limit
+  outgoing mail), and the error text says why.
+- The society's old mailing list (a spreadsheet) is imported once from
+  Admin → People → Old mailing list; the mailer can then reach those people
+  too, and the page shows who has since joined the website.
+- The society's mailing list is `mss-members@srcf.net` (SRCF lists are
+  Mailman 2.1, administered at https://lists.srcf.net/mailman/admin/<list>,
+  owned by `<soc>-admins@srcf.net`). Admin → People → Mailing list keeps the
+  site's copy of its members (pasted from Mailman's pages), shows which
+  accounts are on it and gives the addresses to add (Mass Subscription) or
+  take off (Mass Removal); deleted accounts' addresses wait there to come
+  off too. Set the list up once before anyone is added: subscription by
+  confirm-and-approve, roster admin-only, members moderated (announce-only),
+  non-member posts on Hold, the archive private, no password reminders, a
+  footer saying how to leave by email, and the society's own addresses
+  unsubscribed; the page and UPGRADING.md list each setting. The Mailer tab's "One address" posts
+  to the list; Mailman holds the post (the site isn't a subscriber) until a
+  list admin approves it at https://lists.srcf.net/mailman/admindb/<list>
+  (Accept there releases every post held from that sender: if anything
+  else is held, Approve yours on its own page and Discard the rest).
+  Never put `DEFAULT_FROM_EMAIL` in accept_these_nonmembers instead: a From
+  address can be forged by anyone.
 
 ## 10. Custom domain (cambridgematuresoc.com)
 
@@ -267,22 +317,33 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   on upload, but request more quota from the sysadmins before a big intake.
 - **Poster maps**: create a free Geoapify account (geoapify.com), make an API
   key and paste it into the portal's Super admin tab. Without it posters
-  print a "scan for directions" code instead of a map. The key never
+  have no map (the poster studio says so). The key never
   reaches browsers: the server fetches each map image and passes it through.
   Geoapify takes a few seconds to answer, so the first poster for an event
-  can take up to ten seconds to show its map; the venue is then remembered
+  can take up to twenty seconds to show its map; the venue is then remembered
   on the event. A lookup that fails is simply tried again later.
 - **Cron**: polls close themselves when loaded, but to apply results (and
-  email attendees) on time even when nobody visits, add on sinkhole:
+  email attendees) on time even when nobody visits, add on sinkhole (it
+  prints only when it closes something, so cron mails only then):
   `*/15 * * * * cd /societies/<soc>/portal && set -a && . ./.env && set +a && .venv/bin/python manage.py close_polls`
 - **Backups**: SRCF keeps best-effort snapshots (`.snapshot` dirs). Add a cron
-  job on sinkhole for DB dumps into private space:
-  `sudo -u <soc> crontab -e` →
-  `0 4 * * * pg_dump -h postgres <soc> | gzip > /societies/<soc>/backups/db-$(date +\%u).sql.gz`
-- **Upgrades**: see UPGRADING.md (backup first; keep `.env` and `media/`;
-  `git pull && .venv/bin/pip install -r requirements.txt &&
-  manage.py migrate && manage.py collectstatic --noinput`, then
-  `systemctl --user restart mssportal`).
+  job on sinkhole for nightly DB dumps into private space, with the MySQL
+  password in a file only the crontab's owner can read
+  (`( umask 077 && printf '[client]\nhost=mysql\nuser=<soc>\npassword=%s\n' '<password>' > /societies/<soc>/.my.cnf )`):
+  `15 3 * * * bash -o pipefail -c 'mysqldump --defaults-extra-file=/societies/<soc>/.my.cnf <soc> | gzip > /societies/<soc>/backups/.db.part && mv /societies/<soc>/backups/.db.part /societies/<soc>/backups/db-$(date +\%u).sql.gz'`
+  (a failed dump leaves the last good file in place, and cron mails the error)
+  Then add `MSS_BACKUP_DIR=/societies/<soc>/backups` to `.env`, so the Site
+  health page checks that a fresh dump arrives every night.
+- **Health**: `/healthz` answers `ok` while the site and its database work;
+  point a free outside monitor (an UptimeRobot keyword monitor) at it. A
+  daily cron line runs every site health check, keeps the result for
+  Admin → Health, and mails the crontab's owner only when something
+  needs attention:
+  `30 7 * * * cd /public/societies/<soc>/<portal folder> && set -a && . ./.env && set +a && .venv/bin/python manage.py health_check --trigger cron --quiet --prune`
+- **Upgrades**: follow UPGRADING.md (backup first; keep `.env` and `media/`;
+  new code, `.venv/bin/pip install -r requirements-srcf.txt`, then restart).
+  With `run_on_srcf.sh` the restart migrates and copies the static files
+  itself; with §4's `run.sh`, run `manage.py migrate` before restarting.
 - **Handover**: future committee needs (a) SRCF group account membership,
   (b) this file, (c) the control-panel DB password location, (d) Toolkit app
   registration ownership if on Track B. Keep at least two admins on the SRCF

@@ -167,6 +167,16 @@ class DateRotaAndVisibilityTests(PollTestCase):
         csv_response = self.client.get(roster + "?format=csv")
         self.assertIn("Stall 10-12,Test Ali1", csv_response.content.decode())
 
+    def test_the_rota_csv_never_lets_a_name_or_slot_run_as_a_formula(self):
+        poll, (slot,) = self.make_poll("volunteers", [("=SUM(1,2)", {"capacity": 2})], allow_multiple=True)
+        type(self.alice).objects.filter(pk=self.alice.pk).update(first_name="@cmd")
+        self.alice.refresh_from_db()
+        self.vote(self.alice, poll, slot)
+        self.client.force_login(self.host)
+        body = self.client.get(reverse("polls:roster", args=[poll.pk]) + "?format=csv").content.decode()
+        self.assertIn("'=SUM(1,2)", body)
+        self.assertIn("'@cmd", body)
+
     def test_results_hidden_until_close_when_asked(self):
         poll, (a, b) = self.make_poll("venue", ["A", "B"], show_results="after_close")
         self.vote(self.alice, poll, a)
@@ -200,7 +210,7 @@ class DateRotaAndVisibilityTests(PollTestCase):
         poll, _ = self.make_poll("venue", ["A", "B"])
         self.client.force_login(self.alice)
         response = self.client.get(reverse("dashboard:home"))
-        self.assertContains(response, "Polls waiting for you")
+        self.assertContains(response, "Vote: <a")
         self.assertContains(response, "Where?")
         self.assertContains(self.client.get(reverse("events:calendar")), "📊 vote")
         from panel.services import build_whats_on_email
@@ -227,3 +237,31 @@ class DateRotaAndVisibilityTests(PollTestCase):
         self.assertRedirects(response, poll.get_absolute_url())
         self.client.logout()
         self.assertEqual(self.client.get(poll.get_absolute_url()).status_code, 302)
+
+
+class IndexTests(PollTestCase):
+    def test_index_lists_open_then_closed_polls_and_only_public_ones_to_visitors(self):
+        self.make_poll(Poll.Kind.VENUE, ["Eagle", "Pickerel"])
+        general = Poll.objects.create(kind=Poll.Kind.GENERAL, question="Garden party?", created_by=self.admin, closes_at=self.closes)
+        PollOption.objects.create(poll=general, label="Yes")
+        old = Poll.objects.create(kind=Poll.Kind.GENERAL, question="Old question", created_by=self.admin,
+                                  closes_at=timezone.now() - datetime.timedelta(days=1))
+        PollOption.objects.create(poll=old, label="Then")
+        gone = Event.objects.create(
+            title="Cancelled quiz", category=self.category, start=self.event.start, created_by=self.host,
+            host=self.host, is_cancelled=True,
+        )
+        PollOption.objects.create(poll=Poll.objects.create(
+            event=gone, kind=Poll.Kind.VENUE, question="Cancelled where?", created_by=self.host, closes_at=self.closes,
+        ), label="Nowhere")
+        page = self.client.get(reverse("polls:index"))
+        self.assertContains(page, "Where?")              # on a public event
+        self.assertNotContains(page, "Garden party?")    # general polls are for members
+        self.assertNotContains(page, "Cancelled where?") # hidden events stay hidden
+        self.client.force_login(self.alice)
+        body = self.client.get(reverse("polls:index")).content.decode()
+        self.assertIn("Garden party?", body)
+        self.assertLess(body.index("Garden party?"), body.index("Old question"))  # open before closed
+        old.refresh_from_db()
+        self.assertEqual(old.status, Poll.Status.CLOSED)  # closed on the way past
+        self.assertContains(self.client.get(reverse("events:calendar")), 'href="/polls/"')  # in the About menu

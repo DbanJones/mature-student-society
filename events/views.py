@@ -212,6 +212,7 @@ def calendar_view(request):
         "all_query": _month_query(year, month, [], q),
         "prev_query": _month_query(prev_year, prev_month, active_slugs, q),
         "next_query": _month_query(next_year, next_month, active_slugs, q),
+        "today": today,
         "today_query": _month_query(today.year, today.month, active_slugs, q),
         "is_current_month": (year, month) == (today.year, today.month),
     })
@@ -505,13 +506,16 @@ def export(request, slug):
     ]
 
     if request.GET.get("format") == "csv":
+        from core.csvsafe import cell
+
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         filename = f"{slugify(event.title) or 'event'}-attendees.csv"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
         writer.writerow(["Name", "College", "Mobile"])
         for row in rows:
-            writer.writerow([row["name"], row["college"], row["mobile"]])
+            # names are free text: never let a spreadsheet run one as a formula
+            writer.writerow([cell(row["name"]), row["college"], row["mobile"]])
         return response
 
     if request.GET.get("format") == "vcf":
@@ -554,8 +558,35 @@ def export(request, slug):
 # --- tag subpages -----------------------------------------------------------------
 
 
+def groups(request):
+    """PUBLIC. Every group (event tag) with its next event."""
+    now = timezone.now()
+    tags = list(Category.objects.all())
+    upcoming = (
+        Event.objects.visible_to(request.user)
+        .filter(start__gte=now, category__isnull=False)
+        .order_by("start")
+        .only("title", "slug", "start", "category_id")
+    )
+    next_event, counts = {}, {}
+    for event in upcoming:
+        next_event.setdefault(event.category_id, event)
+        counts[event.category_id] = counts.get(event.category_id, 0) + 1
+    for tag in tags:
+        tag.next_event = next_event.get(tag.pk)
+        tag.upcoming_count = counts.get(tag.pk, 0)
+    return render(request, "events/groups.html", {
+        "nav_active": "groups",
+        "groups": tags,
+    })
+
+
+def tag_page_moved(request, slug):
+    return redirect("events:tag_page", slug=slug, permanent=True)
+
+
 def tag_page(request, slug):
-    """PUBLIC. A tag's own page: blurb, owners, and its upcoming events."""
+    """PUBLIC. A group's own page: blurb, owners, and its upcoming events."""
     tag = get_object_or_404(Category, slug=slug)
     upcoming = list(
         Event.objects.visible_to(request.user)
@@ -572,7 +603,7 @@ def tag_page(request, slug):
         .order_by("-start")[:5]
     )
     return render(request, "events/tag_page.html", {
-        "nav_active": "calendar",
+        "nav_active": "groups",
         "tag": tag,
         "owners": tag.owners.filter(is_banned=False),
         "upcoming": upcoming,
@@ -594,7 +625,7 @@ def tag_edit(request, slug):
         messages.success(request, f"The {tag.name} page has been updated.")
         return redirect(tag)
     return render(request, "events/tag_form.html", {
-        "nav_active": "calendar",
+        "nav_active": "groups",
         "tag": tag,
         "form": form,
     })
@@ -624,7 +655,7 @@ def ics(request, slug):
 REPEAT_MAX_WEEKS = 12
 COPIED_FIELDS = [
     "title", "category", "description", "location", "host", "capacity",
-    "members_only", "group_chat_link", "attendee_info", "restaurant",
+    "members_only", "show_attendees", "group_chat_link", "attendee_info", "restaurant",
 ]
 
 

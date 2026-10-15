@@ -1,6 +1,9 @@
 """Forms for the society admin panel."""
 
 from django import forms
+from django.conf import settings
+from django.core import validators
+from django.urls import reverse_lazy
 from django.utils.text import slugify
 
 from accounts.forms import clean_mobile_number
@@ -10,10 +13,12 @@ from core.models import (
     VISIBILITY_CHOICES,
     Activity,
     CommitteeMember,
+    Picture,
     SiteConfig,
     SitePage,
     TermsVersion,
 )
+from core.richtext import richtext_problem
 from events.models import Category
 from faq.models import ContactNode, DepartmentContact
 
@@ -40,10 +45,17 @@ class MemberEditForm(forms.ModelForm):
 class MailerForm(forms.Form):
     """The editable What's On draft: recipient, subject and plain-text body."""
 
-    recipient = forms.EmailField(
-        label="To",
-        help_text="The SRCF mailing list address — delivers to every newsletter subscriber.",
+    audience = forms.ChoiceField(
+        label="To", widget=forms.RadioSelect, initial="members",
+        choices=[
+            ("members", "Website members"),
+            ("old", "The old mailing list, everyone still on it"),
+            ("old_new", "The old mailing list, only those not yet on the website"),
+            ("both", "Both: website members and the old list, each person once"),
+            ("address", "One address: the society's mailing list, or a check"),
+        ],  # the view adds today's counts to the labels
     )
+    recipient = forms.CharField(required=False, label="Address", help_text="Only for “One address”.")
     subject = forms.CharField(max_length=200)
     body = forms.CharField(
         strip=False,
@@ -51,6 +63,28 @@ class MailerForm(forms.Form):
             attrs={"class": "mailer-body", "rows": 24, "spellcheck": "false"}
         ),
     )
+    instructions = forms.CharField(
+        required=False, label="Instructions for the AI", max_length=1000,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        help_text="Optional, for “Draft with AI”: how to shape this issue, e.g. “short and punchy, "
+                  "lead with the Winter Ball, warm sign-off from the committee”. The facts and "
+                  "links stay as they are whatever you ask.",
+    )
+
+    def clean(self):
+        data = super().clean()
+        recipient = (data.get("recipient") or "").strip()
+        if data.get("audience") != "address":
+            data["recipient"] = recipient  # kept for the form, never used
+        elif not recipient:
+            self.add_error("recipient", "Give the address to send to.")
+        else:
+            try:
+                validators.validate_email(recipient)
+            except forms.ValidationError:
+                self.add_error("recipient", "That isn't an email address.")
+            data["recipient"] = recipient
+        return data
 
 
 class TagAdminForm(forms.ModelForm):
@@ -173,10 +207,11 @@ class SitePageForm(forms.ModelForm):
         model = SitePage
         fields = [
             "title", "content", "is_published",
-            "nav_label", "nav_visibility", "sort_order", "editors",
+            "nav_label", "nav_visibility", "section", "sort_order", "editors",
         ]
         labels = {
             "nav_visibility": "Audience",
+            "section": "Menu",
             "editors": "Editors",
         }
         help_texts = {
@@ -190,7 +225,10 @@ class SitePageForm(forms.ModelForm):
                        "stays with admins.",
         }
         widgets = {
-            "content": forms.Textarea(attrs={"rows": 16}),
+            "content": forms.Textarea(attrs={
+                "rows": 16, "data-editor": reverse_lazy("core:preview"),
+                "data-pictures": reverse_lazy("panel:pictures"),
+            }),
             "editors": forms.CheckboxSelectMultiple,
         }
 
@@ -199,6 +237,17 @@ class SitePageForm(forms.ModelForm):
         self.fields["editors"].queryset = User.objects.filter(
             is_banned=False, is_portal_admin=False
         ).order_by("first_name", "last_name")
+        self.fields["section"].required = False  # About unless told otherwise
+
+    def clean_section(self):
+        return self.cleaned_data.get("section") or "about"
+
+    def clean_content(self):
+        content = self.cleaned_data["content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content
 
     def save(self, commit=True):
         page = super().save(commit=False)
@@ -360,3 +409,56 @@ class ActivityForm(forms.ModelForm):
     class Meta:
         model = Activity
         fields = ["emoji", "name", "blurb", "sort_order"]
+
+
+class PictureForm(forms.ModelForm):
+    """A picture for the pages: checked, shrunk and stored under media/public."""
+
+    class Meta:
+        model = Picture
+        fields = ["image", "alt", "caption"]
+        labels = {"image": "Picture", "alt": "Describe it", "caption": "Caption (optional)"}
+
+    def clean_image(self):
+        image = self.cleaned_data.get("image")
+        if image and hasattr(image, "content_type"):
+            if not image.content_type.startswith("image/"):
+                raise forms.ValidationError("Please upload an image file.")
+            max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+            if image.size > max_bytes:
+                raise forms.ValidationError(f"Pictures must be {settings.MAX_UPLOAD_SIZE_MB} MB or smaller.")
+            from core.images import EVENT_MAX_PX, shrink_image
+
+            image = shrink_image(image, EVENT_MAX_PX)
+        return image
+
+
+class OldListUploadForm(forms.Form):
+    """A spreadsheet of the old mailing list, read by panel.sheets."""
+
+    sheet = forms.FileField(
+        label="Spreadsheet",
+        help_text="An .xlsx or .csv export of the old list: addresses in any column, names and college beside them.",
+    )
+
+    def clean_sheet(self):
+        sheet = self.cleaned_data["sheet"]
+        if sheet.size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+            raise forms.ValidationError(f"Keep it under {settings.MAX_UPLOAD_SIZE_MB} MB.")
+        if not sheet.name.lower().endswith((".xlsx", ".csv", ".txt")):
+            raise forms.ValidationError("Upload an .xlsx or .csv file.")
+        return sheet
+
+
+class ListPasteForm(forms.Form):
+    """The society's list's members, copied from Mailman's pages."""
+
+    members = forms.CharField(
+        label="The list's members, copied from Mailman",
+        widget=forms.Textarea(attrs={"rows": 8, "spellcheck": "false", "autocomplete": "off"}),
+        max_length=2_000_000,
+    )
+    partial = forms.BooleanField(
+        required=False, label="This is only part of the list: add these to the site's copy, don't replace it",
+    )
+    confirm = forms.CharField(required=False, widget=forms.HiddenInput, max_length=64)  # the paste's fingerprint

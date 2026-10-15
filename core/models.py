@@ -55,8 +55,9 @@ class SiteConfig(models.Model):
     about_text = models.TextField(blank=True, help_text="Markdown; shown on the public About page.")
     contact_email = models.EmailField(default="maturesoc@cambridgesu.co.uk")
     mailing_list_address = models.EmailField(
-        default="soc-mss-members@srcf.net",
-        help_text="Where the What's On mailer is sent (SRCF Mailman list).",
+        default="mss-members@srcf.net", blank=True,
+        help_text="The society's mailing list, which the What's On mailer can post to "
+                  "(Mailer → “One address”). The mailer also reaches members directly.",
     )
     whatsapp_group_link = models.URLField(
         blank=True,
@@ -207,6 +208,13 @@ class Activity(models.Model):
         return self.name
 
 
+SECTION_CHOICES = [
+    ("about", "About"),
+    ("guide", "Guide"),
+    ("members", "Members portal"),
+]
+
+
 class SitePage(models.Model):
     """An admin-managed content page (everything that isn't the calendar or
     the Guide): served at /pages/<slug>/, optionally shown in the nav.
@@ -234,6 +242,10 @@ class SitePage(models.Model):
         max_length=10, choices=VISIBILITY_CHOICES, default="public",
         help_text="Who sees it in the navigation (the page itself follows "
                   "'published' plus this audience).",
+    )
+    section = models.CharField(
+        max_length=10, choices=SECTION_CHOICES, default="about",
+        help_text="Which menu the page sits under, when it has a navigation label.",
     )
     sort_order = models.PositiveSmallIntegerField(default=100)
     editors = models.ManyToManyField(
@@ -507,3 +519,59 @@ class TermsAcceptance(models.Model):
 
     def __str__(self):
         return f"{self.user} accepted v{self.version_number} @ {self.accepted_at:%Y-%m-%d %H:%M}"
+
+
+class TextBlock(models.Model):
+    """An admin's wording for one of the text blocks on the fixed pages
+    (see core/blocks.py). While no row exists the built-in wording shows."""
+
+    key = models.CharField(max_length=60, unique=True)
+    text = models.TextField(blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="text_blocks_edited",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.key
+
+    def save(self, *args, **kwargs):
+        from .blocks import forget_texts
+
+        super().save(*args, **kwargs)
+        forget_texts()
+
+    def delete(self, *args, **kwargs):
+        from .blocks import forget_texts
+
+        super().delete(*args, **kwargs)
+        forget_texts()
+
+
+class Picture(models.Model):
+    """A picture for the pages: uploaded on the Pictures tab, shrunk on the
+    way in, and served to everyone (it lives under media/public/)."""
+
+    image = models.ImageField(upload_to="public/pictures/")
+    alt = models.CharField(
+        max_length=140, help_text="What the picture shows, for people who can't see it.",
+    )
+    caption = models.CharField(max_length=200, blank=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="pictures_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return self.alt
+
+    def markdown(self):
+        """The line to paste into a page (a backslash or square bracket in
+        the alt text would break it, so they are escaped)."""
+        alt = self.alt.replace("\\", "&#92;").replace("[", "&#91;").replace("]", "&#93;")
+        return f"![{alt}]({self.image.url})"

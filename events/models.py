@@ -151,6 +151,10 @@ class Event(models.Model):
         help_text="Details for attendees (meeting point, what to bring…) — "
                   "shown only to people who have RSVP'd. Markdown supported.",
     )
+    show_attendees = models.BooleanField(
+        default=True,
+        help_text="Show who's going on the event page. The count is always shown.",
+    )
     is_super = models.BooleanField(
         default=False,
         help_text="Super event: a society headline. Shown larger on the "

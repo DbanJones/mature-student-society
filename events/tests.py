@@ -36,7 +36,7 @@ urlpatterns = [
     ]))),
     path("", include(_stub_patterns("core", [
         "home", "about", "wellbeing", "policies", "terms", "winter_ball",
-        "search", "dismiss_banner",
+        "search", "dismiss_banner", "menu", "preview",
     ]))),
     path("guide/", include(_stub_patterns("guide", ["index"]))),
     path("faq/", include(_stub_patterns("faq", ["index", "contacts", "colleges", "departments"]))),
@@ -44,6 +44,7 @@ urlpatterns = [
     path("admin/", include(_stub_patterns("panel", ["home"]))),
     path("testimonials/", include(_stub_patterns("testimonials", ["index"]))),
     path("polls/", include("polls.urls")),
+    path("surveys/", include("surveys.urls")),
     path("notifications/", include("notifications.urls")),
     path("posters/", include("posters.urls")),
     path("p/<slug:slug>/", _stub, name="poster_scan"),
@@ -216,6 +217,13 @@ class PermissionTests(EventTestCase):
         body = response.content.decode()
         self.assertIn("Member Tester", body)
         self.assertIn(self.member.mobile, body)
+
+    def test_export_csv_never_lets_a_name_run_as_a_formula(self):
+        type(self.member).objects.filter(pk=self.member.pk).update(first_name='=HYPERLINK("https://x.example","y")')
+        self.client.force_login(self.creator)
+        body = self.client.get(reverse("events:export", args=[self.public_event.slug]), {"format": "csv"}).content.decode()
+        self.assertIn("'=HYPERLINK", body)
+        self.assertNotIn('\n"=HYPERLINK', body)
 
 
 class RSVPTests(EventTestCase):
@@ -564,6 +572,17 @@ class CalendarViewsTests(EventTestCase):
         response = self.client.get(reverse("events:calendar") + "?view=grid")
         self.assertContains(response, 'class="cal-grid forced"')
 
+    def test_the_list_marks_today_and_fades_days_gone_by(self):
+        now = timezone.now()
+        Event.objects.create(title="Happening today", category=self.category, start=now, created_by=self.creator)
+        response = self.client.get(reverse("events:calendar") + "?view=list")
+        self.assertContains(response, '<section class="agenda-day today"')
+        self.assertContains(response, '<span class="agenda-dow">Today</span>', html=True)
+        past = timezone.localtime(self.past_event.start)
+        response = self.client.get(reverse("events:calendar"), {"view": "list", "y": past.year, "m": past.month})
+        self.assertContains(response, '<section class="agenda-day past"')
+        self.assertContains(response, "Bygone gathering")
+
     def test_term_week_labels_appear_when_term_dates_are_set(self):
         from core.models import SiteConfig
         config = SiteConfig.get()
@@ -578,3 +597,97 @@ class CalendarViewsTests(EventTestCase):
         response = self.client.get(reverse("events:calendar"))
         self.assertContains(response, "cap-fill")
         self.assertContains(response, ">full<")
+
+
+class GroupsTests(EventTestCase):
+    def test_groups_page_lists_every_tag_with_its_next_event(self):
+        response = self.client.get(reverse("events:groups"))
+        self.assertContains(response, "Pub Nights")
+        self.assertContains(response, "Supper Club")
+        self.assertContains(response, "Next: <a")
+        self.assertContains(response, "Public pub night")
+        self.assertNotContains(response, "Secret members social")  # members only, logged out
+        self.assertContains(response, "Nothing scheduled just yet")  # Supper Club
+
+    def test_group_pages_live_under_groups_and_old_links_redirect(self):
+        url = reverse("events:tag_page", args=["pub-nights"])
+        self.assertEqual(url, "/events/groups/pub-nights/")
+        self.assertEqual(self.client.get(url).status_code, 200)
+        old = self.client.get("/events/tags/pub-nights/")
+        self.assertEqual(old.status_code, 301)
+        self.assertEqual(old["Location"], url)
+
+    def test_menu_has_event_calendar_and_groups_under_about(self):
+        body = self.client.get(reverse("events:calendar")).content.decode()
+        self.assertIn(">Event Calendar</a>", body)
+        self.assertNotIn(">What's on</summary>", body)
+        about = body[body.index(">About</summary>"):]
+        about = about[:about.index("</details>")]
+        self.assertIn(reverse("events:groups"), about)
+        self.assertIn("/events/groups/supper-club/", about)
+        self.assertNotIn("nav-burger", body)  # no more ☰: phones get a Menu link instead
+        self.assertIn('<a class="nav-menu-link" href="/menu/">Menu</a>', body)
+
+    def test_supper_club_page_links_to_the_restaurants(self):
+        body = self.client.get(reverse("events:tag_page", args=["supper-club"])).content.decode()
+        self.assertIn("Restaurants and ratings", body)
+
+
+class StaticVersionTests(TestCase):
+    def test_static_urls_carry_a_content_version(self):
+        from django.templatetags.static import static
+
+        url = static("css/base.css")
+        self.assertRegex(url, r"css/base\.css\?v=[0-9a-f]{10}$")
+        self.assertEqual(static("css/no-such-file.css"), "/static/css/no-such-file.css")
+
+
+class EndTimeDefaultTests(EventTestCase):
+    def test_the_end_follows_the_start_by_two_hours_unless_given(self):
+        self.client.force_login(self.member)
+        start = timezone.now() + datetime.timedelta(days=10)
+        data = {
+            "title": "Open-ended drinks", "category": str(self.category.pk), "description": "",
+            "location": "The Eagle", "start": dt_local(start), "end": "", "capacity": "",
+        }
+        self.client.post(reverse("events:create"), data)
+        event = Event.objects.get(title="Open-ended drinks")
+        self.assertEqual(event.end - event.start, datetime.timedelta(hours=2))
+        data.update(title="Long drinks", end=dt_local(start + datetime.timedelta(hours=5)))
+        self.client.post(reverse("events:create"), data)
+        event = Event.objects.get(title="Long drinks")
+        self.assertEqual(event.end - event.start, datetime.timedelta(hours=5))
+        data["end"] = ""  # on an existing event a blank end means open-ended
+        self.client.post(reverse("events:edit", args=[event.slug]), data)
+        event.refresh_from_db()
+        self.assertIsNone(event.end)
+
+
+class AttendeeListTests(EventTestCase):
+    def test_the_organiser_can_hide_who_is_going(self):
+        url = self.public_event.get_absolute_url()
+        member_link = reverse("members:profile", args=[self.member.username])
+        self.client.force_login(self.other)
+        self.assertContains(self.client.get(url), member_link)
+        self.assertContains(self.client.get(reverse("events:calendar")), member_link)
+        self.public_event.show_attendees = False
+        self.public_event.save()
+        page = self.client.get(url)
+        self.assertNotContains(page, member_link)
+        self.assertContains(page, "chosen not to show")
+        self.assertContains(page, "<strong>1</strong> going")  # the count stays
+        Event.objects.update(show_attendees=False)  # the member is also going to another fixture event
+        self.assertNotContains(self.client.get(reverse("events:calendar")), member_link)  # the calendar's list hides them too
+        self.client.force_login(self.creator)  # organisers still see the list
+        page = self.client.get(url)
+        self.assertContains(page, member_link)
+        self.assertContains(page, "you can still see them")
+        self.client.force_login(self.admin)  # and so do admins
+        self.assertContains(self.client.get(url), member_link)
+        self.client.force_login(self.creator)  # weekly copies keep the choice
+        self.client.post(reverse("events:repeat", args=[self.public_event.slug]), {"weeks": 2})
+        copies = Event.objects.filter(title=self.public_event.title).exclude(pk=self.public_event.pk)
+        self.assertEqual(copies.count(), 2)
+        self.assertFalse(any(copy.show_attendees for copy in copies))
+        self.client.force_login(self.member)
+        self.assertContains(self.client.get(reverse("events:create")), "Show who")

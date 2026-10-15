@@ -285,7 +285,8 @@ class PageRenderTests(TestCase):
 
     @override_settings(RAVEN_MODE="header")
     def test_raven_error_page_when_header_auth_missing(self):
-        response = self.client.get(reverse("accounts:raven"))
+        with self.assertLogs("django.request", "ERROR"):  # a 500 is logged (and recorded for Site health)
+            response = self.client.get(reverse("accounts:raven"))
         self.assertEqual(response.status_code, 500)
         self.assertContains(
             response, "Raven", status_code=500,
@@ -395,17 +396,22 @@ class ProfileDetailTests(TestCase):
     def test_own_profile_form_saves_new_fields(self):
         member = self._member("pd005")
         self.client.force_login(member)
-        response = self.client.post(reverse("accounts:profile"), {
+        data = {
             "first_name": "Test", "last_name": "Member", "college": "wolfson",
             "course": "MBA", "bio": "", "talk_to_me_about": "supply chains",
             "work": "Procurement", "interests": "salsa",
             "mobile": "+44 7700 900001", "email": "pd005@cam.ac.uk",
-        })
+        }
+        response = self.client.post(reverse("accounts:profile"), data)
         self.assertEqual(response.status_code, 302)
         member.refresh_from_db()
         self.assertEqual(member.talk_to_me_about, "supply chains")
         self.assertEqual(member.work, "Procurement")
         self.assertEqual(member.interests, "salsa")
+        self.assertFalse(member.wants_mailer)  # the mailer box was left unticked
+        self.client.post(reverse("accounts:profile"), {**data, "wants_mailer": "on"})
+        member.refresh_from_db()
+        self.assertTrue(member.wants_mailer)
 
 
 class TermsAcceptanceTests(TestCase):
@@ -473,7 +479,7 @@ class TermsAcceptanceTests(TestCase):
         )
         acceptance = TermsAcceptance.objects.get(user=member)
         self.assertEqual(acceptance.version_number, 2)
-        self.assertEqual(acceptance.ip_address, "203.0.113.7")
+        self.assertEqual(acceptance.ip_address, "10.0.0.1")  # the entry Apache added, not the client's claim
         self.assertEqual(acceptance.user_agent, "TestBrowser/1.0")
         self.assertEqual(acceptance.source, TermsAcceptance.Source.PORTAL)
 

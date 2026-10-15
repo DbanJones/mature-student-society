@@ -10,6 +10,13 @@
   </div>
 </div>
 
+<a class="hs-strip{% if health %} hs-{{ health.status }}{% endif %}" href="{% url 'panel:health' %}">
+  {% include "panel/_health_icon.html" with status=health.status|default:"unknown" only %}
+  <span><strong>Site health:</strong> {% if health %}{{ health.label|lower }}{% else %}not checked yet{% endif %}</span>
+  {% if health %}<span class="small muted">{% if health.full %}all checks last ran {{ health.ago }}{% else %}only the quick checks have run so far{% endif %}{% if health.full_stale %}, so it's time to run them again{% endif %}</span>{% endif %}
+  <span class="hs-go">Open site health →</span>
+</a>
+
 <div class="stat-row">
   <div class="stat-tile">
     <div class="stat-num">{{ counts.pending_waitlist }}</div>

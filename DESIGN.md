@@ -32,7 +32,7 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
 | posters | EventPoster, PosterScan | One-button event posters: laid out server-side as SVG, printed and exported in the browser, nothing stored |
 | faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
-| panel | MailLog, AuditLog | Admin panel (two-tier nav), stats, What's-On mailer, audit trail |
+| panel | MailLog, AuditLog, OldSubscriber, HealthSnapshot, JobHeartbeat, ErrorEvent, RequestStats, SlowRequest | Admin panel (two-tier nav), stats, What's-On mailer, audit trail, Site health |
 | dashboard | KeepyUppyScore | Member dashboard |
 
 ## Membership model
@@ -191,23 +191,129 @@ bundled fonts (static/fonts, SIL OFL) so line breaks match what prints;
 `templates/posters/_scene.svg` draws it. The browser does the rest: the
 print page uses `@page` sizes so Save as PDF gives vector text, PNGs come
 from a canvas, and a photo chosen on the device is read with FileReader and
-kept in that browser's storage, never uploaded. The QR code (segno) encodes
-`/p/<slug>/`, a redirect that counts scans. The map is a Geoapify static
-image proxied by `posters.views.map_image` so the key (SiteConfig) never
-reaches the browser; venues are geocoded once and cached on the event
-(Geoapify answers in seconds, not milliseconds, so a save waits only
-briefly, the studio waits longer, and a failed lookup is retried). The
+kept in that browser's storage, never uploaded (shrunk to 2000 px first so
+a phone photo fits; the print page drops it in too, and waits for every
+picture before printing; if a photo still won't fit, the studio says Print
+won't include it). Print marks add 3 mm of bleed in each sheet's own units,
+so A3 crop marks fall on a true A3 trim. Every layout has
+exactly one QR code (segno), encoding `/p/<slug>/`, a redirect that counts
+scans and lands on the event page with its directions. Every layout also
+has the map when the venue is found: without a photo the map takes the
+picture's place, with one it sits beside the QR code. Each layout is
+measured before it is drawn, and a test checks that no text overlaps the
+QR code or the map. The map is a Geoapify static image (klokantech-basic,
+asked for at the slot's exact shape so the OpenStreetMap credit in its
+corner is never cropped) proxied by `posters.views.map_image` so the key
+(SiteConfig) never reaches the browser. Venues are geocoded once and cached
+on the event; the full location and its broader parts are looked up
+together, a named place beats a street, and a whole-city match counts as
+not found (Geoapify answers in seconds, so a save waits only briefly, the
+studio waits longer, and a failed lookup is retried). When there is no map
+the studio says why. The SVG download carries its pictures inside it. The
 organiser's choices live in one `EventPoster` row; other members' tweaks are
 query-string overrides that are never saved. The SRCF stores no poster
 files.
+
+## Pages and the words on them
+
+Admin → Content → Pages is a tree: each menu section, the fixed pages in
+it, and the custom `SitePage`s with their controls (edit text, rename and
+settings, move up or down, move to another menu, publish, history,
+delete). A fixed page keeps its layout in its template, but every piece
+of prose on it is a text block registered in `core/blocks.py` (key, page,
+label, format, default wording) and read with `{% text "key" %}`; an
+admin's edit is a `core.TextBlock` row with that key, and deleting the row
+brings the default back. Formats are markdown, plain, and lines (one
+entry per line split on " | ", for the home page numbers, the Winter Ball
+timeline, cards and FAQ). Admins see an "Edit text" link on each fixed
+page that opens the tree at that page. Custom pages carry a `section`
+(About, Guide or Members portal) that decides which menu lists them.
+
+## Pictures and the editor
+
+Admin → Content → Pictures holds pictures for the pages: uploads are
+checked and shrunk like event photos, stored under `media/public/` and
+served to everyone by `config.media.protected_media` (every other upload
+stays members-only). Each picture shows the Markdown line to paste into
+a page. Every Markdown editor (pages, text blocks, guide articles, group
+pages) gets a toolbar and a live preview from `static/js/editor.js`,
+which renders through `core:preview` with the same sanitiser as the
+pages, so what the preview shows is what the page will show.
+
+## Surveys
+
+`surveys` is a sibling of `polls` rather than an extension of it: a poll
+is one question with named votes that settles an event's venue or date; a
+survey is several questions with answers grouped per member, optionally
+anonymous. A society admin creates a `Survey` and names its `admins`, the
+members who run it: they write `Question`s (short answer, paragraph,
+choose one, choose any, dropdown, 1 to 5 scale, yes or no), open and
+close it, see the results, download a CSV and send reminders. `/surveys/`
+lists live, opening-soon and closed surveys for every member, and drafts
+for the people running them; closed surveys stay there with their results
+when `results_visibility` allows.
+
+Anonymity is in the data. Who has answered lives in `Participation` (one
+answer per member, reminders to the rest); what they said lives in
+`Response`. An anonymous response has no respondent and no time at all,
+and every row of it (`Response`, `Answer`, `AnswerChoice`) is keyed by a
+random UUID rather than a running number, so neither a sequence nor a
+timestamp lines the two tables up; a deleted member's named responses
+become anonymous. Named responses carry the member and can be edited,
+anonymous ones are final. The site shows the people running a survey how
+many have answered, never who; anonymous free-text answers are listed in
+a different order for every question, so one member's answers can't be
+lined up; and the row-by-row CSV (which guards against spreadsheet
+formulas) is only offered once the survey has closed.
+(SQLite keeps a hidden row number per table, so only the live MySQL
+database meets the promise completely.)
+Once anyone has answered, questions and choices can be reworded but not
+added or removed, since existing answers point at them. Surveys close on
+their date lazily (the first page load) and from the `close_polls` cron
+command. The What's On mailer lists live surveys under "Have your say".
+
+## Site health
+
+`panel/healthchecks` holds 23 checks in eight sections. A check is a
+function registered with `@check(key, title, section, slow=...)` that
+returns a `Result`: a status (ok, warn, fail, unknown, off or na; only
+warn and fail colour a verdict), a plain sentence and next step for the
+committee, and details and a next step for the webmaster, which only super
+admins see. Quick checks read the database, the settings and a few files,
+and run on every view of Admin → Health. Slow checks read
+what their probe found. Probes (`probes.py`) fetch the site through
+Apache, check certificates and the mail server, and walk the disk. They
+run all at once in threads within a 15-second budget, never touch the
+database, and run only from "Run all checks" (once a minute at most), the
+daily `manage.py health_check --trigger cron`, or a shell. Every run is
+kept as a `HealthSnapshot`. The page shows the newest full run's slow
+results with their age; the Overview tab icon and the dashboard merge the
+newest full run with any newer quick run (a restart's), so a restart
+can't hide a failure; the 30-day strip groups runs by local day in Python.
+
+What feeds the checks: `RequestTimingMiddleware` counts requests per UTC
+hour by status and duration (`RequestStats`, written once a minute per
+worker with F() updates) and keeps requests over five seconds
+(`SlowRequest`). `panel.errorlog.DatabaseErrorHandler`, wired in
+`settings.LOGGING`, groups server errors into `ErrorEvent`s by type,
+innermost project frame and route pattern; it keeps no addresses, form
+data or cookies, and blanks secrets and email addresses. Scheduled jobs
+record `JobHeartbeat`s; gunicorn's `worker_abort` hook appends to
+`state/worker-timeouts.log`; web workers fingerprint the code as they
+start (`deploy.py`), so new code waiting for a restart shows.
+`HealthEndpointMiddleware` answers `/healthz`, for an outside uptime
+monitor, and `/healthz/probe`, which answers only a token signed with the
+secret key in the last minute, and reports whether a forged Raven login header got past Apache.
+Both run before sessions and logins, so neither can log anyone in.
 
 ## Visual layer
 
 Stats charts are inline SVG from `panel/charts.py` (no JavaScript, no
 CDN). The calendar labels Cambridge term weeks from term dates on
 SiteConfig and has an agenda view that is the default on phones. Revision
-diffs (`core/diff.py`) cover managed pages and the terms. The header turns
-into a drawer on phones with a bottom tab bar for members; dark mode
+diffs (`core/diff.py`) cover managed pages and the terms. On phones the
+header keeps the lion and a Menu link, and `/menu/` lists every section
+(logged-in members also get a bottom tab bar); dark mode
 re-points the CSS tokens; `data-confirm` forms confirm through a `<dialog>`
 and simply post without JavaScript.
 
@@ -216,8 +322,16 @@ and simply post without JavaScript.
 - **WhatsApp**: there is no usable WhatsApp API for community groups, so
   integration is deep links (wa.me share), the one-time invite link, and a
   copy-paste/CSV export of attendee numbers for the group admin.
-- **Mailer** sends to the Mailman list address, not to individual members —
-  deliverability and unsubscribe handling stay Mailman's job.
+- **Mailer** sends straight to members: every active account with an
+  email address that hasn't opted out (`User.wants_mailer`, a profile
+  checkbox), bcc'd in batches of 50 through the SRCF's own mail server,
+  each copy with an unsubscribe line and a List-Unsubscribe header. The
+  old mailing list (`panel.OldSubscriber`, imported from a spreadsheet by
+  `panel.sheets`, which reads .xlsx and .csv without a library) is a second
+  audience, de-duplicated against members by address or CRSid; anyone can
+  unsubscribe an address at `/unsubscribe/` and undo it from the emailed
+  link. No Mailman list is needed, though "One address" can still post to
+  one.
 - **SQLite locally / Postgres on SRCF** via `DB_ENGINE`; no ORM features that
   differ between them.
 - **Member Markdown is triple-guarded** (core/templatetags/md.py): the source
@@ -247,5 +361,7 @@ each.
   list ever grew into the hundreds.
 - **WhatsApp** integration is necessarily link-based (share deep-links,
   one-time invite, number export) — there is no group API to automate joins.
-- **Bulk email** goes to the Mailman list, not per-member sends, so
-  unsubscribe/deliverability stay Mailman's responsibility.
+- **Bulk email** goes out from the portal itself, bcc'd in batches of 50
+  through the SRCF's mail server (see "Mailer" above), rather than through
+  a mailing-list service: unsubscribes are the profile checkbox and the
+  public /unsubscribe/ page, and bounces return to the From address.

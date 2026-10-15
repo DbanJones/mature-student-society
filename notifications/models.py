@@ -18,6 +18,7 @@ class Notification(models.Model):
         TESTIMONIAL = "testimonial", "Testimonial"
         PAGE = "page", "Page"
         GENERAL = "general", "General"
+        SURVEY = "survey", "Survey"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
@@ -46,7 +47,7 @@ class Notification(models.Model):
 
     EMOJI = {
         "event": "📅", "poll": "📊", "waitlist": "🎟️",
-        "testimonial": "🗣️", "page": "📝", "general": "🔔",
+        "testimonial": "🗣️", "page": "📝", "general": "🔔", "survey": "📋",
     }
 
     @property

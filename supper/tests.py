@@ -42,6 +42,8 @@ urlpatterns = [
     )),
     path("events/", include(([
         path("", _stub_view, name="calendar"),
+        path("groups/", _stub_view, name="groups"),
+        path("groups/<slug:slug>/", _stub_view, name="tag_page"),
         path("<slug:slug>/", _stub_view, name="detail"),
     ], "events"))),
     path("guide/", _namespace("guide", ["index"])),
@@ -50,6 +52,8 @@ urlpatterns = [
     path("panel/", _namespace("panel", ["home"])),
     path("testimonials/", _namespace("testimonials", ["index"])),
     path("notifications/", include("notifications.urls")),
+    path("surveys/", include("surveys.urls")),
+    path("polls/", include("polls.urls")),
     path("members/", include(([
         path("", _stub_view, name="directory"),
         path("<str:username>/", _stub_view, name="profile"),
@@ -61,7 +65,7 @@ urlpatterns = [
     ], "inbox"))),
     path("", _namespace("core", ["home", "about", "wellbeing", "policies",
                                  "terms", "winter_ball", "search",
-                                 "dismiss_banner"])),
+                                 "dismiss_banner", "menu", "preview"])),
 ]
 
 VALID_SCORES = {

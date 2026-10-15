@@ -10,43 +10,17 @@
     <h1>About Us</h1>
     <p class="lede">{{ site_config.tagline }}</p>
   </div>
+  <div class="actions">{% include "core/_edit_text.html" with page_key="about" %}</div>
 </div>
 
-<div class="prose">
-  {% if site_config.about_text %}
-    {{ site_config.about_text|markdown }}
-  {% else %}
-    <p>
-      Founded in September 2024, the Mature Student Society (MSS) has quickly grown to nearly
-      1,000 members. Our mission is to make the full Cambridge experience accessible to everyone
-      &mdash; regardless of age, background, or life path.
-    </p>
-  {% endif %}
-</div>
+<div class="prose">{% text "about.body" %}</div>
 
 <div class="grid grid-2" style="margin-top: 1.5rem;">
-  <div class="card">
-    <h3>Who we're for</h3>
-    <ul>
-      <li>Those returning to academia after a career or caring responsibilities.</li>
-      <li>Finally pursuing long-held academic ambitions or career-change qualifications.</li>
-      <li>Or just that little bit older than most of your peers (or just feel older!).</li>
-    </ul>
-  </div>
-  <div class="card">
-    <h3>Our community includes</h3>
-    <ul>
-      <li>Undergraduate and postgraduate students (MPhils, PhDs)</li>
-      <li>Postdocs, research fellows, and university researchers</li>
-      <li>Professional and Continuing Education students</li>
-      <li>Faculty and lab staff, librarians, and other university employees</li>
-      <li>Visiting scholars and researchers</li>
-      <li>The partners and children of any of the above</li>
-    </ul>
-  </div>
+  <div class="card prose">{% text "about.who_for" %}</div>
+  <div class="card prose">{% text "about.community" %}</div>
 </div>
 
-<h2>The committee, 2026&ndash;27</h2>
+<h2>{% text "about.committee_heading" %}</h2>
 <div class="table-scroll">
   <table class="data">
     <thead>

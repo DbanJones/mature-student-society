@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Something went wrong · Cambridge Mature Students' Society</title>
+  {# Self-contained on purpose: no base template, no database, no static files, any of which may be what broke. #}
+  <style>
+    :root { --paper: #f6f4ee; --ink: #1a2420; --soft: #5f6d64; --heading: #14352a; --card: #fff; --line: #e2e8e2; }
+    @media (prefers-color-scheme: dark) {
+      :root { --paper: #111916; --ink: #e6ede8; --soft: #a9b7ae; --heading: #e9f1ea; --card: #182320; --line: #2b3a33; }
+    }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 34rem; margin: 12vh auto 2rem; padding: 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.4rem 1.5rem; }
+    h1 { color: var(--heading); font-size: 1.45rem; line-height: 1.25; margin: 0 0 .6rem; }
+    p { margin: 0 0 .8rem; }
+    .soft { color: var(--soft); font-size: .92rem; margin: 0; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Something went wrong on our side</h1>
+      <p>Sorry: this page hit an error. It isn't anything you did, and the society's webmaster can see that it happened.</p>
+      <p>Try again in a minute, or go back to the <a href="/">home page</a>.</p>
+      <p class="soft">Cambridge Mature Students' Society</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -15,21 +15,29 @@ PANEL_GROUPS = [
         ("home", "Dashboard", "panel:home"),
         ("audit", "Audit log", "panel:audit"),
     ]),
+    ("health", "Health", [
+        ("health", "Site health", "panel:health"),
+    ]),
     ("people", "People", [
         ("members", "Members", "panel:members"),
         ("waitlist", "Waitlist", "panel:waitlist"),
         ("whatsapp", "WhatsApp", "panel:whatsapp_requests"),
+        ("surveys", "Surveys", "panel:surveys"),
+        ("mailing_list", "Mailing list", "panel:mailing_list"),
+        ("old_list", "Old mailing list", "panel:old_list"),
     ]),
     ("events", "Events", [
         ("events", "All events", "panel:events"),
         ("tagged", "Tagged events", "panel:tagged_events"),
         ("polls", "Polls", "panel:polls"),
+        ("space_saver", "Space saver", "panel:space_saver"),
     ]),
     ("messages", "Messages", [
         ("messages", "Messages", "panel:messages"),
     ]),
     ("content", "Content", [
         ("pages", "Pages", "panel:pages"),
+        ("pictures", "Pictures", "panel:pictures"),
         ("testimonials", "Testimonials", "panel:testimonials"),
         ("navigation", "Navigation", "panel:navigation"),
         ("about", "About & committee", "panel:about"),

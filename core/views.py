@@ -6,11 +6,18 @@ events through ``Event.objects.visible_to(request.user)`` so members_only
 events never leak to anonymous visitors.
 """
 
+import datetime
+import logging
+
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.core import signing
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.db.models import Count, Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -21,10 +28,13 @@ from core.forms import SitePageContentForm
 from core.models import (
     Activity,
     CommitteeMember,
+    SiteConfig,
     SitePage,
     SitePageRevision,
     TermsVersion,
 )
+from core.net import absolute_url, client_ip
+from core.richtext import richtext_problem
 from events.models import RSVP, Event
 from guide.models import GuidePage
 from supper.models import Restaurant
@@ -99,6 +109,191 @@ def home(request):
         "top_restaurants": rated[:3],
         "testimonials": Testimonial.objects.approved().featured_first()[:3],
     })
+
+
+PREVIEWS_PER_MINUTE = 40
+
+
+@login_required
+@require_POST
+def preview_markdown(request):
+    """Rendered HTML for the live preview in the editors, sanitised exactly
+    as the pages themselves are. Input that would take the renderer too
+    long is refused, and each member gets a modest number of previews a
+    minute, so the preview can never tie up the server."""
+    from .templatetags.md import richtext_filter
+
+    text = request.POST.get("text", "")
+    problem = richtext_problem(text)
+    if problem:
+        return HttpResponse(f"Can't preview: {problem}.", status=413, content_type="text/plain; charset=utf-8")
+    key = f"preview-rate:{request.user.pk}"
+    cache.add(key, 0, 60)
+    try:
+        count = cache.incr(key)
+    except ValueError:  # the minute ended between the two calls
+        cache.set(key, 1, 60)
+        count = 1
+    if count > PREVIEWS_PER_MINUTE:
+        return HttpResponse("Too many previews in a minute; wait a moment.", status=429,
+                            content_type="text/plain; charset=utf-8")
+    return HttpResponse(richtext_filter(text))
+
+
+def _preview_text(request):
+    """The POSTed content for a preview, unless rendering it would be unsafe."""
+    text = request.POST.get("content", "")
+    problem = richtext_problem(text)
+    if problem:
+        messages.error(request, f"Can't preview: {problem}.")
+        return ""
+    return text
+
+
+UNSUBSCRIBES_PER_MINUTE = 10
+RESUBSCRIBE_SALT = "mailer-resubscribe"
+RESUBSCRIBE_DAYS = 90
+logger = logging.getLogger(__name__)
+
+
+def _same_mailbox(email):
+    """The address and, for a Cambridge one, its @hermes twin (one mailbox)."""
+    from panel.models import OldSubscriber
+
+    crsid = OldSubscriber(email=email).crsid
+    return [f"{crsid}@{domain}" for domain in OldSubscriber.CRSID_DOMAINS] if crsid else [email]
+
+
+def _any_email(emails):
+    query = Q(pk__in=[])
+    for address in emails:
+        query |= Q(email__iexact=address)
+    return query
+
+
+def _allow(key, limit, seconds):
+    """A simple counter in the cache: True while ``key`` has been used fewer
+    than ``limit`` times in the last ``seconds``."""
+    cache.add(key, 0, seconds)
+    try:
+        return cache.incr(key) <= limit
+    except ValueError:  # the window ended between the two calls
+        cache.set(key, 1, seconds)
+        return True
+
+
+def _only_on_the_list(email):
+    """Someone on the society's list who has no account and isn't on the old
+    list: the website's mailer never reached them, but the page promised the
+    committee would take them off the list, so their address waits on Admin
+    > People > Mailing list. As with everything here, the address itself is
+    told (anyone can type any address in)."""
+    from panel import listsync
+    from panel.models import ListMember, ListSync
+
+    if not ListMember.objects.filter(key=listsync.mailbox_key(email)).exists():
+        return
+    waiting = ListSync.objects.filter(kind=ListSync.Kind.REMOVE, done_at__isnull=True).values_list("addresses", flat=True)
+    if any(email in addresses for addresses in waiting):
+        return  # already waiting
+    if listsync.queue_removal([], None, "someone asked to leave on the website's unsubscribe page",
+                              addresses=[email]):
+        try:
+            send_mail(
+                "You asked to leave the society's mailing list",
+                f"Someone asked, on the website's unsubscribe page, for this address ({email}) to come off the "
+                f"society's mailing list. The committee will take it off when it next tidies the list.\n\n"
+                f"If that wasn't you, reply to this email and they'll leave you on it.\n",
+                None, [email],
+            )
+        except Exception:
+            logger.warning("Could not send the list-leaving confirmation", exc_info=True)
+
+
+def unsubscribe(request):
+    """Stop the What's On mailer for an address: a member's profile setting
+    and the old mailing list both. Anyone can ask for any address (there
+    is no login), so the address itself is told by email about every
+    change, with a link that undoes exactly what was changed; an address on
+    neither list gets the same page and no mail."""
+    from core.mailinglist import leave_note
+    from panel.models import OldSubscriber
+
+    done, email = False, ""
+    list_note = leave_note(SiteConfig.get().mailing_list_address)
+    if request.method == "POST":
+        if not _allow(f"unsubscribe-rate:{client_ip(request)}", UNSUBSCRIBES_PER_MINUTE, 60):
+            return HttpResponse("Too many requests; try again in a minute.", status=429,
+                                content_type="text/plain; charset=utf-8")
+        email = request.POST.get("email", "").strip().lower()
+        if "@" in email:
+            # A Cambridge address and its @hermes twin are the same person.
+            emails = _same_mailbox(email)
+            # Accounts are matched by the address itself, never by CRSid alone:
+            # a member who reads the mailer at another address keeps it.
+            users = get_user_model().objects.filter(wants_mailer=True).filter(_any_email(emails))
+            user_ids = list(users.values_list("pk", flat=True))
+            users.update(wants_mailer=False)
+            now = timezone.now()
+            rows = OldSubscriber.objects.filter(email__in=emails, unsubscribed_at__isnull=True)
+            row_ids = list(rows.values_list("pk", flat=True))
+            rows.update(unsubscribed_at=now)
+            if not user_ids and not row_ids and list_note:
+                _only_on_the_list(email)
+            if user_ids or row_ids:
+                token = signing.dumps(
+                    {"e": email, "t": now.isoformat(), "u": user_ids, "o": row_ids},
+                    salt=RESUBSCRIBE_SALT, compress=True,
+                )
+                undo = absolute_url(request, reverse("core:resubscribe", args=[token]))
+                also = f"{list_note}\n\n" if list_note else ""
+                try:
+                    send_mail(
+                        "You've been unsubscribed from the What's On mailer",
+                        f"This address ({email}) won't get the website's What's On mailer any more.\n\n"
+                        f"{also}"
+                        f"If that wasn't you, or you change your mind, put it back with this link "
+                        f"(it works for {RESUBSCRIBE_DAYS} days):\n{undo}\n",
+                        None, [email],
+                    )
+                except Exception:
+                    logger.warning("Could not send the unsubscribe confirmation", exc_info=True)
+            done = True
+    return render(request, "core/unsubscribe.html", {"done": done, "email": email, "list_note": list_note})
+
+
+def resubscribe(request, token):
+    """The undo link from the unsubscribe email: puts back exactly what that
+    unsubscribe changed."""
+    from panel.models import OldSubscriber
+
+    try:
+        data = signing.loads(token, salt=RESUBSCRIBE_SALT, max_age=RESUBSCRIBE_DAYS * 24 * 3600)
+        email = data["e"]
+    except (signing.BadSignature, KeyError, TypeError):
+        return render(request, "core/unsubscribe.html", {"expired": True}, status=400)
+    if request.method == "POST":
+        # Only what that unsubscribe changed, and only if it's still that way:
+        # an account still opted out at that address, a row still carrying
+        # that unsubscribe's time. Using the link twice changes nothing more.
+        emails = _same_mailbox(email)
+        get_user_model().objects.filter(pk__in=data.get("u") or [], wants_mailer=False).filter(
+            _any_email(emails)).update(wants_mailer=True)
+        try:
+            when = datetime.datetime.fromisoformat(data.get("t", ""))
+        except (TypeError, ValueError):
+            when = None
+        if when is not None:
+            OldSubscriber.objects.filter(pk__in=data.get("o") or [], unsubscribed_at=when).update(unsubscribed_at=None)
+        messages.success(request, f"{email} is back on the What's On mailer.")
+        return redirect("core:home")
+    return render(request, "core/unsubscribe.html", {"resubscribe": True, "email": email})
+
+
+def menu(request):
+    """Every section of the site on one page: the menu on a phone, and a
+    map of the site for everyone. The lists come from the nav context."""
+    return render(request, "core/menu.html", {"nav_active": "menu"})
 
 
 def winter_ball(request):
@@ -275,7 +470,7 @@ def site_page_edit(request, slug):
         "page_url": _page_url(page),
         "form": form,
         "previewing": previewing,
-        "preview_content": request.POST.get("content", "") if previewing else "",
+        "preview_content": _preview_text(request) if previewing else "",
     })
 
 

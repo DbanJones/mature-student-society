@@ -38,7 +38,8 @@ Run the test suite:
 | URL | What |
 |---|---|
 | `/` | Public homepage |
-| `/events/` | Calendar (public; members-only events hidden when logged out) |
+| `/events/` | Event Calendar (public; members-only events hidden when logged out) |
+| `/events/groups/` | Groups: every event tag, each with its own page at `/events/groups/<tag>/` (old `/events/tags/<tag>/` links redirect) |
 | `/guide/` | The Mature Students Guide (public read, member edit) |
 | `/supper-club/` | Supper Club restaurant leaderboard |
 | `/testimonials/` | Members' testimonials (public once approved; members submit) |
@@ -47,9 +48,16 @@ Run the test suite:
 | `/search/` | Site-wide search |
 | `/me/calendar.ics?token=…` | A member's personal calendar feed |
 | `/posters/<event>/` | Poster studio: print to PDF, PNG for WhatsApp; `/p/<event>/` is the QR short link |
+| `/surveys/` | Surveys: live and closed surveys, each run by its own admins; answer with your name or anonymously |
+| `/polls/` | Polls: open polls to vote in and closed ones with results (under About) |
+| `/admin/content/pages/` | The Pages tree: every page under its menu, text blocks on fixed pages, controls on custom pages |
 | `/me/` | Member dashboard |
 | `/accounts/…` | Login (Raven / associate), profile, waitlist, WhatsApp invite |
 | `/admin/` | Society admin panel (approvals, members, stats, mailer, audit) |
+| `/admin/people/mailing-list/` | Which accounts are on the society's mailing list, and the addresses to add or take off |
+| `/admin/mailer/` | The What's On mailer, and the website's mailing addresses to download (CSV, or one per line for Mailman) |
+| `/admin/health/` | Site health: 23 checks with what to do about each, a 30-day history, "Run all checks" |
+| `/healthz` | Answers `ok` while the site and its database work, for an outside uptime monitor |
 | `/dj-admin/` | Django admin (superusers/tech officer only) |
 
 ## Configuration
@@ -57,4 +65,6 @@ Run the test suite:
 Everything is environment-driven — see the top of `config/settings.py` and
 DEPLOYMENT_SRCF.md. Key variables: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`,
 `DJANGO_ALLOWED_HOSTS`, `DB_ENGINE` (`sqlite`/`postgres`/`mysql` + `DB_*`),
-`RAVEN_MODE` (`dev`/`header`/`oidc`), `REAL_EMAIL`.
+`RAVEN_MODE` (`dev`/`header`/`oidc`), `REAL_EMAIL`. Optional, for the Site health page: `MSS_BACKUP_DIR`,
+`MSS_QUOTA_MB`, `MSS_PUBLIC_HTML` (UPGRADING.md); `manage.py health_check`
+runs the same checks from a shell or cron.

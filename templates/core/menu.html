@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Menu{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Menu</h1>
+    <p class="lede">Everything on the site, in one place.</p>
+  </div>
+</div>
+
+<div class="menu-grid">
+  <section class="card">
+    <h2>What's on</h2>
+    <ul class="menu-list">
+      <li><a href="{% url 'events:calendar' %}">📅 Event Calendar</a></li>
+      <li><a href="{% url 'events:groups' %}">👥 Groups</a></li>
+      <li><a href="{% url 'polls:index' %}">📊 Polls</a></li>
+      {% if "ball" in visible_tabs %}<li><a href="{% url 'core:winter_ball' %}">❄️ Winter Ball</a></li>{% endif %}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Guide</h2>
+    <ul class="menu-list">
+      <li><a href="{% url 'guide:index' %}">📖 The Guide</a></li>
+      <li><a href="{% url 'faq:contacts' %}">🧭 Who to contact</a></li>
+      <li><a href="{% url 'faq:colleges' %}">🏰 Colleges</a></li>
+      <li><a href="{% url 'faq:departments' %}">🔬 Departments</a></li>
+      {% for page in nav_pages_guide %}<li><a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a></li>{% endfor %}
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>About</h2>
+    <ul class="menu-list">
+      {% if "about" in visible_tabs %}<li><a href="{% url 'core:about' %}">🦁 About MSS</a></li>{% endif %}
+      <li><a href="{% url 'core:wellbeing' %}">💙 Wellbeing</a></li>
+      {% if "testimonials" in visible_tabs %}<li><a href="{% url 'testimonials:index' %}">🗣️ Testimonials</a></li>{% endif %}
+      <li><a href="{% url 'core:policies' %}">🤝 Community policies</a></li>
+      {% for page in nav_pages %}<li><a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a></li>{% endfor %}
+      <li><a href="{% url 'core:terms' %}">📜 Terms and conditions</a></li>
+    </ul>
+  </section>
+
+  {% if nav_groups %}
+    <section class="card">
+      <h2>Groups</h2>
+      <ul class="menu-list">
+        {% for group in nav_groups %}<li><a href="{{ group.get_absolute_url }}">{{ group.emoji }} {{ group.name }}</a></li>{% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if user.is_authenticated %}
+    <section class="card">
+      <h2>Members portal</h2>
+      <ul class="menu-list">
+        <li><a href="{% url 'dashboard:home' %}">🏠 Dashboard</a></li>
+        {% if "members" in visible_tabs %}<li><a href="{% url 'members:directory' %}">👥 Members</a></li>{% endif %}
+        {% if "messages" in visible_tabs %}<li><a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</a></li>{% endif %}
+        <li><a href="{% url 'notifications:index' %}">🔔 Notifications{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</a></li>
+        <li><a href="{% url 'surveys:index' %}">📋 Surveys</a></li>
+        {% for page in nav_pages_members %}<li><a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a></li>{% endfor %}
+        <li><a href="{% url 'accounts:profile' %}">✏️ My profile</a></li>
+        {% if user.is_portal_admin %}<li><a href="{% url 'panel:home' %}">🛠️ Admin panel</a></li>{% endif %}
+        <li><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button type="submit" class="linklike">👋 Log out</button></form></li>
+      </ul>
+    </section>
+  {% else %}
+    <section class="card">
+      <h2>Members</h2>
+      <p><a class="btn btn-accent" href="{% url 'accounts:login' %}">Member login</a></p>
+      <p class="small" style="margin:0"><a href="{% url 'accounts:waitlist' %}">No CRSid? Request an account</a></p>
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>Search</h2>
+    <form method="get" action="{% url 'core:search' %}" role="search">
+      <input type="search" name="q" placeholder="Search the site…" aria-label="Search the site">
+    </form>
+  </section>
+</div>
+{% endblock %}

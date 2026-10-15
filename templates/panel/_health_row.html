@@ -1,0 +1,40 @@
+{% load panel_nav %}<li id="check-{{ row.key }}" class="hs-row hs-{{ row.status }}">
+  <details>
+    <summary>
+      {% include "panel/_health_icon.html" with status=row.status only %}
+      <span class="hs-row-main">
+        <span class="hs-row-title">{{ row.title }}</span>
+        <span class="hs-row-summary">{{ row.summary }}</span>
+      </span>
+      {% if row.never or row.metric %}
+        <span class="hs-row-side">
+          {% if row.never %}<span class="hs-badge hs-unknown">Not checked yet</span>{% endif %}
+          {% if row.metric %}<span class="hs-metric">{{ row.metric }}</span>{% endif %}
+        </span>
+      {% endif %}
+    </summary>
+    <div class="hs-row-body">
+      {% if row.fix %}<p><strong>What to do:</strong> {{ row.fix }}</p>{% endif %}
+      {% if row.who == "webmaster" and webmasters and row.status == "off" %}
+        <p class="small">The webmaster: {{ webmasters|join:", " }}.</p>
+      {% endif %}
+      {% if row.action and row.action.url %}
+        <form method="post" action="{{ row.action.url }}" class="hs-action">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-small btn-ghost">{{ row.action.label }}</button>
+        </form>
+      {% endif %}
+      {% if show_webmaster %}
+        {% if row.webmaster %}<p class="small"><strong>For the webmaster:</strong> {{ row.webmaster }}</p>{% endif %}
+        {% if row.details %}
+          <dl class="hs-details">
+            {% for item in row.details %}<dt>{{ item.0 }}</dt><dd>{{ item.1 }}</dd>{% endfor %}
+          </dl>
+        {% endif %}
+      {% endif %}
+      <p class="small muted hs-when">
+        {% if row.live %}Checked just now.{% elif row.never %}Runs with “Run all checks”.{% else %}Checked {{ row.checked_ago }}, with “Run all checks”.{% endif %}
+      </p>
+    </div>
+  </details>
+</li>

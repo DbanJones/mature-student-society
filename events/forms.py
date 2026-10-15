@@ -1,8 +1,10 @@
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.urls import reverse_lazy
 from django.utils import timezone
 
+from core.richtext import richtext_problem
 from supper.models import Restaurant
 
 from .models import Category, Event
@@ -37,7 +39,7 @@ class EventForm(forms.ModelForm):
         model = Event
         fields = [
             "title", "category", "description", "image", "location",
-            "start", "end", "host", "capacity", "members_only", "is_official",
+            "start", "end", "host", "capacity", "members_only", "show_attendees", "is_official",
             "is_super", "group_chat_link", "attendee_info", "restaurant",
         ]
         labels = {
@@ -45,6 +47,7 @@ class EventForm(forms.ModelForm):
             "image": "Event picture (optional)",
             "host": "Who's running it",
             "members_only": "Hide from the public calendar",
+            "show_attendees": "Show who's going",
             "is_official": "Tagged event (official for its tag)",
             "is_super": "Super event",
             "group_chat_link": "WhatsApp group link (optional)",
@@ -56,7 +59,7 @@ class EventForm(forms.ModelForm):
             "description": "Markdown supported — links, lists, **bold**, *italics*.",
             "image": f"JPEG/PNG, up to {settings.MAX_UPLOAD_SIZE_MB} MB.",
             "host": "Defaults to you.",
-            "end": "Optional.",
+            "end": "Two hours after the start unless you change it. Clear it later to make the event open-ended.",
             "members_only": "Only logged-in members will see it.",
             "group_chat_link": "Shown only to people who have RSVP'd.",
             "attendee_info": "Meeting point, what to bring… shown only after RSVP.",
@@ -136,6 +139,10 @@ class EventForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         start, end = cleaned.get("start"), cleaned.get("end")
+        if self.is_create and start and not end:
+            import datetime
+
+            cleaned["end"] = end = start + datetime.timedelta(hours=2)  # the usual length of an evening
         if start and end and end <= start:
             self.add_error("end", "The end must be after the start.")
         if self.is_create and start and start < timezone.now() and not cleaned.get("allow_past"):
@@ -205,5 +212,12 @@ class TagPageForm(forms.ModelForm):
         }
         widgets = {
             "description": forms.TextInput(),
-            "page_content": forms.Textarea(attrs={"rows": 14}),
+            "page_content": forms.Textarea(attrs={"rows": 14, "data-editor": reverse_lazy("core:preview")}),
         }
+
+    def clean_page_content(self):
+        content = self.cleaned_data["page_content"]
+        problem = richtext_problem(content)
+        if problem:
+            raise forms.ValidationError(f"Not saved: {problem}.")
+        return content

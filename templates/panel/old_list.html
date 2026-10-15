@@ -1,0 +1,148 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Old mailing list{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Old mailing list</h1>
+    <p class="muted">
+      The society's mailing list from before the website, imported from a spreadsheet.
+      The What's On mailer can still reach these people (choose the old list on the Mailer tab),
+      and this page shows who has since joined the website: matched by email address, or by CRSid
+      for a cam.ac.uk address. Members who are banned or have opted out of the mailer on their
+      profile are never mailed through this list.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-small {% if not status %}btn-accent{% else %}btn-ghost{% endif %}" href="{% url 'panel:old_list' %}">All ({{ counts.all }})</a>
+    <a class="btn btn-small {% if status == 'waiting' %}btn-accent{% else %}btn-ghost{% endif %}" href="{% url 'panel:old_list' %}?status=waiting">Not yet on the website ({{ counts.waiting }})</a>
+    <a class="btn btn-small {% if status == 'moved' %}btn-accent{% else %}btn-ghost{% endif %}" href="{% url 'panel:old_list' %}?status=moved">Moved over ({{ counts.moved }})</a>
+    <a class="btn btn-small {% if status == 'unsubscribed' %}btn-accent{% else %}btn-ghost{% endif %}" href="{% url 'panel:old_list' %}?status=unsubscribed">Unsubscribed ({{ counts.unsubscribed }})</a>
+  </div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <h2>Import a spreadsheet</h2>
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {% csrf_token %}
+    <p>{{ form.sheet.label_tag }} {{ form.sheet }}<span class="helptext">{{ form.sheet.help_text }}</span>{{ form.sheet.errors }}</p>
+    <p class="small muted">
+      Addresses are found wherever they sit; the names to their left, a college and anything else on the
+      row are kept. Importing again adds new addresses and fills in blanks; it never duplicates or
+      overwrites, and anyone who has unsubscribed stays unsubscribed.
+    </p>
+    <p><button type="submit" class="btn btn-accent">Import</button></p>
+  </form>
+</div>
+
+<div class="card" id="archive" style="max-width:46rem">
+  <h2>Archive</h2>
+  <p class="small muted" style="margin-top:0">
+    Every spreadsheet imported here is kept exactly as it was uploaded, for the record. It holds people's details,
+    so only admins can download it, and each download goes in the audit log.
+  </p>
+  {% if archive %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>File</th><th>Uploaded</th><th>Addresses</th><th>Size</th><th></th></tr></thead>
+        <tbody>
+          {% for record in archive %}
+            <tr>
+              <td>{{ record.name }}</td>
+              <td class="small">{{ record.uploaded_at|date:"j M Y, H:i" }}{% if record.uploaded_by %}<br><span class="muted">{{ record.uploaded_by.get_full_name|default:record.uploaded_by.username }}</span>{% endif %}</td>
+              <td>{{ record.addresses }}</td>
+              <td class="small">{{ record.size|filesizeformat }}</td>
+              <td>
+                <form method="post" action="{% url 'panel:old_list_file' record.pk %}" style="display:flex;flex-wrap:wrap;gap:.4rem;margin:0">
+                  {% csrf_token %}
+                  <button type="submit" name="action" value="download" class="btn btn-small">Download</button>
+                  <button type="submit" name="action" value="delete" class="btn btn-small btn-ghost"
+                          data-confirm="Delete {{ record.name }} from the archive? The people it imported stay on the old list.">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted small" style="margin:0">
+      Nothing kept yet. Import the spreadsheet above to keep a copy here; importing again never duplicates anyone.
+    </p>
+  {% endif %}
+</div>
+
+<form method="get" class="card filter-bar">
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, college or notes" aria-label="Search the old list">
+  <button type="submit" class="btn btn-small">Search</button>
+  <button type="submit" form="old-list-export" class="btn btn-small btn-ghost">Download these as CSV</button>
+</form>
+<form method="post" id="old-list-export" hidden>
+  {% csrf_token %}
+  <input type="hidden" name="export" value="csv">
+  <input type="hidden" name="status" value="{{ status }}">
+  <input type="hidden" name="q" value="{{ q }}">
+</form>
+
+{% if page.object_list %}
+  <p class="small muted">{{ page.paginator.count }} address{{ page.paginator.count|pluralize:"es" }} shown.</p>
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>College</th><th>Notes</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for sub in page.object_list %}
+          <tr>
+            <td>{{ sub.name|default:"—" }}</td>
+            <td class="small">{{ sub.email }}</td>
+            <td class="small">{{ sub.college|default:"" }}</td>
+            <td class="small muted">{{ sub.notes }}</td>
+            <td>
+              {% if sub.unsubscribed_at %}
+                <span class="badge badge-danger" title="{{ sub.unsubscribed_at|date:'j M Y' }}">Unsubscribed</span>
+              {% elif sub.member and sub.member.is_banned %}
+                <span class="badge badge-danger">Banned member</span>
+                <a class="small" href="{% url 'panel:member_edit' sub.member.pk %}">{{ sub.member.get_full_name|default:sub.member.username }}</a>
+              {% elif sub.member %}
+                <span class="badge badge-ok">On the website</span>
+                <a class="small" href="{% url 'panel:member_edit' sub.member.pk %}">{{ sub.member.get_full_name|default:sub.member.username }}</a>
+                {% if not sub.member.wants_mailer %}<br><span class="small muted">opted out of the mailer</span>{% endif %}
+              {% else %}
+                <span class="badge">Not yet</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{% url 'panel:old_list_action' sub.pk %}" class="row-actions">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                {% if sub.unsubscribed_at %}
+                  <button type="submit" name="action" value="resubscribe" class="btn btn-small btn-ghost">Resubscribe</button>
+                {% else %}
+                  <button type="submit" name="action" value="unsubscribe" class="btn btn-small btn-ghost">Unsubscribe</button>
+                {% endif %}
+                {% if not sub.unsubscribed_at %}<button type="submit" name="action" value="remove" class="btn btn-small btn-danger" data-confirm="Delete {{ sub.email }} from the old list? Importing a sheet that still has it would add it back; to stop mailing someone, use Unsubscribe instead.">Remove</button>{% endif %}
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.has_other_pages %}
+    <div class="pager">
+      {% if page.has_previous %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.previous_page_number }}">← Previous</a>
+      {% endif %}
+      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      {% if page.has_next %}
+        <a class="btn btn-small btn-ghost" href="?{% if qs %}{{ qs }}&{% endif %}page={{ page.next_page_number }}">Next →</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="empty" style="margin-top:1rem">{% if counts.all %}No addresses match.{% else %}Nothing imported yet.{% endif %}</div>
+{% endif %}
+{% endblock %}

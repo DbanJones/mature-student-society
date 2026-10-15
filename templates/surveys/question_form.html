@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if question %}Edit question{% else %}Add a question{% endif %}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/surveys.css' %}">{% endblock %}
+
+{% block content %}
+<p class="small" style="margin-bottom:.6rem"><a href="{{ survey.get_absolute_url }}#questions">&larr; {{ survey.title }}</a></p>
+<div class="page-head">
+  <div>
+    <h1>{% if question %}Edit question{% else %}Add a question{% endif %}</h1>
+    {% if locked %}<p class="lede">The survey has answers, so this question can be reworded but its kind and the number of choices can't change.</p>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="max-width:46rem">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <p>{{ form.prompt.label_tag }} {{ form.prompt }}{{ form.prompt.errors }}</p>
+    <p>{{ form.help_text.label_tag }} {{ form.help_text }}<span class="helptext" id="{{ form.help_text.auto_id }}_helptext">{{ form.help_text.help_text }}</span>{{ form.help_text.errors }}</p>
+    <p>{{ form.kind.label_tag }} {{ form.kind }}{% if form.kind.help_text %}<span class="helptext" id="{{ form.kind.auto_id }}_helptext">{{ form.kind.help_text }}</span>{% endif %}{{ form.kind.errors }}</p>
+    {% if form.choices_text %}
+      <p data-for="single multi dropdown">{{ form.choices_text.label_tag }} {{ form.choices_text }}<span class="helptext" id="{{ form.choices_text.auto_id }}_helptext">{{ form.choices_text.help_text }}</span>{{ form.choices_text.errors }}</p>
+    {% elif form.choice_fields %}
+      <fieldset data-for="single multi dropdown">
+        <legend>Choices</legend>
+        <p class="helptext" style="margin-top:0">Reword each choice here. The answers already given stay with their choice.</p>
+        {% for field in form.choice_fields %}<p>{{ field.label_tag }} {{ field }}{{ field.errors }}</p>{% endfor %}
+      </fieldset>
+    {% endif %}
+    <div class="grid grid-2" data-for="scale">
+      <p>{{ form.scale_low.label_tag }} {{ form.scale_low }}<span class="helptext" id="{{ form.scale_low.auto_id }}_helptext">{{ form.scale_low.help_text }}</span>{{ form.scale_low.errors }}</p>
+      <p>{{ form.scale_high.label_tag }} {{ form.scale_high }}<span class="helptext" id="{{ form.scale_high.auto_id }}_helptext">{{ form.scale_high.help_text }}</span>{{ form.scale_high.errors }}</p>
+    </div>
+    <p class="check-row">{{ form.required }} <label for="{{ form.required.id_for_label }}" style="display:inline">{{ form.required.label }}</label></p>
+    <p style="margin-top:1.5rem">
+      <button type="submit" class="btn btn-accent">{% if question %}Save question{% else %}Add question{% endif %}</button>
+      <a class="btn btn-ghost" href="{{ survey.get_absolute_url }}#questions">Cancel</a>
+    </p>
+  </form>
+</div>
+<script>
+// Show only the extra fields the chosen kind of answer needs.
+(function () {
+  var kind = document.getElementById("{{ form.kind.id_for_label }}");
+  if (!kind) return;
+  function sync() {
+    document.querySelectorAll("[data-for]").forEach(function (el) {
+      el.hidden = el.dataset.for.split(" ").indexOf(kind.value) < 0;
+    });
+  }
+  kind.addEventListener("change", sync);
+  sync();
+})();
+</script>
+{% endblock %}

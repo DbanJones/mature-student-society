@@ -121,6 +121,10 @@ class User(AbstractUser):
                   "them; muted members can read but never send. Admins can "
                   "always message anyone.",
     )
+    wants_mailer = models.BooleanField(
+        default=True, verbose_name="Email me the What's On mailer",
+        help_text="The society's round-up of what's on, sent by the committee now and then.",
+    )
     banned_at = models.DateTimeField(null=True, blank=True)
     banned_by = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL,

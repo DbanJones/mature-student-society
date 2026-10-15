@@ -62,7 +62,7 @@ class ProfileForm(forms.ModelForm):
         fields = [
             "first_name", "last_name", "college", "course", "bio",
             "talk_to_me_about", "work", "interests",
-            "mobile", "email", "photo",
+            "mobile", "email", "wants_mailer", "photo",
         ]
         labels = {
             "course": "What you're studying",
@@ -95,6 +95,12 @@ class ProfileForm(forms.ModelForm):
         self.fields["mobile"].widget = forms.TextInput(
             attrs={"type": "tel", "autocomplete": "tel"}
         )
+        from core.mailinglist import leave_note
+        from core.models import SiteConfig
+
+        note = leave_note(SiteConfig.get().mailing_list_address)
+        if note and "wants_mailer" in self.fields:
+            self.fields["wants_mailer"].help_text = f"{self.fields['wants_mailer'].help_text} {note}"
 
     def clean_mobile(self):
         return clean_mobile_number(self.cleaned_data.get("mobile"))

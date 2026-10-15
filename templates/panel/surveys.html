@@ -1,0 +1,49 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Surveys{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Surveys</h1>
+    <p class="muted">
+      Ask the membership a set of questions. Each survey is run by the members
+      you name on it: they write the questions, open and close it, see the
+      results and send reminders. Members choose whether to answer with their
+      name or anonymously.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-accent" href="{% url 'surveys:create' %}">New survey</a>
+  </div>
+</div>
+
+{% if surveys %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead><tr><th>Survey</th><th>Run by</th><th>Answered</th><th>Opens</th><th>Closes</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for survey in surveys %}
+          <tr>
+            <td><a href="{{ survey.get_absolute_url }}"><strong>{{ survey.title }}</strong></a><br>
+              <span class="small muted">created by {% if survey.created_by %}{{ survey.created_by.get_full_name|default:survey.created_by.username }}{% else %}a former member{% endif %}</span></td>
+            <td class="small">{% for who in survey.admins.all %}{{ who.get_full_name|default:who.username }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="muted">society admins</span>{% endfor %}</td>
+            <td>{{ survey.answer_count }}</td>
+            <td class="small">{% if survey.opens_at %}{{ survey.opens_at|date:"j M Y, H:i" }}{% else %}<span class="muted">when opened</span>{% endif %}</td>
+            <td class="small">{% if survey.closes_at %}{{ survey.closes_at|date:"j M Y, H:i" }}{% else %}<span class="muted">by hand</span>{% endif %}</td>
+            <td class="small">
+              {% if survey.is_draft %}<span class="badge">Draft</span>
+              {% elif survey.is_scheduled %}<span class="badge">Scheduled</span>
+              {% elif survey.is_live %}<span class="badge badge-ok">Open</span>
+              {% else %}<span class="muted">closed</span>{% endif %}
+              <a class="small" href="{% url 'surveys:results' survey.slug %}">results</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">No surveys yet. Create one and name the members who will run it.</div>
+{% endif %}
+{% endblock %}
