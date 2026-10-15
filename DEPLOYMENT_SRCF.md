@@ -226,7 +226,7 @@ or fetch the member and start a session → redirect to their dashboard.
    `header_map = "drop"`, so a look-alike `X_MSS_Remote_User` header (which
    Apache doesn't remove) can't stand in for `X-MSS-Remote-User`.
 
-Admin → Overview → Site health tests 1 and 4 from outside, through Apache,
+Admin → Health tests 1 and 4 from outside, through Apache,
 whenever someone presses "Run all checks" and in the daily `health_check`
 cron job. It checks 2 from the socket's permissions (it can't tell whether
 gunicorn is listening on TCP instead).
@@ -336,8 +336,8 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
   health page checks that a fresh dump arrives every night.
 - **Health**: `/healthz` answers `ok` while the site and its database work;
   point a free outside monitor (an UptimeRobot keyword monitor) at it. A
-  daily cron line runs every site health check, keeps the result for Admin →
-  Overview → Site health, and mails the crontab's owner only when something
+  daily cron line runs every site health check, keeps the result for
+  Admin → Health, and mails the crontab's owner only when something
   needs attention:
   `30 7 * * * cd /public/societies/<soc>/<portal folder> && set -a && . ./.env && set +a && .venv/bin/python manage.py health_check --trigger cron --quiet --prune`
 - **Upgrades**: follow UPGRADING.md (backup first; keep `.env` and `media/`;

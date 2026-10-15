@@ -280,7 +280,7 @@ returns a `Result`: a status (ok, warn, fail, unknown, off or na; only
 warn and fail colour a verdict), a plain sentence and next step for the
 committee, and details and a next step for the webmaster, which only super
 admins see. Quick checks read the database, the settings and a few files,
-and run on every view of Admin → Overview → Site health. Slow checks read
+and run on every view of Admin → Health. Slow checks read
 what their probe found. Probes (`probes.py`) fetch the site through
 Apache, check certificates and the mail server, and walk the disk. They
 run all at once in threads within a 15-second budget, never touch the

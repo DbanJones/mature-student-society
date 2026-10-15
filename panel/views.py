@@ -2992,3 +2992,33 @@ def mailing_list_done(request, pk):
     messages.success(request, f"Recorded: the {batch.count} address{'es' if batch.count != 1 else ''} in that file "
                               + ("are on the list now." if batch.kind == ListSync.Kind.ADD else "are off the list now."))
     return redirect("panel:mailing_list")
+
+
+@portal_admin_required
+def space_saver(request):
+    """Free the space taken by pictures of events more than a week behind
+    us, and by pictures no event uses. The events themselves stay."""
+    from django.template.defaultfilters import filesizeformat
+
+    from events import space
+
+    if request.method == "POST":
+        pictures, files, freed = space.free_up()
+        if pictures or files:
+            AuditLog.record(request.user, "space_saver",
+                            detail=f"{pictures} event picture{'s' if pictures != 1 else ''} and {files} unused "
+                                   f"file{'s' if files != 1 else ''}, {filesizeformat(freed)}")
+            messages.success(request, f"Freed {filesizeformat(freed)}: {pictures} picture{'s' if pictures != 1 else ''} "
+                                      f"of past events and {files} unused file{'s' if files != 1 else ''}.")
+        else:
+            messages.info(request, "Nothing to clear.")
+        return redirect("panel:space_saver")
+    found = space.survey()
+    return render(request, "panel/space_saver.html", {
+        "nav_active": "panel",
+        "panel_tab": "space_saver",
+        **found,
+        "shown": found["events"][:50],
+        "more": max(0, len(found["events"]) - 50),
+        "free_bytes": found["event_bytes"] + found["unused_bytes"],
+    })

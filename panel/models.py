@@ -104,7 +104,7 @@ class OldSubscriber(models.Model):
 # --- site health ----------------------------------------------------------------------------
 
 class HealthSnapshot(models.Model):
-    """One run of the site health checks (Admin → Overview → Site health),
+    """One run of the site health checks (Admin → Health),
     kept so the page can show a history and how long a problem has lasted."""
 
     class Trigger(models.TextChoices):

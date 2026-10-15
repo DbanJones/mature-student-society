@@ -138,7 +138,10 @@ Do these once, in order, between steps 2 and 3.
    (`gunicorn.conf.py`); after the restart, `stat -c '%A %G' sockets/web.sock`
    should show `srwxrwx--- mss`.
 2. **Tell the portal where Apache serves `/static/` from, and the site's own
-   address.** In control.srcf.net, check whether cambridgematuresoc.com has
+   address.** (Without the first line, a live portal now uses
+   `public_html/static` beside its own folder, which is where Apache serves
+   it on the SRCF; set it if Apache serves another folder.) In
+   control.srcf.net, check whether cambridgematuresoc.com has
    its own "Document root"; if it does, use that folder's `static` below.
    Add the two lines on the server (a Windows editor can add invisible
    characters that break `.env`):
@@ -149,8 +152,7 @@ Do these once, in order, between steps 2 and 3.
 3. **Let the portal keep that folder current.** Whoever owns it (`stat -c %U /public/societies/mss/public_html/static`)
    runs `srcf-soc-permfix mss`, so the account that runs the portal can
    replace the files there.
-4. Restart (step 3 above) and press **Run all checks** on Admin → Overview →
-   Site health. If “The site's look is ready on the server” is amber, run
+4. Restart (step 3 above) and press **Run all checks** on Admin → Health. If “The site's look is ready on the server” is amber, run
    `set -a; . ./.env; set +a; .venv/bin/python manage.py sync_static` and restart again.
 5. **Schedule the daily health check** on sinkhole (`crontab -e`, next to
    the `close_polls` line below). Cron mails its owner only when something
@@ -180,7 +182,7 @@ Do these once, in order, between steps 2 and 3.
 
 ## After this release: three settings and one cron line
 
-- **Site health** (Admin → Overview → Site health) checks 23 things in
+- **Site health** (Admin → Health) checks 23 things in
   eight groups: whether the site answers and how fast, whether visitors get
   this version's stylesheets, whether a Raven login can be faked, the
   certificate, private files, email, scheduled jobs, backups, the database,
@@ -392,6 +394,34 @@ Two commands help you understand the live data without touching it:
 `manage.py profile_audit` lists accounts that never finished signing up and
 why, and the panel's Members tab now shows the same thing with a Remind
 button.
+
+## Mid-October update: calendar, mailing list, Health, space saver
+
+- **The calendar looked like a plain list** because Apache was still
+  serving the stylesheets from 4 September: `DJANGO_STATIC_ROOT` wasn't in
+  `.env`, so each restart copied new styles into a folder Apache never
+  reads. The portal now finds `public_html/static` beside its own folder by
+  itself, so the restart after this update puts the current styles live.
+  If pages still look old afterwards, Admin → Health says why; most often
+  it's the folder's permissions (one-time step 3). The calendar's List view
+  (what phones see) is now dated cards.
+- **One migration** (panel 0006, the old list's archive) runs on restart.
+- **Admin → Health** is its own tab next to Overview. It opens with one
+  sentence, then only what needs sorting out, each with what to do and
+  whose job it is; the rest folds away.
+- **People → Mailing list** leads with its status and two cards. Each card
+  is three steps, and its “Mark them as added” / “Mark them as taken off”
+  button sits in the card, greyed out until there's a download to mark.
+  The set-up and sending guides start closed.
+- **People → Old mailing list keeps each imported spreadsheet** as an
+  archive, for admins to download (logged) or delete. The files sit under
+  `media/private/`, which `/media/` never serves. Spreadsheets imported
+  before this update weren't kept: import the old list again to keep a copy
+  (it never duplicates anyone).
+- **Events → Space saver** deletes the pictures of events that ended more
+  than a week ago (the events stay), and pictures no event uses any more.
+  It shows what would go first, and nothing happens until an admin presses
+  the button. Members' photos and the pages' pictures are never touched.
 
 ## If something goes wrong
 

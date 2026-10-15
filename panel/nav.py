@@ -30,6 +30,7 @@ PANEL_GROUPS = [
         ("events", "All events", "panel:events"),
         ("tagged", "Tagged events", "panel:tagged_events"),
         ("polls", "Polls", "panel:polls"),
+        ("space_saver", "Space saver", "panel:space_saver"),
     ]),
     ("messages", "Messages", [
         ("messages", "Messages", "panel:messages"),

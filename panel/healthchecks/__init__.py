@@ -1,7 +1,7 @@
 """Site health: is the website working, and if not, what to do about it.
 
 See core.py for how checks and probes work, checks.py for the checks
-themselves, and the Site health page (Admin → Overview → Site health).
+themselves, and the Site health page (Admin → Health).
 """
 
 import datetime

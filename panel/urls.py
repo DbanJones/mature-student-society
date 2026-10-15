@@ -31,6 +31,7 @@ urlpatterns = [
     path("members/bulk/", views.members_bulk, name="members_bulk"),
     path("content/pages/<int:pk>/toggle/", views.page_toggle, name="page_toggle"),
     path("events/", views.events_admin, name="events"),
+    path("events/space-saver/", views.space_saver, name="space_saver"),
     path("events/<int:pk>/action/", views.event_action, name="event_action"),
     path("polls/", views.polls, name="polls"),
     path("surveys/", views.surveys, name="surveys"),
