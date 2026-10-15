@@ -19,6 +19,9 @@ def protected_media(request, path):
     if "\\" in path:
         raise Http404
     clean = posixpath.normpath(path).lstrip("/")
+    if clean == "private" or clean.startswith("private/"):
+        # admins' files (the old list's spreadsheets): only the panel hands them out
+        raise Http404
     if clean.startswith("public/"):
         return serve(request, clean, document_root=settings.MEDIA_ROOT)
     return _members_only(request, clean)

@@ -67,7 +67,7 @@ from .forms import (
     TagAdminForm,
     WhatsAppSettingsForm,
 )
-from .models import AuditLog, ErrorEvent, ListMember, ListSync, MailLog, OldSubscriber
+from .models import AuditLog, ErrorEvent, ListMember, ListSync, MailLog, OldListFile, OldSubscriber
 
 
 def _display_name(member):
@@ -2488,6 +2488,7 @@ def old_list(request):
             if changed:
                 sub.save()
                 filled += 1
+        _archive_old_list(upload, len(entries), request.user)
         AuditLog.record(
             request.user, "import_old_list", target=upload.name[:200],
             detail=(f"added {added}, filled in {filled}, skipped {stats['no_address']} + {stats['invalid']} invalid, "
@@ -2553,7 +2554,53 @@ def old_list(request):
         "nav_active": "panel", "panel_tab": "old_list",
         "form": form, "page": page, "counts": counts, "status": status, "q": q,
         "qs": params.urlencode(),
+        "archive": OldListFile.objects.select_related("uploaded_by"),
     })
+
+
+def _archive_old_list(upload, addresses, user):
+    """Keep the spreadsheet as it was uploaded. Never in the way of the import."""
+    import logging
+    import os
+
+    from .models import OldListFile
+
+    try:
+        upload.seek(0)
+        record = OldListFile(name=os.path.basename(upload.name)[:255], size=upload.size or 0, addresses=addresses,
+                             uploaded_by=user)
+        record.file.save(upload.name, upload, save=False)
+        record.save()
+    except Exception:
+        logging.getLogger(__name__).warning("Could not keep a copy of the old list's spreadsheet", exc_info=True)
+
+
+@portal_admin_required
+@require_POST
+def old_list_file(request, pk):
+    """Download an archived spreadsheet of the old list, or delete it."""
+    from django.http import FileResponse
+
+    from .models import OldListFile
+
+    record = get_object_or_404(OldListFile, pk=pk)
+    if request.POST.get("action") == "delete":
+        record.file.delete(save=False)
+        record.delete()
+        AuditLog.record(request.user, "delete_old_list_file", target=record.name[:200],
+                        detail=f"uploaded {timezone.localtime(record.uploaded_at):%d %b %Y}")
+        messages.success(request, f"Deleted {record.name} from the archive.")
+        return redirect(reverse("panel:old_list") + "#archive")
+    try:
+        handle = record.file.open("rb")
+    except (FileNotFoundError, OSError):
+        messages.error(request, f"{record.name} is no longer on the server.")
+        return redirect(reverse("panel:old_list") + "#archive")
+    AuditLog.record(request.user, "download_old_list_file", target=record.name[:200],
+                    detail=f"uploaded {timezone.localtime(record.uploaded_at):%d %b %Y}, {record.addresses} addresses")
+    response = FileResponse(handle, as_attachment=True, filename=record.name)
+    response["Cache-Control"] = "no-store, private"
+    return response
 
 
 @portal_admin_required
@@ -2730,9 +2777,9 @@ def _mailing_list_page(request, form=None, shrink=None):
     owed = None
     if owed_addresses:
         owed = {"addresses": owed_addresses, "batches": owed_batches[:8], "more": max(0, len(owed_batches) - 8)}
-    downloads = list(ListSync.objects.filter(kind__in=[ListSync.Kind.ADD, ListSync.Kind.REMOVE], done_at__isnull=True,
-                                             note="", created_at__gte=timezone.now() - datetime.timedelta(days=14))
-                     .select_related("created_by")[:6])
+    # the download each card waits on to be marked done (a new one replaces it)
+    waiting = {kind: ListSync.objects.filter(kind=kind, note="", done_at__isnull=True)
+               .select_related("created_by").first() for kind in (ListSync.Kind.ADD, ListSync.Kind.REMOVE)}
     return render(request, "panel/mailing_list.html", {
         "nav_active": "panel",
         "panel_tab": "mailing_list",
@@ -2760,7 +2807,8 @@ def _mailing_list_page(request, form=None, shrink=None):
         "update_old": bool(last_update) and timezone.now() - last_update.created_at > LIST_STALE,
         "since_update": since_update,
         "owed": owed,
-        "downloads": downloads,
+        "waiting": {"add": waiting[ListSync.Kind.ADD], "remove": waiting[ListSync.Kind.REMOVE]},
+        "old_list_url": reverse("panel:old_list"),
         "counts": listsync.summary(rows, keys, removing),
         "filters": LIST_FILTERS,
         "show": show,
@@ -2881,6 +2929,8 @@ def mailing_list_download(request):
         messages.info(request, "There's nobody to " + ("add." if kind == ListSync.Kind.ADD else "take off."))
         return redirect("panel:mailing_list")
     config = SiteConfig.get()
+    # a new download holds everything still to do, so it replaces an unmarked older one
+    ListSync.objects.filter(kind=kind, note="", done_at__isnull=True).delete()
     ListSync.objects.create(kind=kind, created_by=request.user, count=len(addresses), addresses=addresses)
     AuditLog.record(request.user, f"download_list_{kind}", target=config.mailing_list_address,
                     detail=f"{len(addresses)} address{'es' if len(addresses) != 1 else ''}"

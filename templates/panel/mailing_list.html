@@ -6,18 +6,14 @@
 <div class="page-head">
   <div>
     <h1>Mailing list</h1>
-    <p class="muted">
-      Which website accounts are on the society's mailing list{% if list_address %}, {{ list_address }}{% endif %},
-      and adding the ones who aren't.
-    </p>
+    <p class="muted">Who is on {{ list_address|default:"the society's mailing list" }}, and adding the ones who aren't.</p>
   </div>
 </div>
 
 {% for address in own_on_list %}
   <div class="flash flash-warning" style="margin:0 0 1rem">
     <strong>{{ address }} is on the list.</strong> The mailer sends from (or asks replies to go to) that address, so
-    while it is subscribed Mailman treats every What's On as a member's post: it skips approval, or bounces if
-    members are moderated. Take it off the list.
+    Mailman would treat every What's On as a member's post. Take it off the list.
   </div>
 {% endfor %}
 
@@ -30,70 +26,47 @@
 <div class="card ml-status">
   {% if last_update %}
     <p style="margin:0">
-      The site's copy of the list was last updated from Mailman on
-      <strong>{{ last_update.created_at|date:"j M Y, H:i" }}</strong>{% if last_update.created_by %} by
-      {{ last_update.created_by.get_full_name|default:last_update.created_by.username }}{% endif %}:
+      The site's copy of the list is from <strong>{{ last_update.created_at|date:"j M Y, H:i" }}</strong>{% if last_update.created_by %}
+      ({{ last_update.created_by.get_full_name|default:last_update.created_by.username }}){% endif %}:
       <strong>{{ last_update.count }}</strong> address{{ last_update.count|pluralize:"es" }}.
       {% if since_update %}Since then, {{ since_update }} here.{% endif %}
       {% if last_part %}Part of the list was pasted on {{ last_part.created_at|date:"j M, H:i" }}, adding to that.{% endif %}
     </p>
     {% if update_old %}
       <p class="small" style="margin:.4rem 0 0"><span class="badge badge-warn">Over a month old</span>
-        People join and leave the list on Mailman too, so update it below before relying on this page.</p>
+        People join and leave on Mailman too: <a href="#update">update it</a> before relying on this page.</p>
     {% endif %}
   {% elif last_part %}
     <p style="margin:0">
-      <strong>Only part of the list has been pasted</strong> ({{ last_part.created_at|date:"j M Y, H:i" }}). Paste the
-      whole list under “Update from the list” before relying on this page.
+      <strong>Only part of the list has been pasted</strong> ({{ last_part.created_at|date:"j M Y, H:i" }}).
+      <a href="#update">Paste the whole list</a> before relying on this page.
     </p>
   {% else %}
     <p style="margin:0">
-      <strong>The site doesn't know who is on the list yet.</strong> Copy the list's members from Mailman and paste
-      them under “Update from the list” at the foot of this page. Until then every account shows as not on it.
+      <strong>The site doesn't know who is on the list yet.</strong> <a href="#update">Paste the list's members</a>
+      first; until then every account shows as not on it.
     </p>
   {% endif %}
   {% if owed %}
-    <div class="ml-pending">
-      <div class="small">
-        <p style="margin:0">
-          <strong>Waiting to come off the list</strong>{% if owed.addresses|length <= 10 %}:
-          <code>{{ owed.addresses|join:", " }}</code>{% else %}: {{ owed.addresses|length }} addresses{% endif %}.
-          They're in “Download the addresses to take off” below, with both spellings of a Cambridge address (any
-          that aren't on the list show under “Cannot unsubscribe non-members”; that's fine). Because:
-        </p>
+    <div class="ml-owed">
+      <p class="small" style="margin:0">
+        <strong>Waiting to come off the list</strong>{% if owed.addresses|length <= 10 %}:
+        <code>{{ owed.addresses|join:", " }}</code>{% else %}: {{ owed.addresses|length }} addresses{% endif %}.
+        They're in the take-off download below.
+      </p>
+      <details class="ml-more">
+        <summary>Why</summary>
         <ul class="ml-reasons">
           {% for batch in owed.batches %}
             <li>{{ batch.created_at|date:"j M, H:i" }}: {{ batch.note }}</li>
           {% endfor %}
           {% if owed.more %}<li>and {{ owed.more }} earlier</li>{% endif %}
         </ul>
-      </div>
+        <p class="small muted" style="margin:.3rem 0 0">Both spellings of a Cambridge address are in the file; any that
+          aren't on the list show under “Cannot unsubscribe non-members”, which is fine.</p>
+      </details>
     </div>
   {% endif %}
-  {% for batch in downloads %}
-    <div class="ml-pending">
-      <p class="small" style="margin:0">
-        {{ batch.created_at|date:"j M, H:i" }}:
-        {{ batch.created_by.get_full_name|default:"an admin" }} downloaded
-        <strong>{{ batch.count }}</strong> address{{ batch.count|pluralize:"es" }}
-        {% if batch.kind == "add" %}to add to the list{% else %}to take off the list{% endif %}.
-        Once they're {% if batch.kind == "add" %}added on Mailman's Mass Subscription page{% else %}taken off on
-        Mailman's Mass Removal page{% endif %}, say so here, so this page shows it without waiting for the next update.
-      </p>
-      <div class="ml-pending-actions">
-        <form method="post" action="{% url 'panel:mailing_list_forget' batch.pk %}">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-small btn-ghost">Not used</button>
-        </form>
-        <form method="post" action="{% url 'panel:mailing_list_done' batch.pk %}">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-small{% if batch.kind == 'add' %} btn-accent{% endif %}">
-            {% if batch.kind == "add" %}Mark them as added{% else %}Mark them as taken off{% endif %}
-          </button>
-        </form>
-      </div>
-    </div>
-  {% endfor %}
 </div>
 
 <div class="stat-row" style="margin:1rem 0">
@@ -116,97 +89,103 @@
 </div>
 
 <div class="grid grid-2">
-  <div class="card">
+  <div class="card ml-action">
     <h2>Add the ones who aren't on it</h2>
     <p class="small muted">
-      Accounts that get the website's mailer but aren't on the list.{% if counts.old_missing %} Tick the box to
-      include the {{ counts.old_missing }} old-mailing-list address{{ counts.old_missing|pluralize:"es" }} of people
-      not yet on the website.{% endif %}
+      {{ counts.missing }} account{{ counts.missing|pluralize }} get{{ counts.missing|pluralize:"s," }} the website's
+      mailer but {{ counts.missing|pluralize:"isn't,aren't" }} on the list.
     </p>
-    <form method="post" action="{% url 'panel:mailing_list_download' %}">
-      {% csrf_token %}
-      <input type="hidden" name="kind" value="add">
-      {% if counts.old_missing %}
-        <p><label class="check-inline"><input type="checkbox" name="old_list" value="1"> Include the old mailing list</label></p>
-      {% endif %}
-      <button type="submit" class="btn btn-small btn-accent"{% if not counts.missing and not counts.old_missing %} disabled{% endif %}>
-        Download the addresses to add
-      </button>
-    </form>
-    <ol class="small" style="margin:.8rem 0 0">
-      <li>Upload the file on the list's {% if pages.subscribe %}<a href="{{ pages.subscribe }}" rel="noopener">Mass
-        Subscription page</a>{% else %}Mass Subscription page{% endif %}, choosing “Subscribe”. Anyone already on it
-        shows as “Already a member”; that's fine. If Mailman says the form has expired, reload its page and upload
-        the file again.</li>
-      <li>Come back here and press “Mark them as added”.</li>
+    <ol class="ml-steps">
+      <li>
+        <form method="post" action="{% url 'panel:mailing_list_download' %}">
+          {% csrf_token %}
+          <input type="hidden" name="kind" value="add">
+          {% if counts.old_missing %}
+            <label class="check-inline small"><input type="checkbox" name="old_list" value="1"> Also the
+              {{ counts.old_missing }} old-list address{{ counts.old_missing|pluralize:"es" }} of people not on the website</label>
+          {% endif %}
+          <button type="submit" class="btn btn-small{% if not waiting.add %} btn-accent{% endif %}"{% if not counts.missing and not counts.old_missing %} disabled{% endif %}>
+            Download the addresses to add
+          </button>
+        </form>
+      </li>
+      <li>
+        Upload the file on Mailman's {% if pages.subscribe %}<a href="{{ pages.subscribe }}" rel="noopener">Mass
+        Subscription page</a>{% else %}Mass Subscription page{% endif %}, choosing “Subscribe”.
+        <details class="ml-more">
+          <summary>Tips</summary>
+          Anyone already on the list shows as “Already a member”; that's fine. If Mailman says the form has expired,
+          reload its page and upload the file again.
+        </details>
+      </li>
+      <li>
+        {% if waiting.add %}
+          <div class="ml-done">
+            <form method="post" action="{% url 'panel:mailing_list_done' waiting.add.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-small btn-accent">Mark them as added</button>
+            </form>
+            <form method="post" action="{% url 'panel:mailing_list_forget' waiting.add.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-small btn-ghost">Not used</button>
+            </form>
+          </div>
+          <span class="small muted">{{ waiting.add.count }} address{{ waiting.add.count|pluralize:"es" }}, downloaded
+            {{ waiting.add.created_at|date:"j M, H:i" }}{% if waiting.add.created_by %} by
+            {{ waiting.add.created_by.get_full_name|default:waiting.add.created_by.username }}{% endif %}.</span>
+        {% else %}
+          <button type="button" class="btn btn-small" disabled>Mark them as added</button>
+          <span class="small muted">Ready once you've downloaded the file.</span>
+        {% endif %}
+      </li>
     </ol>
   </div>
-  <div class="card">
+  <div class="card ml-action">
     <h2>Take off the ones who stopped</h2>
     <p class="small muted">
-      Everyone on the list the mailer mustn't reach: accounts that opted out, are banned or were closed, old-list
-      people who unsubscribed, and the addresses of accounts that went or moved{% if counts.to_remove %}
-      ({{ counts.to_remove }} address{{ counts.to_remove|pluralize:"es" }}){% endif %}.
+      {% if counts.to_remove %}{{ counts.to_remove }} address{{ counts.to_remove|pluralize:"es" }} the mailer mustn't
+      reach{% else %}Nobody to take off{% endif %}: accounts that opted out, are banned or were closed, old-list people
+      who unsubscribed, and accounts that went or moved.
     </p>
-    <form method="post" action="{% url 'panel:mailing_list_download' %}">
-      {% csrf_token %}
-      <input type="hidden" name="kind" value="remove">
-      <button type="submit" class="btn btn-small"{% if not counts.to_remove %} disabled{% endif %}>
-        Download the addresses to take off
-      </button>
-    </form>
-    <ol class="small" style="margin:.8rem 0 0">
-      <li>Upload the file on the list's {% if pages.remove %}<a href="{{ pages.remove }}" rel="noopener">Mass Removal
-        page</a>{% else %}Mass Removal page{% endif %}, leaving “Send unsubscription acknowledgement” on No. Any
-        that have already left show in red under “Cannot unsubscribe non-members”; that's fine.</li>
-      <li>Come back here and press “Mark them as taken off”.</li>
-    </ol>
-  </div>
-</div>
-
-<div class="grid grid-2" style="margin-top:1.2rem">
-  <div class="card">
-    <h2>Set up the list (once)</h2>
-    <p class="small muted">On the list's admin pages, before anyone is added and before the first post:</p>
-    <ol class="small ml-checklist">
-      <li><strong>Members only, kept private.</strong> {% if pages.roster_privacy %}<a href="{{ pages.roster_privacy }}" rel="noopener">Privacy
-        options → Subscription rules</a>{% else %}Privacy options → Subscription rules{% endif %}: “What steps are
-        required for subscription?” → Confirm and approve (or anyone could join by emailing the list), and “Who can
-        view subscription list?” → List admin only.</li>
-      <li><strong>Make it announce-only.</strong> {% if pages.senders %}<a href="{{ pages.senders }}" rel="noopener">Privacy
-        options → Sender filters</a>{% else %}Privacy options → Sender filters{% endif %}: “By default, should new list
-        member postings be moderated?” → Yes, and “Action to take when a moderated member posts” → Reject. Leave
-        “Action to take for postings from non-members…” on Hold. For anyone already on the list:
-        {% if pages.members %}<a href="{{ pages.members }}" rel="noopener">Membership List</a>{% else %}Membership
-        List{% endif %} → “Set everyone's moderation bit” → On → Set.</li>
-      <li><strong>Keep the archive private.</strong> {% if pages.archive %}<a href="{{ pages.archive }}" rel="noopener">Archiving
-        options</a>{% else %}Archiving options{% endif %}: “Is archive file source for public or private archival?” →
-        private{% if public_archive %}, then check that <a href="{{ public_archive }}" rel="noopener">{{ public_archive }}</a>
-        no longer opens without a login{% endif %}. The What's On lists members-only events.</li>
-      <li><strong>No password emails.</strong> {% if pages.general %}<a href="{{ pages.general }}" rel="noopener">General
-        options</a>{% else %}General options{% endif %}: “Send monthly password reminders?” → No.</li>
-      <li><strong>Say how to leave.</strong> {% if pages.footer %}<a href="{{ pages.footer }}" rel="noopener">Non-digest
-        options</a>{% else %}Non-digest options{% endif %}: add to “Footer added to mail sent to regular list members”:
-        <em>To leave this list, email {{ leave_address|default:"the list's -request address" }} from the address
-        this came to, with the subject unsubscribe, and reply to the confirmation it sends.</em> Its own pages need an
-        SRCF or University login, which some old-list people don't have.</li>
-      <li><strong>Keep the society's own addresses off it:</strong> {{ sender_address|default:"the address the mailer sends from" }}
-        and {{ contact_email }}, which the mailer sends from and asks replies to go to.</li>
-    </ol>
-  </div>
-  <div class="card">
-    <h2>Sending the What's On to the list</h2>
-    <ol class="small">
-      <li>On the <a href="{% url 'panel:mailer' %}">Mailer</a>, choose “One address” (it starts on the list) and send.</li>
-      <li>Mailman holds it, because the site isn't a subscriber, and emails mss-admins.</li>
-      <li>On the {% if pages.held %}<a href="{{ pages.held }}" rel="noopener">waiting posts page</a>{% else %}waiting
-        posts page{% endif %}, posts are grouped by sender, and Accept there releases every post held from that
-        address. If yours (check its subject and time) is the only one, choose Accept. If anything else is held from
-        it (an older What's On, or something you didn't send: anyone can fake a From address), open yours by its
-        number, choose Approve, and Discard the rest. Leave the boxes to add the sender to a filter, or to ban it,
-        unticked.</li>
-      <li>Send each What's On either to the list or to the website's audiences, not both, or people on both get it
-        twice.</li>
+    <ol class="ml-steps">
+      <li>
+        <form method="post" action="{% url 'panel:mailing_list_download' %}">
+          {% csrf_token %}
+          <input type="hidden" name="kind" value="remove">
+          <button type="submit" class="btn btn-small"{% if not counts.to_remove %} disabled{% endif %}>
+            Download the addresses to take off
+          </button>
+        </form>
+      </li>
+      <li>
+        Upload the file on Mailman's {% if pages.remove %}<a href="{{ pages.remove }}" rel="noopener">Mass Removal
+        page</a>{% else %}Mass Removal page{% endif %}.
+        <details class="ml-more">
+          <summary>Tips</summary>
+          Leave “Send unsubscription acknowledgement” on No. Any that have already left show in red under “Cannot
+          unsubscribe non-members”; that's fine.
+        </details>
+      </li>
+      <li>
+        {% if waiting.remove %}
+          <div class="ml-done">
+            <form method="post" action="{% url 'panel:mailing_list_done' waiting.remove.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-small btn-accent">Mark them as taken off</button>
+            </form>
+            <form method="post" action="{% url 'panel:mailing_list_forget' waiting.remove.pk %}">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-small btn-ghost">Not used</button>
+            </form>
+          </div>
+          <span class="small muted">{{ waiting.remove.count }} address{{ waiting.remove.count|pluralize:"es" }},
+            downloaded {{ waiting.remove.created_at|date:"j M, H:i" }}{% if waiting.remove.created_by %} by
+            {{ waiting.remove.created_by.get_full_name|default:waiting.remove.created_by.username }}{% endif %}.</span>
+        {% else %}
+          <button type="button" class="btn btn-small" disabled>Mark them as taken off</button>
+          <span class="small muted">Ready once you've downloaded the file.</span>
+        {% endif %}
+      </li>
     </ol>
   </div>
 </div>
@@ -247,11 +226,11 @@
     </table>
   </div>
   {% if page.has_other_pages %}
-    <div class="pager">
+    <p class="small" style="margin-top:.6rem">
       {% if page.has_previous %}<a class="btn btn-small btn-ghost" href="{% url 'panel:mailing_list' %}?{{ qs }}&page={{ page.previous_page_number }}">Previous</a>{% endif %}
-      <span class="small muted">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+      Page {{ page.number }} of {{ page.paginator.num_pages }}
       {% if page.has_next %}<a class="btn btn-small btn-ghost" href="{% url 'panel:mailing_list' %}?{{ qs }}&page={{ page.next_page_number }}">Next</a>{% endif %}
-    </div>
+    </p>
   {% endif %}
 {% else %}
   <p class="muted">No accounts match.</p>
@@ -259,14 +238,66 @@
 
 <div class="card" id="update" style="margin-top:1.4rem">
   <h2>Update from the list</h2>
-  <p class="small muted">
-    Mailman can't send its members to the website, so copy them across: {{ how_to_copy|safe }}
-    Paste everything below; the site picks out the addresses and ignores the rest of the page.
-  </p>
+  <p class="small muted" style="margin-top:0">Paste Mailman's subscriber list here to refresh the site's copy; the site
+    picks out the addresses and ignores the rest of the page.</p>
+  <details class="ml-more"{% if shrink %} open{% endif %}>
+    <summary>How to copy the list from Mailman</summary>
+    <p class="small" style="margin:.4rem 0 0">{{ how_to_copy|safe }}</p>
+  </details>
   <form method="post" action="{% url 'panel:mailing_list_update' %}">
     {% csrf_token %}
     {{ form.as_p }}
     <button type="submit" class="btn btn-accent">Update the site's copy</button>
   </form>
+  {% if old_list_url %}
+    <p class="small muted" style="margin:.8rem 0 0">The old mailing list and its archived spreadsheets are on
+      <a href="{{ old_list_url }}">People → Old mailing list</a>.</p>
+  {% endif %}
+</div>
+
+<div class="grid grid-2" style="margin-top:1.2rem">
+  <details class="card ml-guide">
+    <summary><h2>Set up the list (once)</h2><span class="small muted">Six settings on Mailman, before anyone is added</span></summary>
+    <ol class="small ml-checklist">
+      <li><strong>Members only, kept private.</strong> {% if pages.roster_privacy %}<a href="{{ pages.roster_privacy }}" rel="noopener">Privacy
+        options → Subscription rules</a>{% else %}Privacy options → Subscription rules{% endif %}: “What steps are
+        required for subscription?” → Confirm and approve (or anyone could join by emailing the list), and “Who can
+        view subscription list?” → List admin only.</li>
+      <li><strong>Make it announce-only.</strong> {% if pages.senders %}<a href="{{ pages.senders }}" rel="noopener">Privacy
+        options → Sender filters</a>{% else %}Privacy options → Sender filters{% endif %}: “By default, should new list
+        member postings be moderated?” → Yes, and “Action to take when a moderated member posts” → Reject. Leave
+        “Action to take for postings from non-members…” on Hold. For anyone already on the list:
+        {% if pages.members %}<a href="{{ pages.members }}" rel="noopener">Membership List</a>{% else %}Membership
+        List{% endif %} → “Set everyone's moderation bit” → On → Set.</li>
+      <li><strong>Keep the archive private.</strong> {% if pages.archive %}<a href="{{ pages.archive }}" rel="noopener">Archiving
+        options</a>{% else %}Archiving options{% endif %}: “Is archive file source for public or private archival?” →
+        private{% if public_archive %}, then check that <a href="{{ public_archive }}" rel="noopener">{{ public_archive }}</a>
+        no longer opens without a login{% endif %}. The What's On lists members-only events.</li>
+      <li><strong>No password emails.</strong> {% if pages.general %}<a href="{{ pages.general }}" rel="noopener">General
+        options</a>{% else %}General options{% endif %}: “Send monthly password reminders?” → No.</li>
+      <li><strong>Say how to leave.</strong> {% if pages.footer %}<a href="{{ pages.footer }}" rel="noopener">Non-digest
+        options</a>{% else %}Non-digest options{% endif %}: add to “Footer added to mail sent to regular list members”:
+        <em>To leave this list, email {{ leave_address|default:"the list's -request address" }} from the address
+        this came to, with the subject unsubscribe, and reply to the confirmation it sends.</em> Its own pages need an
+        SRCF or University login, which some old-list people don't have.</li>
+      <li><strong>Keep the society's own addresses off it:</strong> {{ sender_address|default:"the address the mailer sends from" }}
+        and {{ contact_email }}, which the mailer sends from and asks replies to go to.</li>
+    </ol>
+  </details>
+  <details class="card ml-guide">
+    <summary><h2>Sending the What's On to the list</h2><span class="small muted">Four steps, and the one trap on Mailman's approval page</span></summary>
+    <ol class="small">
+      <li>On the <a href="{% url 'panel:mailer' %}">Mailer</a>, choose “One address” (it starts on the list) and send.</li>
+      <li>Mailman holds it, because the site isn't a subscriber, and emails mss-admins.</li>
+      <li>On the {% if pages.held %}<a href="{{ pages.held }}" rel="noopener">waiting posts page</a>{% else %}waiting
+        posts page{% endif %}, posts are grouped by sender, and Accept there releases every post held from that
+        address. If yours (check its subject and time) is the only one, choose Accept. If anything else is held from
+        it (an older What's On, or something you didn't send: anyone can fake a From address), open yours by its
+        number, choose Approve, and Discard the rest. Leave the boxes to add the sender to a filter, or to ban it,
+        unticked.</li>
+      <li>Send each What's On either to the list or to the website's audiences, not both, or people on both get it
+        twice.</li>
+    </ol>
+  </details>
 </div>
 {% endblock %}

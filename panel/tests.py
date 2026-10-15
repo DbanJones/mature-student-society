@@ -1775,11 +1775,50 @@ class OldListTests(TestCase):
     ]
 
     def setUp(self):
+        import tempfile
+
+        media = tempfile.TemporaryDirectory()  # imports keep the spreadsheet: never in the real media folder
+        self.addCleanup(media.cleanup)
+        moved = override_settings(MEDIA_ROOT=media.name)
+        moved.enable()
+        self.addCleanup(moved.disable)
         self.admin = User.objects.create_user(
             username="ol001", password="pw", first_name="Ada", last_name="Admin",
             college="darwin", mobile="+44 7700 900002", email="ada@cam.ac.uk", is_portal_admin=True,
         )
         self.client.force_login(self.admin)
+
+    def test_each_imported_spreadsheet_is_kept_for_admins_only(self):
+        import os
+
+        from panel.models import OldListFile, OldSubscriber
+
+        upload = self._xlsx(self.ROWS)
+        original = upload.read()
+        upload.seek(0)
+        self.client.post(reverse("panel:old_list"), {"sheet": upload})
+        record = OldListFile.objects.get()
+        self.assertEqual((record.name, record.addresses, record.uploaded_by), (upload.name, 3, self.admin))
+        self.assertTrue(record.file.name.startswith("private/old-list/"))
+        self.assertContains(self.client.get(reverse("panel:old_list")), upload.name)
+        url = reverse("panel:old_list_file", args=[record.pk])
+        self.assertEqual(self.client.get(url).status_code, 405)  # a link can't download it
+        response = self.client.post(url, {"action": "download"})
+        self.assertEqual(b"".join(response.streaming_content), original)
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertTrue(AuditLog.objects.filter(action="download_old_list_file").exists())
+        self.assertEqual(self.client.get("/media/" + record.file.name).status_code, 404)  # never through /media/
+        member = User.objects.create_user(username="ol002", password="pw", email="ol002@cam.ac.uk")
+        self.client.force_login(member)
+        self.assertNotEqual(self.client.post(url, {"action": "download"}).status_code, 200)
+        self.assertEqual(self.client.get("/media/" + record.file.name).status_code, 404)
+        self.client.force_login(self.admin)
+        path = record.file.path
+        self.client.post(url, {"action": "delete"})
+        self.assertFalse(OldListFile.objects.exists())
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual(OldSubscriber.objects.count(), 3)  # the people it imported stay
 
     @staticmethod
     def _xlsx(rows):

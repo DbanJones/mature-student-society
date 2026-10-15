@@ -1,4 +1,6 @@
+import os
 import re
+import uuid
 
 from django.conf import settings
 from django.db import models
@@ -216,6 +218,33 @@ class SlowRequest(models.Model):
 
 
 # --- the society's mailing list ---------------------------------------------------------------
+
+def _old_list_file_path(instance, filename):
+    """Under private/, which /media/ never serves: only the panel's download
+    hands these out. A random name, so nothing about it can be guessed."""
+    return f"private/old-list/{uuid.uuid4().hex}{os.path.splitext(filename)[1].lower()[:10]}"
+
+
+class OldListFile(models.Model):
+    """A spreadsheet of the old mailing list exactly as it was uploaded, kept
+    as the archive (People > Old mailing list). It holds people's details, so
+    only admins can download it, and each download is in the audit log."""
+
+    file = models.FileField(upload_to=_old_list_file_path)
+    name = models.CharField(max_length=255, help_text="The file's name when it was uploaded.")
+    size = models.PositiveIntegerField(default=0)
+    addresses = models.PositiveIntegerField(default=0, help_text="Addresses found in it.")
+    uploaded_at = models.DateTimeField(default=timezone.now)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+",
+    )
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return self.name
+
 
 class ListMember(models.Model):
     """An address on the society's Mailman list, as far as the site knows:

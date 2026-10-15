@@ -10,6 +10,7 @@ urlpatterns = [
     path("waitlist/<int:pk>/review/", views.waitlist_review, name="waitlist_review"),
     path("people/old-list/", views.old_list, name="old_list"),
     path("people/old-list/<int:pk>/", views.old_list_action, name="old_list_action"),
+    path("people/old-list/file/<int:pk>/", views.old_list_file, name="old_list_file"),
     path("people/mailing-list/", views.mailing_list, name="mailing_list"),
     path("people/mailing-list/update/", views.mailing_list_update, name="mailing_list_update"),
     path("people/mailing-list/download/", views.mailing_list_download, name="mailing_list_download"),

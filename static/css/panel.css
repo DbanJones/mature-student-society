@@ -103,12 +103,32 @@ table.data input[type="checkbox"] { width: auto; }
 .download-form select { width: auto; max-width: 100%; }
 
 /* --- the society's mailing list ------------------------------------------- */
-.ml-pending { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem 1rem;
-  border-top: 1px solid var(--line); padding-top: .8rem; margin-top: .8rem; }
-.ml-pending > p { flex: 1 1 20rem; }
-.ml-pending code { overflow-wrap: anywhere; }
-.ml-pending-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.ml-pending-actions form { margin: 0; }
+.ml-owed { border-top: 1px solid var(--line); padding-top: .8rem; margin-top: .8rem; }
+.ml-owed code { overflow-wrap: anywhere; }
+/* each card's three steps, numbered in circles */
+.ml-steps { list-style: none; counter-reset: ml-step; margin: .8rem 0 0; padding: 0; display: grid; gap: .75rem; }
+.ml-steps > li { counter-increment: ml-step; position: relative; padding-left: 2.2rem; min-height: 1.6rem; font-size: .92rem; }
+.ml-steps > li::before {
+  content: counter(ml-step); position: absolute; left: 0; top: .05rem; width: 1.55rem; height: 1.55rem;
+  display: grid; place-items: center; border-radius: 50%; font-size: .8rem; font-weight: 700;
+  background: var(--sage-100); color: var(--heading);
+}
+.ml-steps form { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.ml-done { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .3rem; }
+/* collapsed help: "Tips", "Why", "How to copy" */
+.ml-more { margin-top: .35rem; font-size: .86rem; color: var(--ink-soft); }
+.ml-more > summary { cursor: pointer; color: var(--pine-700); font-weight: 600; width: max-content; }
+.ml-more[open] > summary { margin-bottom: .25rem; }
+/* the set-up and sending guides: cards that open */
+.ml-guide { align-self: start; }
+.ml-guide > summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: 1fr auto; gap: .1rem .8rem; }
+.ml-guide > summary::-webkit-details-marker { display: none; }
+.ml-guide > summary h2 { margin: 0; grid-column: 1; }
+.ml-guide > summary span { grid-column: 1; }
+.ml-guide > summary::after { content: "Show"; grid-column: 2; grid-row: 1 / span 2; align-self: center;
+  font-size: .82rem; font-weight: 600; color: var(--pine-700); border: 1px solid var(--line); border-radius: 99px; padding: .2rem .7rem; }
+.ml-guide[open] > summary::after { content: "Hide"; }
+.ml-guide[open] > summary { margin-bottom: .6rem; }
 a.ml-tile { color: inherit; text-decoration: none; }
 a.ml-tile:hover, a.ml-tile:focus-visible { border-color: var(--sage); }
 .ml-tile.ml-attention { border-top: 3px solid var(--amber); }

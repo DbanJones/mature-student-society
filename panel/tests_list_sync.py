@@ -526,3 +526,19 @@ class MailingListPageTests(TestCase):
         # the old-list entry is theirs, and they get the mail at the new address, so the old one comes off
         self.assertEqual(ListSync.objects.get(kind=ListSync.Kind.REMOVE).addresses,
                          ["mv123@cam.ac.uk", "mv123@hermes.cam.ac.uk"])
+
+    def test_each_card_has_its_own_done_button(self):
+        self.update(MAILMAN_PAGE)
+        page = self.page()
+        self.assertContains(page, '<button type="button" class="btn btn-small" disabled>Mark them as added</button>',
+                            html=True)
+        self.assertContains(page, '<details class="card ml-guide">', count=2)  # the guides start closed
+        self.client.post(reverse("panel:mailing_list_download"), {"kind": "add"})
+        first = ListSync.objects.get(kind=ListSync.Kind.ADD)
+        self.client.post(reverse("panel:mailing_list_download"), {"kind": "add"})
+        second = ListSync.objects.get(kind=ListSync.Kind.ADD)  # a new download replaces an unmarked one
+        self.assertNotEqual(first.pk, second.pk)
+        page = self.page()
+        self.assertContains(page, 'action="' + reverse("panel:mailing_list_done", args=[second.pk]) + '"')
+        self.assertContains(page, "Ready once you've downloaded the file.", count=1)  # only the take-off card waits
+        self.assertContains(page, 'href="' + reverse("panel:old_list") + '"')

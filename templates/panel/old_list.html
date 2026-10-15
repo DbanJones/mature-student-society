@@ -36,6 +36,43 @@
   </form>
 </div>
 
+<div class="card" id="archive" style="max-width:46rem">
+  <h2>Archive</h2>
+  <p class="small muted" style="margin-top:0">
+    Every spreadsheet imported here is kept exactly as it was uploaded, for the record. It holds people's details,
+    so only admins can download it, and each download goes in the audit log.
+  </p>
+  {% if archive %}
+    <div class="table-scroll">
+      <table class="data">
+        <thead><tr><th>File</th><th>Uploaded</th><th>Addresses</th><th>Size</th><th></th></tr></thead>
+        <tbody>
+          {% for record in archive %}
+            <tr>
+              <td>{{ record.name }}</td>
+              <td class="small">{{ record.uploaded_at|date:"j M Y, H:i" }}{% if record.uploaded_by %}<br><span class="muted">{{ record.uploaded_by.get_full_name|default:record.uploaded_by.username }}</span>{% endif %}</td>
+              <td>{{ record.addresses }}</td>
+              <td class="small">{{ record.size|filesizeformat }}</td>
+              <td>
+                <form method="post" action="{% url 'panel:old_list_file' record.pk %}" style="display:flex;flex-wrap:wrap;gap:.4rem;margin:0">
+                  {% csrf_token %}
+                  <button type="submit" name="action" value="download" class="btn btn-small">Download</button>
+                  <button type="submit" name="action" value="delete" class="btn btn-small btn-ghost"
+                          data-confirm="Delete {{ record.name }} from the archive? The people it imported stay on the old list.">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted small" style="margin:0">
+      Nothing kept yet. Import the spreadsheet above to keep a copy here; importing again never duplicates anyone.
+    </p>
+  {% endif %}
+</div>
+
 <form method="get" class="card filter-bar">
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, college or notes" aria-label="Search the old list">

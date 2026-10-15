@@ -197,6 +197,7 @@ button.linklike:hover { color: var(--brick); background: var(--brick-soft); }
   transition: background .14s ease, transform .08s ease, box-shadow .14s ease;
 }
 .btn:hover { background: var(--pine-700); border-color: var(--pine-700); box-shadow: var(--shadow); }
+.btn:disabled, .btn[disabled], .btn:disabled:hover { opacity: .42; cursor: not-allowed; box-shadow: none; transform: none; }
 .btn:active { transform: translateY(1px); }
 .btn-accent { background: var(--brick); border-color: var(--brick); }
 .btn-accent:hover { background: var(--brick-dark); border-color: var(--brick-dark); }
