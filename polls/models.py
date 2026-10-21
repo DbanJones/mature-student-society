@@ -28,7 +28,7 @@ class PollQuerySet(models.QuerySet):
         return self.filter(status=Poll.Status.OPEN)
 
     def due(self):
-        return self.open().filter(closes_at__lte=timezone.now())
+        return self.open().filter(closes_at__lte=timezone.now(), event__formal_listing__isnull=True)
 
     def for_dashboard(self, user):
         """Open polls this member can vote in and hasn't yet: general polls,
@@ -43,6 +43,7 @@ class PollQuerySet(models.QuerySet):
                 | Q(event__in=going) | Q(event__host=user) | Q(event__created_by=user)
             )
             .exclude(votes__user=user)
+            .filter(event__formal_listing__isnull=True)
             .select_related("event")
             .order_by("closes_at")
         )
@@ -180,22 +181,13 @@ class Poll(models.Model):
     def close(self, by=None, option=None):
         """Close the poll. ``option`` forces the outcome (a host deciding a
         tie); otherwise the single leader wins, and a tie waits."""
-        from .services import apply_outcome
+        from .services import close_poll
 
-        self.status = self.Status.CLOSED
-        winner = option
-        if winner is None:
-            leaders = self.leaders()
-            if len(leaders) == 1:
-                winner = leaders[0]
-            elif len(leaders) > 1 and self.sets_event:
-                self.needs_decision = True
-        if winner is not None:
-            self.outcome_option = winner
-            self.needs_decision = False
-        self.save(update_fields=["status", "outcome_option", "needs_decision"])
-        if winner is not None and self.sets_event and self.applied_at is None:
-            apply_outcome(self, by)
+        locked, winner = close_poll(self.pk, by=by, option_id=option.pk if option else None)
+        self.status = locked.status
+        self.outcome_option = locked.outcome_option
+        self.needs_decision = locked.needs_decision
+        self.applied_at = locked.applied_at
         return winner
 
 

@@ -55,6 +55,11 @@ def _ns(app_name, routes):
 
 urlpatterns = [
     path("admin/", include("panel.urls")),
+    path("formals/", _ns("formals", [
+        ("", "index"), ("committee/", "committee"),
+        ("committee/statistics/", "statistics"),
+        ("<int:pk>/", "detail"), ("swaps/<int:pk>/", "exchange"),
+    ])),
     path("", _ns("core", [
         ("", "home"), ("about/", "about"),
         ("wellbeing/", "wellbeing"), ("policies/", "policies"),

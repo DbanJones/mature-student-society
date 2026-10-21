@@ -55,7 +55,10 @@ def navigation(request):
             by_section.setdefault(page.section, []).append(page)
     from events.models import Category
 
-    nav_groups = list(Category.objects.only("name", "slug", "emoji"))
+    groups = Category.objects.only("name", "slug", "emoji")
+    if not user.is_authenticated:
+        groups = groups.exclude(slug="formal-exchange")
+    nav_groups = list(groups)
     return {
         "visible_tabs": visible,
         "nav_pages": by_section["about"],

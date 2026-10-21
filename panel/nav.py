@@ -28,6 +28,7 @@ PANEL_GROUPS = [
     ]),
     ("events", "Events", [
         ("events", "All events", "panel:events"),
+        ("formals", "Formal Exchange", "formals:committee"),
         ("tagged", "Tagged events", "panel:tagged_events"),
         ("polls", "Polls", "panel:polls"),
         ("space_saver", "Space saver", "panel:space_saver"),
@@ -49,6 +50,7 @@ PANEL_GROUPS = [
     ]),
     ("stats", "Stats", [
         ("stats", "Stats", "panel:stats"),
+        ("formal_stats", "Formal Exchange", "formals:statistics"),
     ]),
     ("superadmin", "Super admin", [
         ("superadmin", "Super admin", "panel:superadmin"),

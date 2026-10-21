@@ -29,8 +29,7 @@ class Command(BaseCommand):
                 closed += 1
             ended = 0
             for survey in Survey.objects.due():
-                survey.close()
-                ended += 1
+                ended += bool(survey.resolve_if_due())
             beat.detail = f"Closed {closed} poll(s) and {ended} survey(s)."
         # Quiet when there was nothing to do: cron mails whatever a job
         # prints, and this runs every 15 minutes.

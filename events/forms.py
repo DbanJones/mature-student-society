@@ -80,7 +80,7 @@ class EventForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.user = user
         self.is_create = is_create
-        self.fields["category"].queryset = Category.objects.all()
+        self.fields["category"].queryset = Category.objects.exclude(slug="formal-exchange")
         self.fields["restaurant"].queryset = Restaurant.objects.order_by("name")
         self.fields["restaurant"].required = False
         self.fields["host"].queryset = (

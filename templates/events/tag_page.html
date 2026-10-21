@@ -77,7 +77,7 @@
                   {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
                 </span>
               </span>
-              <span class="up-going"><span class="muted small">{{ event.going_list|length }} going</span></span>
+              <span class="up-going"><span class="muted small">{% if event.is_formal %}{{ event.going_count }} reserved{% else %}{{ event.going_list|length }} going{% endif %}</span></span>
             </li>
           {% endfor %}
         </ul>

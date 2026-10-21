@@ -14,6 +14,7 @@ from django.views.decorators.http import require_POST
 
 from .forms import EventForm, TagPageForm
 from .models import RSVP, Category, Event
+from . import services
 
 
 def _attendees_of(event):
@@ -60,6 +61,13 @@ UPCOMING_LIMIT = 10
 UPCOMING_TOKENS = 6  # initials tokens shown per row before "+N"
 
 
+def _visible_categories(user):
+    categories = Category.objects.all()
+    if not user.is_authenticated:
+        categories = categories.exclude(slug="formal-exchange")
+    return categories
+
+
 def _going_prefetch(viewer=None):
     """RSVPs for display. Shadow-banned attendees are hidden from everyone
     except themselves and admins."""
@@ -102,23 +110,49 @@ def calendar_view(request):
         year, month = today.year, today.month
 
     q = request.GET.get("q", "").strip()
-    categories = list(Category.objects.all())
+    categories = list(_visible_categories(request.user))
+    include_formals = request.user.is_authenticated and request.GET.get("formals") == "1"
+    if not include_formals:
+        categories = [category for category in categories if category.slug != "formal-exchange"]
     # Additive tag filter: ?cat= may repeat (and old comma links still work).
     requested = []
     for value in request.GET.getlist("cat"):
         requested += [s for s in value.split(",") if s]
     active_slugs = [c.slug for c in categories if c.slug in set(requested)]
     active_categories = [c for c in categories if c.slug in active_slugs]
+    view = request.GET.get("view", "")
+    if view not in ("grid", "list"):
+        view = ""
 
     weeks = calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 
-    visible = Event.objects.visible_to(request.user).select_related("category").annotate(
+    visible = Event.objects.visible_to(request.user).select_related("category", "formal_listing").annotate(
         open_poll_count=Count(
             "polls",
             filter=Q(polls__status="open", polls__closes_at__gt=timezone.now()),
         )
     )
+    if include_formals:
+        from django.db.models import F, Sum
+        from formals.models import FormalListing
+
+        available_formals = FormalListing.objects.filter(
+            event__start__gt=timezone.now(), event__is_cancelled=False,
+            booking_closes_at__gt=timezone.now(),
+        ).filter(
+            Q(event__host__isnull=True, event__created_by__is_active=True, event__created_by__is_banned=False)
+            | Q(event__host__is_active=True, event__host__is_banned=False)
+        ).annotate(
+            allocated_places=Sum("bookings__places", filter=(
+                Q(bookings__status__in=["reserved", "attended"])
+                | Q(bookings__status="held", bookings__return_proposal__status="pending",
+                    bookings__return_proposal__expires_at__gt=timezone.now())
+            ), default=0)
+        ).filter(capacity__gt=F("allocated_places"))
+        visible = visible.filter(Q(formal_listing__isnull=True) | Q(formal_listing__in=available_formals))
+    else:
+        visible = visible.filter(formal_listing__isnull=True)
     if active_slugs:
         visible = visible.filter(category__slug__in=active_slugs)
     if q:
@@ -160,6 +194,7 @@ def calendar_view(request):
                     "in_month": day.month == month,
                     "is_today": day == today,
                     "events": by_day.get(day, []),
+                    "more_query": _month_query(day.year, day.month, active_slugs, q, "list", include_formals) + f"#day-{day.isoformat()}",
                 }
                 for day in week
             ],
@@ -169,10 +204,6 @@ def calendar_view(request):
     agenda = [
         (day, by_day[day]) for day in sorted(by_day) if day.month == month
     ]
-    view = request.GET.get("view", "")
-    if view not in ("grid", "list"):
-        view = ""
-
     upcoming = list(
         visible.filter(start__gte=timezone.now())
         .by_promotion()
@@ -180,7 +211,9 @@ def calendar_view(request):
     )
     for event in upcoming:
         event.extra_going = max(0, len(event.going_list) - UPCOMING_TOKENS)
-        if event.capacity:
+        if event.is_formal:
+            event.spots_left = event.formal_listing.spots_left
+        elif event.capacity:
             event.spots_left = max(0, event.capacity - len(event.going_list))
 
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
@@ -195,7 +228,7 @@ def calendar_view(request):
         pills.append({
             "cat": cat,
             "active": cat.slug in active_slugs,
-            "query": _month_query(year, month, toggled, q),
+            "query": _month_query(year, month, toggled, q, view, include_formals),
         })
 
     return render(request, "events/calendar.html", {
@@ -203,44 +236,54 @@ def calendar_view(request):
         "grid": grid,
         "agenda": agenda,
         "view": view,
+        "include_formals": include_formals,
         "month_date": datetime.date(year, month, 1),
         "pills": pills,
         "active_categories": active_categories,
         "active_slugs": active_slugs,
         "upcoming": upcoming,
         "q": q,
-        "all_query": _month_query(year, month, [], q),
-        "prev_query": _month_query(prev_year, prev_month, active_slugs, q),
-        "next_query": _month_query(next_year, next_month, active_slugs, q),
+        "all_query": _month_query(year, month, [], q, view, include_formals),
+        "grid_query": _month_query(year, month, active_slugs, q, "grid", include_formals),
+        "list_query": _month_query(year, month, active_slugs, q, "list", include_formals),
+        "clear_search_query": _month_query(year, month, active_slugs, "", view, include_formals),
+        "prev_query": _month_query(prev_year, prev_month, active_slugs, q, view, include_formals),
+        "next_query": _month_query(next_year, next_month, active_slugs, q, view, include_formals),
         "today": today,
-        "today_query": _month_query(today.year, today.month, active_slugs, q),
+        "today_query": _month_query(today.year, today.month, active_slugs, q, view, include_formals),
         "is_current_month": (year, month) == (today.year, today.month),
     })
 
 
-def _month_query(year, month, cat_slugs, q=""):
+def _month_query(year, month, cat_slugs, q="", view="", include_formals=False):
     from urllib.parse import urlencode
     params = [("y", year), ("m", month)]
     params += [("cat", slug) for slug in cat_slugs]
     if q:
         params.append(("q", q))
+    if view in ("grid", "list"):
+        params.append(("view", view))
+    if include_formals:
+        params.append(("formals", "1"))
     return "?" + urlencode(params)
 
 
 def detail_by_pk(request, pk):
     """Permanent redirect from the old /events/<id>/ URLs to the slug form."""
     event = get_object_or_404(Event, pk=pk)
+    if (event.members_only or event.is_formal) and not request.user.is_authenticated:
+        raise Http404("No event found.")
     return redirect(event, permanent=True)
 
 
 def detail(request, slug):
     event = get_object_or_404(
         Event.objects.select_related(
-            "category", "created_by", "host", "restaurant"
+            "category", "created_by", "host", "restaurant", "formal_listing"
         ),
         slug=slug,
     )
-    if event.members_only and not request.user.is_authenticated:
+    if (event.members_only or event.is_formal) and not request.user.is_authenticated:
         raise Http404("No event found.")
     if (
         event.created_by.is_shadow_banned
@@ -248,6 +291,9 @@ def detail(request, slug):
         and not (request.user.is_authenticated and request.user.is_portal_admin)
     ):
         raise Http404("No event found.")
+
+    if event.is_formal:
+        return redirect(event)
 
     attendees = _visible_attendees(event, request.user)
     going_count = len(attendees)
@@ -362,22 +408,21 @@ def edit(request, slug):
     event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can edit it.")
+    if event.is_formal:
+        return redirect(event)
     form = EventForm(
         request.POST or None, request.FILES or None,
         instance=event, user=request.user, is_create=False,
     )
-    old_start = event.start
     old_location = event.location
-    if request.method == "POST" and form.is_valid():
-        form.save()  # created_by untouched: admins editing don't take ownership
-        if event.location != old_location:
-            event.latitude = event.longitude = event.geocoded_at = None
-            event.save(update_fields=["latitude", "longitude", "geocoded_at"])
-            _geocode_quietly(event)
-        if event.start != old_start and not event.is_past:
-            tell_attendees_moved(event, old_start, actor=request.user)
-        messages.success(request, "Event updated.")
-        return redirect(event)
+    if request.method == "POST":
+        form = services.save_event_edit(request.user, event.pk, request.POST, request.FILES)
+        event = form.instance
+        if form.is_valid():
+            if event.location != old_location:
+                _geocode_quietly(event)
+            messages.success(request, "Event updated.")
+            return redirect(event)
     return render(request, "events/form.html", {
         "nav_active": "calendar",
         "form": form,
@@ -392,10 +437,10 @@ def cancel(request, slug):
     event = get_object_or_404(Event, slug=slug)
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can cancel it.")
+    if event.is_formal:
+        return redirect(event)
     if not event.is_cancelled:
-        event.is_cancelled = True
-        event.save(update_fields=["is_cancelled", "updated_at"])
-        tell_attendees_cancelled(event, actor=request.user)
+        event = services.cancel_event(request.user, event.pk)
         messages.success(
             request, "Event cancelled. It no longer appears on the calendar."
         )
@@ -403,82 +448,29 @@ def cancel(request, slug):
 
 
 def _tell_promoted(request, event, promoted):
-    """Email people who have just come off the waitlist."""
-    from django.core.mail import send_mail
-
-    from notifications.models import Notification
-    from notifications.services import notify
-
-    url = request.build_absolute_uri(event.get_absolute_url())
-    when = timezone.localtime(event.start).strftime("%A %d %B at %H:%M")
-    notify(
-        [r.user for r in promoted], Notification.Kind.WAITLIST,
-        f"A place opened up: you're now going to {event.title}.",
-        event.get_absolute_url(),
-    )
-    for rsvp in promoted:
-        if not rsvp.user.email:
-            continue
-        body = f"""Hi {rsvp.user.first_name or 'there'},
-
-Good news: a place has come free at "{event.title}" on {when}, and you've
-moved off the waitlist. You're now going.
-
-If you can't make it after all, please cancel so the next person can have
-the place: {url}
-
-— The MSS portal
-"""
-        send_mail(
-            subject=f"A place has opened up: {event.title}",
-            message=body,
-            from_email=None,
-            recipient_list=[rsvp.user.email],
-            fail_silently=True,
-        )
+    """Compatibility wrapper for callers that already promoted the waitlist."""
+    services.tell_promoted(event, promoted)
 
 
 @require_POST
 @login_required
 def rsvp(request, slug):
-    """Toggle the viewer's RSVP (never deleting). A full event puts new
-    arrivals on the waitlist; a cancellation promotes the first in line."""
+    """Set the member's intention; repeated button submissions are harmless."""
     event = get_object_or_404(Event, slug=slug)
-    if event.is_cancelled:
-        messages.error(request, "This event has been cancelled — RSVPs are closed.")
+    if event.is_formal:
         return redirect(event)
-    if event.is_past:
-        messages.error(request, "This event has already happened.")
+    try:
+        result = services.set_rsvp(request.user, event.pk, request.POST.get("action", "toggle"))
+    except services.EventBookingError as error:
+        messages.error(request, " ".join(error.messages))
         return redirect(event)
-
-    existing = event.rsvps.filter(user=request.user).first()
-    status = existing.status if existing else RSVP.Status.CANCELLED
-
-    if status == RSVP.Status.GOING:
-        existing.status = RSVP.Status.CANCELLED
-        existing.save(update_fields=["status", "updated_at"])
-        _tell_promoted(request, event, event.promote_waitlist())
-        messages.info(request, "No problem — you're no longer marked as going.")
-    elif status == RSVP.Status.WAITING:
-        existing.status = RSVP.Status.CANCELLED
-        existing.save(update_fields=["status", "updated_at"])
-        messages.info(request, "You've left the waitlist.")
+    event = result.event
+    if result.rsvp is None or result.rsvp.status == RSVP.Status.CANCELLED:
+        messages.info(request, "You've left the waitlist." if result.previous == RSVP.Status.WAITING else "You're no longer marked as going.")
+    elif result.rsvp.status == RSVP.Status.GOING:
+        messages.success(request, f"You're going to “{event.title}”. See you there!")
     else:
-        new_status = RSVP.Status.WAITING if event.is_full else RSVP.Status.GOING
-        if existing is None:
-            RSVP.objects.create(event=event, user=request.user, status=new_status)
-        else:
-            existing.status = new_status
-            existing.save(update_fields=["status", "updated_at"])
-        if new_status == RSVP.Status.GOING:
-            messages.success(request, f"You're going to “{event.title}”. See you there!")
-        else:
-            position = event.waiting_count
-            messages.success(
-                request,
-                f"The event is full, so you're on the waitlist (number {position}). "
-                "If a place frees up you'll be moved on automatically and emailed.",
-            )
+        messages.success(request, f"You're on the waitlist (number {result.waiting_position}). If a place frees up, you'll be moved on automatically and emailed.")
     return redirect(event)
 
 
@@ -494,6 +486,8 @@ def export(request, slug):
     event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can export attendees.")
+    if event.is_formal:
+        return redirect(event)
 
     attendees = list(event.going.order_by("user__first_name", "user__last_name"))
     rows = [
@@ -561,12 +555,13 @@ def export(request, slug):
 def groups(request):
     """PUBLIC. Every group (event tag) with its next event."""
     now = timezone.now()
-    tags = list(Category.objects.all())
+    tags = list(_visible_categories(request.user))
     upcoming = (
         Event.objects.visible_to(request.user)
         .filter(start__gte=now, category__isnull=False)
+        .select_related("formal_listing")
         .order_by("start")
-        .only("title", "slug", "start", "category_id")
+        .only("title", "slug", "start", "category_id", "formal_listing__id")
     )
     next_event, counts = {}, {}
     for event in upcoming:
@@ -582,16 +577,18 @@ def groups(request):
 
 
 def tag_page_moved(request, slug):
+    if slug == "formal-exchange" and not request.user.is_authenticated:
+        raise Http404("No group found.")
     return redirect("events:tag_page", slug=slug, permanent=True)
 
 
 def tag_page(request, slug):
     """PUBLIC. A group's own page: blurb, owners, and its upcoming events."""
-    tag = get_object_or_404(Category, slug=slug)
+    tag = get_object_or_404(_visible_categories(request.user), slug=slug)
     upcoming = list(
         Event.objects.visible_to(request.user)
         .filter(category=tag, start__gte=timezone.now())
-        .select_related("category")
+        .select_related("category", "formal_listing")
         .prefetch_related(_going_prefetch(request.user))
         .by_promotion()[:UPCOMING_LIMIT]
     )
@@ -600,6 +597,7 @@ def tag_page(request, slug):
     past = (
         Event.objects.visible_to(request.user)
         .filter(category=tag, start__lt=timezone.now())
+        .select_related("formal_listing")
         .order_by("-start")[:5]
     )
     return render(request, "events/tag_page.html", {
@@ -639,13 +637,22 @@ def ics(request, slug):
     from .ics import build_calendar
 
     event = get_object_or_404(Event.objects.select_related("category"), slug=slug)
-    if event.members_only and not request.user.is_authenticated:
+    if (event.members_only or event.is_formal) and not request.user.is_authenticated:
+        raise Http404("No event found.")
+    if event.is_formal and (
+        event.created_by.is_shadow_banned
+        and request.user != event.created_by
+        and not request.user.is_portal_admin
+    ):
         raise Http404("No event found.")
     body = build_calendar(
         [event], "MSS",
         lambda e: request.build_absolute_uri(e.get_absolute_url()),
     )
     response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
+    if event.is_formal:
+        response["Cache-Control"] = "private, no-store"
+        response["X-Robots-Tag"] = "noindex, nofollow"
     response["Content-Disposition"] = f'attachment; filename="{event.slug}.ics"'
     return response
 
@@ -665,6 +672,8 @@ def duplicate(request, slug):
     source = get_object_or_404(Event, slug=slug)
     if not source.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can duplicate it.")
+    if source.is_formal:
+        return redirect(source)
     shift = datetime.timedelta(days=7)
     initial = {field: getattr(source, field) for field in COPIED_FIELDS}
     initial["start"] = timezone.localtime(source.start + shift)
@@ -687,6 +696,8 @@ def repeat(request, slug):
     source = get_object_or_404(Event, slug=slug)
     if not source.can_edit(request.user):
         raise PermissionDenied("Only the event's creator or an admin can repeat it.")
+    if source.is_formal:
+        return redirect(source)
     try:
         weeks = int(request.POST.get("weeks", "0"))
     except ValueError:

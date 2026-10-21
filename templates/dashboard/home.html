@@ -28,6 +28,8 @@
 <div class="dash-grid">
   <div class="dash-main">
 
+
+
     <section class="card dash-card">
       {% if next_up %}
         <div class="next-up-row">
@@ -36,7 +38,7 @@
             <span class="date-month">{{ next_up.start|date:"M" }}</span>
           </div>
           <div>
-            <p class="eyebrow">Next up for you</p>
+            <p class="eyebrow">Next up for you{% if next_up.viewer_is_host %} &middot; you are hosting{% endif %}</p>
             <h2><a href="{{ next_up.get_absolute_url }}">{{ next_up.title }}</a></h2>
             <p class="small muted" style="margin:0">
               <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
@@ -49,10 +51,10 @@
         <p style="margin:0">Nothing in your diary yet. <a href="{% url 'events:calendar' %}">Find something on the calendar</a>.</p>
       {% endif %}
 
-      {% if going_events|length > 1 or waiting_events %}
+      {% if diary_events|length > 1 or waiting_events %}
         <h3 class="dash-sub">Also in your diary</h3>
         <ul class="dash-list">
-          {% for event in going_events %}{% if event != next_up %}
+          {% for event in diary_events %}{% if event != next_up %}
             <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">{{ event.start|date:"H:i" }}</span></li>
           {% endif %}{% endfor %}
           {% for event in waiting_events %}
@@ -72,14 +74,25 @@
       <p class="dash-foot"><a href="{% url 'events:calendar' %}">See the full calendar &rarr;</a></p>
     </section>
 
-    {% if running_events or surveys_run or volunteering or owned_tags or editable_pages %}
+    <section class="card dash-card">
+      <div class="dash-section-head"><h2>My formal plans</h2><a class="small" href="{% url 'formals:mine' %}">All plans &rarr;</a></div>
+      {% if formal_requests or formal_attendance %}<p class="dash-formal-actions">{% if formal_requests %}<a href="{% url 'formals:mine' %}#hosting">{{ formal_requests }} guest request{{ formal_requests|pluralize }} to review</a>{% endif %}{% if formal_attendance %}<a href="{% url 'formals:mine' %}">{{ formal_attendance }} attendance record{{ formal_attendance|pluralize }} to check</a>{% endif %}</p>{% endif %}
+      {% if formal_plans or formal_hosting %}<ul class="dash-list">
+        {% for booking in formal_plans %}<li class="dash-formal-plan"><span class="dash-when">{{ booking.listing.event.start|date:"D j M, H:i" }}</span><div><a href="{{ booking.listing.get_absolute_url }}">{{ booking.listing.event.title }}</a><span class="small muted"> &middot; {{ booking.places }} place{{ booking.places|pluralize }}</span><br><span class="small muted">{{ booking.get_status_display }}</span>{% if booking.status == 'held' %} &middot; <a class="small" href="{{ booking.return_proposal.exchange.get_absolute_url }}">Respond to invitation</a>{% endif %}</div></li>{% endfor %}
+        {% for event in formal_hosting %}<li class="dash-formal-plan"><span class="dash-when">{{ event.start|date:"D j M, H:i" }}</span><div><a href="{{ event.get_absolute_url }}">{{ event.title }}</a><br><span class="small muted">You are hosting &middot; {{ event.num_going }} guest place{{ event.num_going|pluralize }} allocated</span></div></li>{% endfor %}
+      </ul>{% else %}<p class="small muted">No upcoming formal bookings. Find a dinner or offer places at your college.</p>{% endif %}
+      {% if formal_promises %}<p class="small"><a href="{% url 'formals:mine' %}#swaps">{{ formal_promises }} open return promise{{ formal_promises|pluralize }}</a></p>{% endif %}
+      <p class="dash-foot"><a href="{% url 'formals:index' %}">Browse formals</a> &middot; <a href="{% url 'formals:create' %}">Host a formal</a></p>
+    </section>
+
+    {% if ordinary_running_events or surveys_run or volunteering or owned_tags or editable_pages %}
       <section class="card dash-card">
         <p class="eyebrow">What you look after</p>
-        {% if running_events %}
+        {% if ordinary_running_events %}
           <h3 class="dash-sub">You're running</h3>
           <ul class="dash-list">
-            {% for event in running_events %}
-              <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">&middot; {{ event.num_going }} going</span> <a class="small" href="{% url 'events:edit' event.pk %}">manage</a></li>
+            {% for event in ordinary_running_events %}
+              <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">&middot; {{ event.num_going }} going</span> <a class="small" href="{% if event.is_formal %}{{ event.get_absolute_url }}{% else %}{% url 'events:edit' event.slug %}{% endif %}">manage</a></li>
             {% endfor %}
           </ul>
         {% endif %}
@@ -123,6 +136,8 @@
       <p class="eyebrow">Needs your attention</p>
       {% if attention_count %}
         <ul class="attention-list">
+          {% if formal_requests %}<li><span aria-hidden="true">&#127869;</span><span><a href="{% url 'formals:mine' %}#hosting">Review {{ formal_requests }} formal guest request{{ formal_requests|pluralize }}</a></span></li>{% endif %}
+          {% if formal_attendance %}<li><span aria-hidden="true">&#10003;</span><span><a href="{% url 'formals:mine' %}">Check {{ formal_attendance }} formal attendance record{{ formal_attendance|pluralize }}</a></span></li>{% endif %}
           {% for item in checklist %}{% if not item.done %}
             <li><span aria-hidden="true">⬜</span><span><a href="{{ item.url }}">{{ item.label }}</a> <span class="muted small">&middot; getting started</span></span></li>
           {% endif %}{% endfor %}
@@ -154,13 +169,14 @@
     </section>
 
     <section class="card dash-card">
-      <p class="eyebrow">Your year in numbers</p>
+      <p class="eyebrow">My activity</p>
       <div class="stat-grid">
-        <div><strong>{{ stats.attended }}</strong><span>events attended</span></div>
+        <div><strong>{{ stats.attended }}</strong><span>past bookings</span></div>
         <div><strong>{{ stats.hosted }}</strong><span>events hosted</span></div>
         <div><strong>{{ stats.guide_edits }}</strong><span>guide edits</span></div>
         <div><strong>{{ stats.ratings }}</strong><span>ratings given</span></div>
       </div>
+      <p class="small muted dash-foot">All time. Past bookings count regular event RSVPs and confirmed formal visits.</p>
     </section>
 
     <details class="card dash-card">
@@ -169,13 +185,13 @@
         Google Calendar, Apple Calendar or Outlook: everything you RSVP to or host appears automatically, including changes.
       </p>
       <input type="text" readonly value="{{ feed_url }}" id="feed-url" aria-label="Calendar feed address" onclick="this.select()">
-      <p class="row-actions" style="margin:.6rem 0 0">
+      <div class="row-actions" style="margin:.6rem 0 0">
         <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="feed-url">Copy link</button>
         <form method="post" action="{% url 'dashboard:calendar_token_reset' %}" data-confirm="Reset your calendar link? Existing subscriptions will stop updating.">
           {% csrf_token %}
           <button type="submit" class="btn btn-small btn-ghost">Reset link</button>
         </form>
-      </p>
+      </div>
     </details>
   </aside>
 </div>

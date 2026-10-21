@@ -8,6 +8,7 @@ The important ones are emailed too; see ``services.notify``.
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Notification(models.Model):
@@ -53,3 +54,34 @@ class Notification(models.Model):
     @property
     def emoji(self):
         return self.EMOJI.get(self.kind, "🔔")
+
+
+class NotificationEmail(models.Model):
+    """An email committed with its notification, then delivered by the worker."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Waiting to send"
+        SENDING = "sending", "Being sent"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Needs attention"
+        SKIPPED = "skipped", "Recipient unavailable"
+
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="notification_emails")
+    subject = models.CharField(max_length=255)
+    body = models.TextField()
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    available_at = models.DateTimeField(default=timezone.now)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    claim_token = models.UUIDField(null=True, blank=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=80, blank=True)
+
+    class Meta:
+        ordering = ["pk"]
+        indexes = [models.Index(fields=["status", "available_at"], name="notification_email_ready")]
+
+    def __str__(self):
+        return f"{self.get_status_display()}: {self.subject}"

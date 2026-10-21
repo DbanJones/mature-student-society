@@ -247,6 +247,10 @@ legend { font-family: var(--font-display); font-weight: 700; color: var(--headin
 .card + .card { margin-top: 1rem; }
 .grid > .card + .card { margin-top: 0; }  /* grids space via gap, not margins */
 .card h2:first-child, .card h3:first-child { margin-top: 0; }
+.form-errors { padding:1rem; margin-bottom:1.5rem; border:2px solid var(--danger); border-radius:var(--radius-small); background:var(--danger-soft); }
+.form-errors h2 { font-size:1.15rem; margin:0 0 .5rem; }
+.form-errors ul { margin-bottom:0; padding-left:1.25rem; }
+.form-errors a { color:var(--danger); }
 
 .grid { display: grid; gap: 1rem; }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
@@ -507,9 +511,11 @@ pre code { background: none; color: inherit; padding: 0; }
     text-decoration: none; color: var(--ink-soft);
   }
   .tab-bar a.active { color: var(--heading); }
-  .tab-bar a span:first-child { font-size: 1.15rem; line-height: 1; }
-  .tab-bar a span:last-child { white-space: nowrap; }
-  body.has-tab-bar { padding-bottom: 3.8rem; }
+  .tab-bar a { min-width:0; min-height:48px; }
+  .tab-bar .tab-icon { position:relative; font-size:1.15rem; line-height:1.2; }
+  .tab-bar .tab-count { position:absolute; left:75%; top:-.25rem; min-width:1rem; border-radius:99px; padding:.12rem .23rem; background:var(--brick); color:#fff; font-family:var(--font-body); font-size:.58rem; font-weight:700; line-height:1.1; }
+  .tab-bar a > span:last-child { white-space:nowrap; }
+  body.has-tab-bar { padding-bottom:calc(3.8rem + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 360px) {
   .tab-bar a { font-size: .6rem; }

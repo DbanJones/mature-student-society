@@ -61,8 +61,9 @@
         <a href="{% url 'notifications:index' %}" class="nav-bell{% if nav_active == 'notifications' %} active{% endif %}"
            aria-label="Notifications{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}" title="Notifications">🔔{% if unread_notifications %}<span class="nav-badge">{{ unread_notifications }}</span>{% endif %}</a>
         <details class="nav-group">
-          <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' or nav_active == 'surveys' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
+          <summary class="{% if nav_active == 'dashboard' or nav_active == 'members' or nav_active == 'messages' or nav_active == 'surveys' or nav_active == 'formals' %}active{% endif %}">Members portal{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</summary>
           <div class="nav-menu">
+            {% url 'formals:index' as formals_url %}{% if formals_url %}<a href="{{ formals_url }}">Formal Exchange</a>{% endif %}
             <a href="{% url 'dashboard:home' %}">🏠 Dashboard</a>
             {% if "members" in visible_tabs %}<a href="{% url 'members:directory' %}">👥 Members</a>{% endif %}
             {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>{% endif %}
@@ -112,11 +113,11 @@
 
 {% if user.is_authenticated %}
   <nav class="tab-bar" aria-label="Quick links">
-    <a href="{% url 'dashboard:home' %}" class="{% if nav_active == 'dashboard' %}active{% endif %}"><span aria-hidden="true">🏠</span><span>Home</span></a>
-    <a href="{% url 'events:calendar' %}" class="{% if nav_active == 'calendar' %}active{% endif %}"><span aria-hidden="true">📅</span><span>Calendar</span></a>
-    {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}" class="{% if nav_active == 'messages' %}active{% endif %}"><span aria-hidden="true">💬</span><span>Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</span></a>{% endif %}
-    <a href="{% url 'notifications:index' %}" class="{% if nav_active == 'notifications' %}active{% endif %}"><span aria-hidden="true">🔔</span><span>Alerts{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</span></a>
-    <a href="{% url 'core:menu' %}" class="{% if nav_active == 'menu' %}active{% endif %}"><span aria-hidden="true">▦</span><span>Menu</span></a>
+    <a href="{% url 'dashboard:home' %}"{% if nav_active == 'dashboard' %} class="active" aria-current="page"{% endif %}><span class="tab-icon" aria-hidden="true">🏠</span><span>Home</span></a>
+    <a href="{% url 'events:calendar' %}"{% if nav_active == 'calendar' %} class="active" aria-current="page"{% endif %}><span class="tab-icon" aria-hidden="true">📅</span><span>Calendar</span></a>
+    {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}"{% if nav_active == 'messages' %} class="active" aria-current="page"{% endif %} aria-label="Messages{% if unread_messages %}, {{ unread_messages }} unread{% endif %}"><span class="tab-icon" aria-hidden="true">💬{% if unread_messages %}<span class="tab-count">{% if unread_messages > 99 %}99+{% else %}{{ unread_messages }}{% endif %}</span>{% endif %}</span><span>Messages</span></a>{% endif %}
+    <a href="{% url 'notifications:index' %}"{% if nav_active == 'notifications' %} class="active" aria-current="page"{% endif %} aria-label="Alerts{% if unread_notifications %}, {{ unread_notifications }} unread{% endif %}"><span class="tab-icon" aria-hidden="true">🔔{% if unread_notifications %}<span class="tab-count">{% if unread_notifications > 99 %}99+{% else %}{{ unread_notifications }}{% endif %}</span>{% endif %}</span><span>Alerts</span></a>
+    <a href="{% url 'core:menu' %}"{% if nav_active == 'menu' %} class="active" aria-current="page"{% endif %}><span class="tab-icon" aria-hidden="true">☰</span><span>Menu</span></a>
   </nav>
 {% endif %}
 
@@ -204,6 +205,7 @@ document.addEventListener("click", function (e) {
 </script>
 {% if user.is_authenticated %}<script src="{% static 'js/keepyuppy.js' %}" defer></script>
 <script src="{% static 'js/editor.js' %}" defer></script>{% endif %}
+<script src="{% static 'js/form-errors.js' %}" defer></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

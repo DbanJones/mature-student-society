@@ -26,10 +26,12 @@
   <form class="cal-search" method="get" action="{% url 'events:calendar' %}" role="search">
     <input type="hidden" name="y" value="{{ month_date.year }}">
     <input type="hidden" name="m" value="{{ month_date.month }}">
+    {% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
     {% for slug in active_slugs %}<input type="hidden" name="cat" value="{{ slug }}">{% endfor %}
     <input type="search" name="q" value="{{ q }}" placeholder="Search events — title, place, tag…"
            aria-label="Search events">
     <button type="submit" class="btn btn-small">Search</button>
+    {% if user.is_authenticated %}<label class="cal-formals-filter"><input type="checkbox" name="formals" value="1"{% if include_formals %} checked{% endif %} data-calendar-formals>Include available formals</label>{% endif %}
   </form>
 
   <div class="cat-filter{% if active_slugs %} filtered{% endif %}" role="group"
@@ -56,7 +58,7 @@
   <div class="flash flash-info" style="margin:0 0 1rem">
     Showing events matching “{{ q }}”
     {% if active_categories %} in {{ active_categories|join:" + " }}{% endif %} —
-    <a href="{% url 'events:calendar' %}?y={{ month_date.year }}&amp;m={{ month_date.month }}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}">clear search</a>
+    <a href="{{ clear_search_query }}">clear search</a>
   </div>
 {% endif %}
 
@@ -68,14 +70,14 @@
     <a class="btn btn-ghost btn-small" href="{{ next_query }}" aria-label="Next month">Next &rarr;</a>
   </div>
   <div class="cal-nav cal-view" role="group" aria-label="Layout">
-    <a class="btn btn-small{% if view == 'grid' %} active{% endif %}" href="{{ all_query }}{% if active_slugs %}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}{% endif %}&amp;view=grid">Month</a>
-    <a class="btn btn-small{% if view == 'list' %} active{% endif %}" href="{{ all_query }}{% if active_slugs %}{% for slug in active_slugs %}&amp;cat={{ slug }}{% endfor %}{% endif %}&amp;view=list">List</a>
+    <a class="btn btn-small{% if view == 'grid' %} active{% endif %}" href="{{ grid_query }}"{% if view == 'grid' %} aria-current="true"{% endif %}>Month</a>
+    <a class="btn btn-small{% if view == 'list' %} active{% endif %}" href="{{ list_query }}"{% if view == 'list' %} aria-current="true"{% endif %}>List</a>
   </div>
 </div>
 
 <div class="cal-agenda{% if view == 'list' %} forced{% elif view == 'grid' %} hidden-view{% endif %}">
   {% for day, day_events in agenda %}
-    <section class="agenda-day{% if day == today %} today{% elif day < today %} past{% endif %}"
+    <section class="agenda-day{% if day == today %} today{% elif day < today %} past{% endif %}" id="day-{{ day|date:'Y-m-d' }}"
              aria-label="{{ day|date:'l j F' }}{% if day == today %}, today{% endif %}">
       <div class="agenda-date" aria-hidden="true">
         <span class="agenda-dow">{% if day == today %}Today{% else %}{{ day|date:"D" }}{% endif %}</span>
@@ -124,7 +126,7 @@
             {% if event.is_super %}<span class="off-star">🌟</span> {% elif event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}{% if event.open_poll_count %} 📊{% endif %}</a>
         {% endfor %}
         {% if cell.events|length > 3 %}
-          <a class="cal-more" href="{{ cell.events.3.get_absolute_url }}">+{{ cell.events|length|add:"-3" }} more</a>
+          <a class="cal-more" href="{{ cell.more_query }}" aria-label="Show all {{ cell.events|length }} events on {{ cell.date|date:'j F' }}">+{{ cell.events|length|add:"-3" }} more</a>
         {% endif %}
       </div>
     {% endfor %}
@@ -155,7 +157,9 @@
           </span>
           <span class="up-going">
             {% if user.is_authenticated and event.image %}<img class="up-thumb" src="{{ event.image.url }}" alt="">{% endif %}
-            {% if event.capacity %}
+            {% if event.is_formal %}
+              <span class="muted small">{{ event.spots_left }} of {{ event.formal_listing.capacity }} guest places available</span>
+            {% elif event.capacity %}
               <span class="cap" title="{{ event.going_list|length }} of {{ event.capacity }} places taken">
                 <span class="cap-track"><span class="cap-fill" style="width:{% widthratio event.going_list|length event.capacity 100 %}%"></span></span>
                 <span class="muted small">{% if event.spots_left %}{{ event.spots_left }} of {{ event.capacity }} left{% else %}full{% endif %}</span>
@@ -163,7 +167,7 @@
             {% else %}
               <span class="muted small">{{ event.going_list|length }} going</span>
             {% endif %}
-            {% if user.is_authenticated and event.show_attendees %}
+            {% if user.is_authenticated and event.show_attendees and not event.is_formal %}
               <span class="avatars">
                 {% for rsvp in event.going_list|slice:":6" %}
                   <a class="avatar-token" href="{% url 'members:profile' rsvp.user.username %}" title="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% if rsvp.user.photo %}<img src="{{ rsvp.user.photo.url }}" alt="{{ rsvp.user.get_full_name|default:rsvp.user.username }}">{% else %}{{ rsvp.user.initials }}{% endif %}</a>
@@ -187,3 +191,4 @@
   </div>
 {% endif %}
 {% endblock %}
+{% block extra_js %}<script src="{% static 'js/calendar.js' %}" defer></script>{% endblock %}

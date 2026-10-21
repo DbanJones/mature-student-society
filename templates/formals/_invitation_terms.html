@@ -1,0 +1,4 @@
+{% if listing.invitation_type == 'reciprocal' %}
+  <p><strong>Swap:</strong> {% if listing.return_places %}{{ listing.return_places }} guest place{{ listing.return_places|pluralize }}{% else %}the same number of guest places{% endif %} in return by <strong>{{ listing.return_by|date:"j F Y" }}</strong>. No return date needed now.</p>
+  <p class="small">Return at {% if listing.allowed_return_colleges %}{{ listing.allowed_return_college_names|join:", " }}{% else %}any college where you can host{% endif %}. The promise becomes due once attendance is confirmed by both sides.</p>
+{% else %}<p><strong>No obligation.</strong> Enjoy the dinner without a promise to host in return.</p>{% endif %}

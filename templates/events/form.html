@@ -9,23 +9,20 @@
 <div class="page-head">
   <div>
     <h1>{% if event %}Edit event{% else %}Add an event{% endif %}</h1>
-    <p class="lede">{% if event %}{{ event.title }}{% else %}Anything goes — a coffee meet, a formal swap, a walk. Members run this calendar.{% endif %}</p>
+    <p class="lede">{% if event %}{{ event.title }}{% else %}Invite members to a coffee, a walk or something you enjoy.{% endif %}</p>
   </div>
 </div>
 
+{% if not event %}{% url 'formals:create' as formal_create_url %}{% if formal_create_url %}<p class="small">Offering college dinner places? <a href="{{ formal_create_url }}">Host a formal</a>.</p>{% endif %}{% endif %}
 <div class="card" style="max-width: 46rem;">
   <form method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}
-    {{ form.non_field_errors }}
+    {% include "includes/form_errors.html" %}
 
     <p>
       {{ form.title.label_tag }} {{ form.title }}
       {{ form.title.errors }}
-      {% if event %}
-        <span class="helptext">Page address: /events/{{ event.slug }}/ — set from the title and date when the event was created.</span>
-      {% else %}
-        <span class="helptext">The event's address is generated from the title and date, e.g. /events/winter-ball-12-dec-2026/.</span>
-      {% endif %}
+
     </p>
     <p>
       {{ form.category.label_tag }} {{ form.category }}
@@ -33,7 +30,7 @@
       {{ form.category.errors }}
     </p>
 
-    <div id="restaurant-block" class="restaurant-block hidden">
+    <div id="restaurant-block" class="restaurant-block">
       <fieldset>
         <legend>🍽️ Supper Club restaurant</legend>
         <p>
@@ -47,21 +44,6 @@
         </p>
       </fieldset>
     </div>
-
-    <p>
-      {{ form.description.label_tag }} {{ form.description }}
-      <span class="helptext">{{ form.description.help_text }}</span>
-      {{ form.description.errors }}
-    </p>
-
-    <p>
-      {{ form.image.label_tag }} {{ form.image }}
-      <span class="helptext">{{ form.image.help_text }}</span>
-      {{ form.image.errors }}
-      {% if event and event.image %}
-        <span class="helptext">Current picture: {{ event.image.name|cut:"events/" }} — choose a new file to replace it.</span>
-      {% endif %}
-    </p>
 
     <p>
       {{ form.location.label_tag }} {{ form.location }}
@@ -81,6 +63,25 @@
       </p>
     </div>
 
+    <details class="event-form-extra"{% if form.description.value or form.image.value or form.description.errors or form.image.errors %} open{% endif %}>
+      <summary>Add a description or picture <span class="small muted">(optional)</span></summary>
+    <p>
+      {{ form.description.label_tag }} {{ form.description }}
+      <span class="helptext">{{ form.description.help_text }}</span>
+      {{ form.description.errors }}
+    </p>
+
+    <p>
+      {{ form.image.label_tag }} {{ form.image }}
+      <span class="helptext">{{ form.image.help_text }}</span>
+      {{ form.image.errors }}
+      {% if event and event.image %}
+        <span class="helptext">Current picture: {{ event.image.name|cut:"events/" }} — choose a new file to replace it.</span>
+      {% endif %}
+    </p>
+
+    </details>
+
     <div class="grid grid-2">
       <p>
         {{ form.host.label_tag }} {{ form.host }}
@@ -94,8 +95,8 @@
       </p>
     </div>
 
-    <fieldset>
-      <legend>For people who RSVP</legend>
+    <details class="event-form-extra"{% if form.group_chat_link.value or form.attendee_info.value or form.group_chat_link.errors or form.attendee_info.errors %} open{% endif %}>
+      <summary>Add details for people who RSVP <span class="small muted">(optional)</span></summary>
       <p>
         {{ form.group_chat_link.label_tag }} {{ form.group_chat_link }}
         <span class="helptext">{{ form.group_chat_link.help_text }}</span>
@@ -106,7 +107,7 @@
         <span class="helptext">{{ form.attendee_info.help_text }}</span>
         {{ form.attendee_info.errors }}
       </p>
-    </fieldset>
+    </details>
 
     <p class="check-row">
       {{ form.members_only }} <label for="{{ form.members_only.id_for_label }}" style="display: inline;">{{ form.members_only.label }}</label>
@@ -176,7 +177,7 @@
   if (!select || !block) return;
   function sync() {
     var hasRatings = Boolean(ratings[select.value]);
-    block.classList.toggle("hidden", !hasRatings);
+    block.classList.toggle("hidden", !hasRatings && !block.querySelector(".errorlist"));
   }
   select.addEventListener("change", sync);
   sync();

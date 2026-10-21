@@ -50,7 +50,7 @@
               <p class="small muted">
                 {{ event.start|date:"D j M, H:i" }}
                 {% if event.location %} &middot; {{ event.location }}{% endif %}
-                &middot; {{ event.num_going }} going
+                &middot; {% if event.is_formal %}{{ event.going_count }} reserved{% else %}{{ event.num_going }} going{% endif %}
               </p>
             </div>
           </div>

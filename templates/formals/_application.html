@@ -1,0 +1,12 @@
+<form method="post" action="{% url 'formals:apply' listing.pk %}" class="formal-form formal-application" data-booking-verb="{% if listing.booking_mode == 'instant' %}Reserve{% else %}Request{% endif %}">
+  {% csrf_token %}{{ application.terms_version }}
+  {% if from_browse %}<input type="hidden" name="next" value="browse">{% endif %}
+  {{ application.non_field_errors }}{{ application.terms_version.errors }}{{ application.return_college.errors }}{{ application.can_host.errors }}
+  {% include "formals/_field.html" with field=application.places %}
+  {{ application.return_college }}{{ application.can_host }}
+  {% if listing.invitation_type == 'reciprocal' %}<p class="small formal-agreement">You promise <strong>{% if listing.return_places %}{{ listing.return_places }} return place{{ listing.return_places|pluralize }}{% else %}the same number of places in return{% endif %}</strong> by {{ listing.return_by|date:"j F Y" }}. Arrange your return date later.</p>{% endif %}
+  <details class="formal-disclosure" data-guest-names{% if application.companion_names.value or application.companion_names.errors %} open{% endif %}><summary>Add guest names <span class="small muted">(optional for now)</span></summary>{% include "formals/_field.html" with field=application.companion_names %}</details>
+  {% include "formals/_field.html" with field=application.accept_terms %}
+  <button type="submit" class="btn btn-accent">{% if listing.booking_mode == 'instant' %}Confirm reservation{% else %}Send request{% endif %}</button>
+  <p class="small muted formal-status-text">{% if listing.booking_mode == 'approval' %}The host will choose from the requests. {% endif %}College tickets are confirmed separately by the host.</p>
+</form>

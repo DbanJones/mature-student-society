@@ -1,0 +1,53 @@
+{% extends "formals/base.html" %}
+{% load static %}
+{% block title %}{% if listing %}Edit formal{% else %}Host a formal{% endif %}{% endblock %}
+{% block formal_content %}
+<header class="formal-heading"><div><h1>{% if listing %}Edit your formal{% else %}Host a formal{% endif %}</h1><p class="lede">Offer up to three guest places at your college.</p></div></header>
+{% if return_exchange %}<div class="formal-note"><p><strong>Return invitation for {{ return_exchange.creditor.get_full_name|default:return_exchange.creditor.username }}</strong><br>Choose a date after {{ return_exchange.original_booking.listing.event.start|date:"j F Y" }} and on or before {{ return_exchange.return_by|date:"j F Y" }}. After publishing, you can send this formal as your return invitation.</p></div>{% endif %}
+<form method="post" class="card formal-form" novalidate>
+  {% csrf_token %}{% if return_exchange %}<input type="hidden" name="return_for" value="{{ return_exchange.pk }}">{% endif %}
+  {% if form.errors or date_formset.total_error_count %}<div class="formal-error-summary" role="alert" tabindex="-1" data-formal-errors><h2>Check a few details</h2>{{ form.non_field_errors }}<ul>{% for field in form %}{% for error in field.errors %}<li><a href="#{{ field.auto_id }}">{{ field.label }}: {{ error }}</a></li>{% endfor %}{% endfor %}{% for date_form in date_formset %}{% for field in date_form %}{% for error in field.errors %}<li><a href="#{{ field.auto_id }}">Additional date: {{ error }}</a></li>{% endfor %}{% endfor %}{% endfor %}</ul>{{ date_formset.non_form_errors }}</div>{% endif %}
+  <p class="small muted">Times are local to Cambridge. Optional details can wait.</p>
+  <fieldset><legend>The dinner</legend>
+    {% include "formals/_field.html" with field=form.title %}
+    <div class="formal-form-row">{% include "formals/_field.html" with field=form.college %}{% include "formals/_field.html" with field=form.start %}</div>
+    {% if date_formset %}<details class="formal-disclosure formal-bulk-dates"{% if date_formset.is_bound %} open{% endif %}>
+      <summary>Add more dates <span class="small muted">(optional)</span></summary>
+      <p class="small muted">One invitation per date, using the same time, guest places and terms. Reservations close the same amount of time before each dinner.</p>
+      {{ date_formset.management_form }}
+      <div id="additional-date-rows">{% for date_form in date_formset %}{% include "formals/_date_row.html" %}{% endfor %}</div>
+      <template id="additional-date-template">{% include "formals/_date_row.html" with date_form=date_formset.empty_form %}</template>
+      <button type="button" class="btn btn-small btn-ghost" data-add-formal-date hidden>Add another date</button>
+    </details>{% endif %}
+    {% include "formals/_field.html" with field=form.location %}
+    <details class="formal-disclosure"{% if form.description.value or form.end.value or form.practical_details.value or form.description.errors or form.end.errors or form.practical_details.errors %} open{% endif %}>
+      <summary>Add an end time or more details <span class="small muted">(optional)</span></summary>
+      {% include "formals/_field.html" with field=form.end optional=True %}
+      {% include "formals/_field.html" with field=form.description optional=True %}
+      {% include "formals/_field.html" with field=form.practical_details optional=True %}
+    </details>
+  </fieldset>
+  <fieldset><legend>Guest places</legend>
+    <div class="formal-form-row">{% include "formals/_field.html" with field=form.capacity %}{% include "formals/_field.html" with field=form.booking_closes_at %}</div>
+    {% include "formals/_field.html" with field=form.price_text %}
+    {% include "formals/_field.html" with field=form.booking_mode %}
+    <p class="small muted">You confirm college tickets after accepting a booking.</p>
+  </fieldset>
+  <fieldset><legend>Would you like a swap?</legend>
+    {% include "formals/_field.html" with field=form.invitation_type %}
+    <div id="reciprocal-options" class="formal-swap-options" aria-label="Swap arrangements">
+      <p class="small">Choose how many places you want back from each booking. The return date can be arranged later.</p>
+      {% include "formals/_field.html" with field=form.return_places %}
+      {% include "formals/_field.html" with field=form.return_by %}
+      <details class="formal-disclosure"{% if form.allowed_return_colleges.value or form.allowed_return_colleges.errors %} open{% endif %}>
+        <summary>Choose particular return colleges <span class="small muted">(optional)</span></summary>
+        <p class="small">Happy to visit any college? Leave the choices below blank.</p>
+        {% include "formals/_field.html" with field=form.allowed_return_colleges %}
+      </details>
+    </div>
+  </fieldset>
+  {% include "formals/_field.html" with field=form.hosting_confirmed %}
+  <p class="small muted">Members only. Date, cost and swap terms are fixed after the first response.</p>
+  <div class="formal-actions"><button type="submit" class="btn btn-accent">{% if listing %}Save changes{% else %}Publish formal{% endif %}</button><a class="btn btn-ghost" href="{% if listing %}{{ listing.get_absolute_url }}{% elif return_exchange %}{{ return_exchange.get_absolute_url }}{% else %}{% url 'formals:index' %}{% endif %}">Cancel</a></div>
+</form>
+{% endblock %}

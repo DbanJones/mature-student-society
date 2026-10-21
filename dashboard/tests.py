@@ -58,7 +58,7 @@ class DashboardTests(TestCase):
     def test_cancelled_rsvp_not_next_up(self):
         event = Event.objects.create(
             title="Changed My Mind", category=self.category,
-            start=self.now + datetime.timedelta(days=3), created_by=self.member,
+            start=self.now + datetime.timedelta(days=3), created_by=make_member("anotherhost"),
         )
         RSVP.objects.create(
             event=event, user=self.member, status=RSVP.Status.CANCELLED

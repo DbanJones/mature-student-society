@@ -14,8 +14,8 @@
         Your messaging has been restricted by the committee. You can still read
         anything sent to you.
       {% elif restricted %}
-        Direct messages between members are switched off. You can write to the
-        committee below, and reply to anything they send you.
+        Message the committee below. Your event and formal pages also show
+        the members you can contact.
       {% else %}
         Direct messages between members. Find someone via the
         <a href="{% url 'members:directory' %}">members directory</a> to start a
@@ -71,7 +71,7 @@
     <h2>Message the committee</h2>
     <p class="small muted">
       Questions, ideas, or something you'd rather not raise in the group?
-      Any committee admin will pick it up.
+      Choose a committee member to send them a private message.
     </p>
     <ul class="convo-list">
       {% for admin in committee %}

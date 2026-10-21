@@ -29,7 +29,8 @@ cambridgematuresoc.com. Built to run on the SRCF.
 | inbox | DirectMessage, MessageBlock | Direct messages; `policy.py` decides who may message whom |
 | testimonials | Testimonial | Members' testimonials, approved by admins before they go public |
 | polls | Poll, PollOption, PollVote | Venue/date polls that set their event on closing, volunteer rotas, general polls |
-| notifications | Notification | In-app bell; the important ones are emailed too (`services.notify`) |
+| notifications | Notification, NotificationEmail | In-app bell and transactional email queue (`services.notify`) |
+| formals | FormalListing, FormalBooking, FormalExchange, ReturnProposal, FormalAlert | Members-only formal invitations, group places, reciprocal returns and matching alerts |
 | posters | EventPoster, PosterScan | One-button event posters: laid out server-side as SVG, printed and exported in the browser, nothing stored |
 | faq | ContactNode, DepartmentContact | Who-to-contact map, college and department pages |
 | panel | MailLog, AuditLog, OldSubscriber, HealthSnapshot, JobHeartbeat, ErrorEvent, RequestStats, SlowRequest | Admin panel (two-tier nav), stats, What's-On mailer, audit trail, Site health |
@@ -174,6 +175,19 @@ a page you edit is changed by someone else. Cancellations and waitlist
 promotions are emailed as well. The bell in the header and the mobile tab
 bar show the unread count.
 
+`notify()` writes its email jobs in the same transaction. The
+`process_notifications` worker claims each job with a ten-minute lease and sends
+outside transactions, retries failures with backoff, and records a heartbeat.
+Claims carry a token so a stale worker cannot overwrite another worker's result.
+One recipient per email keeps addresses private. Suspended recipients are checked
+again at delivery. Site health reports stopped workers, delayed queues and
+exhausted retries without exposing message content.
+
+`events.services` locks the event row for RSVP changes, cancellations, waitlist
+promotion and capacity edits. Poll voting and closure use a consistent event-then-
+poll lock order, and applying an outcome commits the event change and notices
+together. User-facing forms submit explicit intent rather than toggling state.
+
 ## Calendar feeds, waitlists and repeats
 
 Every event has an `.ics` download; every member has a token-protected
@@ -272,9 +286,15 @@ added or removed, since existing answers point at them. Surveys close on
 their date lazily (the first page load) and from the `close_polls` cron
 command. The What's On mailer lists live surveys under "Have your say".
 
+Responses, question changes and closing or reopening a survey share a survey
+row lock. Submission rechecks the current questions, availability and anonymity
+choice before saving, so a stale form cannot create a partial response or an
+anonymous participation receipt. The low-level admin is inspection-only;
+organisers make changes through the survey builder and settings.
+
 ## Site health
 
-`panel/healthchecks` holds 23 checks in eight sections. A check is a
+`panel/healthchecks` groups checks into eight sections. A check is a
 function registered with `@check(key, title, section, slow=...)` that
 returns a `Result`: a status (ok, warn, fail, unknown, off or na; only
 warn and fail colour a verdict), a plain sentence and next step for the

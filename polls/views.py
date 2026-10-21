@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.text import slugify
@@ -17,6 +18,7 @@ from events.models import Event
 
 from .forms import PollForm
 from .models import Poll, PollOption, PollVote
+from . import services
 
 EVENT_KINDS = [Poll.Kind.VENUE, Poll.Kind.DATE, Poll.Kind.VOLUNTEERS, Poll.Kind.GENERAL]
 GENERAL_KINDS = [Poll.Kind.GENERAL, Poll.Kind.VOLUNTEERS]
@@ -33,6 +35,8 @@ def _poll(pk):
     poll = get_object_or_404(
         Poll.objects.select_related("event", "event__category", "created_by"), pk=pk
     )
+    if poll.event_id and poll.event.is_formal:
+        raise Http404("Formal dates and places are managed in Formal Exchange.")
     poll.resolve_if_due()
     return poll
 
@@ -61,6 +65,8 @@ def _event_for_new_poll(request, slug):
             raise PermissionDenied("Only admins can start a general poll.")
         return None
     event = get_object_or_404(Event, slug=slug)
+    if event.is_formal:
+        raise PermissionDenied("Formal dates and places are managed in Formal Exchange.")
     if not event.can_edit(request.user):
         raise PermissionDenied("Only the event's organiser or an admin can add a poll.")
     return event
@@ -86,7 +92,8 @@ def create(request, kind, slug=None):
     form = PollForm(request.POST or None, kind=kind, event=event)
     if request.method == "POST" and form.is_valid():
         form.instance.created_by = request.user
-        poll = form.save()
+        with transaction.atomic():
+            poll = form.save()
         if event is not None:
             from events.models import RSVP
             from notifications.models import Notification
@@ -132,30 +139,11 @@ def detail(request, pk):
 @require_POST
 def vote(request, pk):
     poll = _poll(pk)
-    if not poll.is_open:
-        messages.error(request, "This poll has closed.")
+    try:
+        poll, already = services.cast_vote(request.user, poll.pk, request.POST.getlist("option"))
+    except services.PollError as error:
+        messages.error(request, " ".join(error.messages))
         return _back(poll)
-    option_ids = request.POST.getlist("option")
-    chosen = list(poll.options.filter(pk__in=option_ids))
-    if not chosen:
-        messages.error(request, "Pick an option first.")
-        return _back(poll)
-    if not poll.allow_multiple and len(chosen) > 1:
-        messages.error(request, "Pick just one option.")
-        return _back(poll)
-    if any(o.is_opt_out for o in chosen) and len(chosen) > 1:
-        messages.error(request, "“None of these” can't be combined with a date.")
-        return _back(poll)
-    already = poll.choices_of(request.user)
-    if poll.is_rota:
-        for option in chosen:
-            if option.pk not in already and option.is_full:
-                messages.error(request, f"“{option.label}” is already full.")
-                return _back(poll)
-    poll.votes.filter(user=request.user).delete()
-    PollVote.objects.bulk_create([
-        PollVote(poll=poll, option=option, user=request.user) for option in chosen
-    ])
     if poll.is_rota:
         messages.success(request, "Thank you — you're signed up.")
     elif already:
@@ -178,7 +166,11 @@ def close(request, pk):
     if poll.status == Poll.Status.CLOSED and option is None:
         messages.info(request, "This poll is already closed.")
         return _back(poll)
-    winner = poll.close(by=request.user, option=option)
+    try:
+        winner = poll.close(by=request.user, option=option)
+    except services.PollError as error:
+        messages.error(request, " ".join(error.messages))
+        return _back(poll)
     if poll.needs_decision:
         messages.warning(
             request, "The poll closed on a tie — pick the winner below to set the event."
@@ -198,8 +190,7 @@ def delete(request, pk):
     poll = _poll(pk)
     if not poll.can_manage(request.user):
         raise PermissionDenied("Only the organiser or an admin can delete this poll.")
-    target = poll.event if poll.event_id else None
-    poll.delete()
+    target = services.delete_poll(request.user, poll.pk)
     messages.success(request, "Poll deleted.")
     return redirect(target) if target else redirect("dashboard:home")
 
@@ -261,7 +252,7 @@ def index(request):
     for poll in Poll.objects.due().select_related("event"):
         poll.close()
     polls = Poll.objects.select_related("event", "outcome_option").annotate(vote_count=Count("votes", distinct=True))
-    visible_events = Event.objects.visible_to(user if user.is_authenticated else None)
+    visible_events = Event.objects.visible_to(user if user.is_authenticated else None).filter(formal_listing__isnull=True)
     if user.is_authenticated:
         polls = polls.filter(Q(event__isnull=True) | Q(event__in=visible_events))
     else:

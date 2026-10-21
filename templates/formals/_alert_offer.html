@@ -1,0 +1,4 @@
+<form method="post" action="{% url 'formals:save_alert' %}" class="formal-actions formal-section">{% csrf_token %}<input type="hidden" name="next" value="browse">
+  <input type="hidden" name="college" value="{{ request.GET.college|default:'' }}"><input type="hidden" name="invitation_type" value="{{ request.GET.invitation_type|default:'' }}"><input type="hidden" name="booking_mode" value="{{ request.GET.booking_mode|default:'' }}"><input type="hidden" name="after" value="{{ request.GET.after|default:'' }}"><input type="hidden" name="before" value="{{ request.GET.before|default:'' }}"><input type="hidden" name="min_places" value="{{ request.GET.min_places|default:'1' }}">
+  <button type="submit" class="btn btn-small btn-ghost">Email me when a new formal matches</button><a class="small" href="{% url 'formals:alerts' %}">My alerts</a><span class="small muted">Email and in-app alerts for these filters.</span>
+</form>

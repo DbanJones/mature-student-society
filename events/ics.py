@@ -40,7 +40,8 @@ def stamp(value):
 
 def vevent(event, url):
     end = event.end or event.start + datetime.timedelta(hours=2)
-    description = f"{event.category.name}. Details and RSVP: {url}"
+    action = "Details and guest place" if event.is_formal else "Details and RSVP"
+    description = f"{event.category.name}. {action}: {url}"
     lines = [
         "BEGIN:VEVENT",
         f"UID:mss-event-{event.pk}@portal",

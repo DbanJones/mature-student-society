@@ -1,0 +1,1 @@
+<div class="formal-date-row{% if date_form.errors %} has-error{% endif %}">{% include "formals/_field.html" with field=date_form.date optional=True %}<button type="button" class="formal-quiet-action" data-remove-formal-date hidden>Remove</button>{{ date_form.non_field_errors }}</div>

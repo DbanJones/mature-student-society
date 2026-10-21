@@ -15,6 +15,19 @@ class AlreadyAnswered(Exception):
     """A second answer from a member who has one in already."""
 
 
+class SurveyChanged(Exception):
+    """The survey changed after a form was prepared; nothing was saved."""
+
+
+def _question_signature(question):
+    """The question and choice identities a member actually answered."""
+    return (
+        question.pk, question.kind, question.required, question.prompt,
+        question.help_text, question.scale_low, question.scale_high,
+        tuple((choice.pk, choice.label) for choice in question.choices.all()),
+    )
+
+
 def _local_datetime():
     return forms.DateTimeInput(attrs={"type": "datetime-local"}, format=DATETIME_LOCAL)
 
@@ -136,11 +149,29 @@ class QuestionForm(forms.ModelForm):
         data["labels"] = labels
         return data
 
+    @transaction.atomic
     def save(self, commit=True):
         question = super().save(commit=False)
-        question.survey = self.survey
+        if not commit:
+            question.survey = self.survey
+            return question
+        try:
+            survey = Survey.objects.select_for_update().get(pk=self.survey.pk)
+        except Survey.DoesNotExist:
+            raise SurveyChanged("This survey has been removed. Your changes were not saved.") from None
+        if survey.is_locked and (not self.locked or question.pk is None):
+            raise SurveyChanged("Someone has answered this survey. Reload the question to edit its wording safely.")
+        if question.pk is not None:
+            current = survey.questions.filter(pk=question.pk).first()
+            if current is None or set(current.choices.values_list("pk", flat=True)) != {c.pk for c in self.existing}:
+                raise SurveyChanged("This question has changed. Reload it before saving your changes.")
+            if survey.is_locked and current.kind != question.kind:
+                raise SurveyChanged("The kind of answer cannot change after someone has answered.")
+            # A concurrent reorder must not be overwritten by an older editor.
+            question.sort_order = current.sort_order
+        question.survey = survey
         if question.pk is None:
-            last = self.survey.questions.aggregate(models.Max("sort_order"))["sort_order__max"]
+            last = survey.questions.aggregate(models.Max("sort_order"))["sort_order__max"]
             question.sort_order = (last or 0) + 1
         question.save()
         labels = self.cleaned_data["labels"]
@@ -173,6 +204,7 @@ class ResponseForm(forms.Form):
         self.user = user
         self.existing = existing
         self.questions = list(survey.questions.prefetch_related("choices"))
+        self.question_signature = {q.pk: _question_signature(q) for q in self.questions}
         if survey.allow_anonymous and existing is None:
             self.fields["identity"] = forms.ChoiceField(
                 choices=self.IDENTITY, widget=forms.RadioSelect, initial="named",
@@ -230,10 +262,27 @@ class ResponseForm(forms.Form):
         """Store the answers and remember that this member has answered.
         Returns the Response; raises AlreadyAnswered if an answer from this
         member got in first (two submissions at once, say)."""
-        anonymous = self.existing.is_anonymous if self.existing is not None else self.anonymous
+        if not self.is_valid():
+            raise ValueError("The answers could not be saved because they did not validate.")
+        anonymous = self.anonymous if self.existing is None else False
         with transaction.atomic():
+            try:
+                survey = Survey.objects.select_for_update().get(pk=self.survey.pk)
+            except Survey.DoesNotExist:
+                raise SurveyChanged("This survey has been removed. Your answers were not saved.") from None
+            if not survey.is_live:
+                raise SurveyChanged("This survey isn't taking answers at the moment. Your answers were not saved.")
+            if (anonymous or (self.existing is None and self.data.get("identity") == "anonymous")) and not survey.allow_anonymous:
+                raise SurveyChanged("The survey no longer accepts anonymous answers. Your answers were not saved.")
+            questions = list(survey.questions.prefetch_related("choices"))
+            if not questions or {q.pk: _question_signature(q) for q in questions} != self.question_signature:
+                raise SurveyChanged("The questions have changed. Reload the survey and check your answers before sending.")
             if self.existing is not None:
-                response = self.existing
+                response = survey.responses.filter(
+                    pk=self.existing.pk, respondent=self.user, is_anonymous=False,
+                ).first()
+                if response is None:
+                    raise SurveyChanged("These answers can no longer be changed. Nothing was saved.")
                 response.updated_at = timezone.now()
                 response.save(update_fields=["updated_at"])
                 response.answers.all().delete()
@@ -241,18 +290,18 @@ class ResponseForm(forms.Form):
                 # The participation row's unique key is what stops a double
                 # submission: whoever creates it answers, the other does not.
                 try:
-                    _, created = Participation.objects.get_or_create(survey=self.survey, user=self.user)
+                    _, created = Participation.objects.get_or_create(survey=survey, user=self.user)
                 except IntegrityError:  # the other of two simultaneous submissions won
                     created = False
                 if not created:
                     raise AlreadyAnswered
                 response = Response.objects.create(
-                    survey=self.survey,
+                    survey=survey,
                     respondent=None if anonymous else self.user,
                     is_anonymous=anonymous,
                     submitted_at=None if anonymous else timezone.now(),
                 )
-            for question in self.questions:
+            for question in questions:
                 value = self.cleaned_data.get(f"q{question.pk}")
                 if value in (None, "", []):
                     continue

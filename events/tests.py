@@ -497,6 +497,11 @@ class WaitlistTests(EventTestCase):
         self.client.post(url)
         waiting.refresh_from_db()
         self.assertEqual(waiting.status, RSVP.Status.GOING)
+        from notifications.models import NotificationEmail
+        from notifications.services import process_notification_emails
+        self.assertEqual(NotificationEmail.objects.filter(recipient=self.other).count(), 1)
+        self.assertEqual(len(mail.outbox), 0)
+        process_notification_emails()
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("place has opened up", mail.outbox[0].subject)
         self.assertEqual(mail.outbox[0].to, [self.other.email])

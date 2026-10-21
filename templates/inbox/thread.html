@@ -56,16 +56,19 @@
 </div>
 
 {% if send_denied %}
-  <div class="flash flash-warning">{{ send_denied }}</div>
-{% else %}
+  <div class="flash flash-warning" role="alert">{{ send_denied }}{% if draft %} Your message was not sent. You can copy your draft below.{% endif %}</div>
+{% endif %}
+{% if not send_denied or draft %}
   <form method="post" class="thread-compose card">
     {% csrf_token %}
-    <textarea name="body" rows="3" maxlength="{{ max_length }}" required
+    {% if compose_error %}<p class="errorlist" id="message-error" role="alert">{{ compose_error }}</p>{% endif %}
+    <label for="message-body">{% if send_denied %}Your unsent message{% else %}Message{% endif %}</label>
+    <textarea name="body" id="message-body" rows="3" maxlength="{{ max_length }}" required{% if send_denied %} readonly{% endif %}{% if compose_error %} aria-invalid="true" aria-describedby="message-error"{% endif %}
               placeholder="Write a message to {{ member.first_name|default:member.username }}…"
-              aria-label="Message"></textarea>
+              >{{ draft }}</textarea>
     <div class="thread-compose-foot">
       <span class="muted small">Messages may be reviewed by admins to keep the community safe.</span>
-      <button type="submit" class="btn btn-accent">Send</button>
+      {% if not send_denied %}<button type="submit" class="btn btn-accent">Send</button>{% endif %}
     </div>
   </form>
 {% endif %}

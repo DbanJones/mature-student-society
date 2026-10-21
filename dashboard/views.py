@@ -20,11 +20,16 @@ from accounts.models import User
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
 from events.models import RSVP, Event
+from formals.models import FormalBooking, FormalExchange
 from guide.models import GuideRevision
 from polls.models import Poll, PollVote
 from supper.models import Rating
 
 from .models import KeepyUppyScore
+
+
+def _hosted_by(user, prefix=""):
+    return Q(**{prefix + "host": user}) | Q(**{prefix + "host__isnull": True, prefix + "created_by": user})
 
 
 @login_required
@@ -35,12 +40,15 @@ def home(request):
     # Upcoming events they're going to (soonest first).
     going_events = (
         Event.objects.filter(
-            rsvps__user=user,
-            rsvps__status=RSVP.Status.GOING,
             start__gte=now,
             is_cancelled=False,
         )
-        .select_related("category")
+        .filter(
+            Q(rsvps__user=user, rsvps__status=RSVP.Status.GOING)
+            | Q(formal_listing__bookings__guest=user,
+                formal_listing__bookings__status__in=["reserved", "attended"])
+        )
+        .distinct().select_related("category", "formal_listing")
         .order_by("start")
     )
     going_events = list(going_events)
@@ -49,18 +57,51 @@ def home(request):
         Event.objects.filter(
             rsvps__user=user, rsvps__status=RSVP.Status.WAITING,
             start__gte=now, is_cancelled=False,
-        ).select_related("category").order_by("start")
+        ).select_related("category", "formal_listing").order_by("start")
     )
 
-    # Upcoming events they created ("You're running").
-    running_events = (
-        user.events_created.filter(start__gte=now, is_cancelled=False)
-        .select_related("category")
+    # The organiser may differ from the member who originally created an event.
+    running_events = list(
+        Event.objects.filter(_hosted_by(user), start__gte=now, is_cancelled=False)
+        .select_related("category", "formal_listing")
         .annotate(
             num_going=Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
         )
         .order_by("start")
     )
+    for event in running_events:
+        if event.is_formal:
+            event.num_going = event.going_count
+
+    diary_by_id = {event.pk: event for event in going_events + running_events}
+    diary_events = sorted(diary_by_id.values(), key=lambda event: (event.start, event.pk))
+    next_up = diary_events[0] if diary_events else None
+    if next_up:
+        next_up.viewer_is_host = any(event.pk == next_up.pk for event in running_events)
+
+    formal_requests = FormalBooking.objects.filter(
+        _hosted_by(user, "listing__event__"), listing__event__is_cancelled=False,
+        listing__event__start__gt=now, listing__booking_closes_at__gt=now, status="requested",
+    ).count()
+    formal_attendance = FormalBooking.objects.filter(
+        Q(guest=user, guest_confirmed=False) | (_hosted_by(user, "listing__event__") & Q(host_confirmed=False))
+        | (Q(status="no_show") & (Q(guest=user) | _hosted_by(user, "listing__event__"))),
+        status__in=["reserved", "no_show"], listing__event__is_cancelled=False,
+    ).filter(
+        Q(listing__event__end__lte=now)
+        | Q(listing__event__end__isnull=True, listing__event__start__lte=now)
+    ).count()
+    formal_promises = FormalExchange.objects.filter(
+        Q(creditor=user) | Q(debtor=user),
+        status__in=["conditional", "owed", "disputed"],
+    ).count()
+    formal_plans = list(FormalBooking.objects.filter(
+        guest=user, listing__event__is_cancelled=False, listing__event__start__gt=now,
+    ).filter(
+        Q(status="reserved")
+        | Q(status="requested", listing__booking_closes_at__gt=now)
+        | Q(status="held", return_proposal__status="pending", return_proposal__expires_at__gt=now)
+    ).select_related("listing__event", "exchange", "return_proposal__exchange").order_by("listing__event__start", "pk")[:5])
 
     # Past supper-club visits they attended but haven't rated yet.
     unrated_visits = list(
@@ -72,7 +113,7 @@ def home(request):
             restaurant__isnull=False,
         )
         .exclude(restaurant_ratings__user=user)
-        .select_related("restaurant")
+        .select_related("restaurant", "formal_listing")
         .order_by("-start")
     )
 
@@ -81,7 +122,7 @@ def home(request):
     super_events = list(
         Event.objects.visible_to(user)
         .filter(is_super=True, start__gte=now)
-        .select_related("category")
+        .select_related("category", "formal_listing")
         .order_by("start")[:5]
     )
     going_ids = {e.pk for e in going_events}
@@ -91,7 +132,13 @@ def home(request):
     guide_edit_count = GuideRevision.objects.filter(editor=user).count()
 
     # New-member checklist: what makes a profile useful to other members.
-    has_rsvp = RSVP.objects.filter(user=user, status=RSVP.Status.GOING).exists()
+    has_rsvp = (
+        RSVP.objects.filter(user=user, status=RSVP.Status.GOING).exists()
+        or FormalBooking.objects.filter(
+            guest=user, status__in=["reserved", "attended"],
+            listing__event__is_cancelled=False,
+        ).exists()
+    )
     checklist = [
         {"done": bool(user.photo), "label": "Add a profile photo", "url": "/accounts/profile/"},
         {"done": bool(user.talk_to_me_about), "label": "Fill in “talk to me about…”", "url": "/accounts/profile/"},
@@ -108,7 +155,7 @@ def home(request):
     from surveys.models import Survey
 
     for due in Survey.objects.due():
-        due.close()
+        due.resolve_if_due()
     surveys_waiting = list(Survey.objects.for_dashboard(user)[:5])
     surveys_run = list(
         user.surveys_run.exclude(status=Survey.Status.CLOSED)
@@ -118,7 +165,7 @@ def home(request):
     volunteering = list(
         PollVote.objects.filter(user=user, poll__kind=Poll.Kind.VOLUNTEERS)
         .filter(Q(poll__event__isnull=True) | Q(poll__event__start__gte=now))
-        .select_related("option", "poll", "poll__event")
+        .select_related("option", "poll", "poll__event", "poll__event__formal_listing")
         .order_by("poll__event__start", "poll__closes_at")
     )
 
@@ -128,8 +175,12 @@ def home(request):
             status=RSVP.Status.GOING,
             event__start__lt=now,
             event__is_cancelled=False,
+        ).count() + sum(booking.lead_attended for booking in FormalBooking.objects.filter(
+            guest=user, status="attended", listing__event__is_cancelled=False,
+        ).only("status", "places", "host_attendance", "guest_attendance").iterator(chunk_size=200)),
+        "hosted": Event.objects.filter(_hosted_by(user), is_cancelled=False).filter(
+            Q(end__lte=now) | Q(end__isnull=True, start__lte=now)
         ).count(),
-        "hosted": user.events_created.count(),
         "guide_edits": guide_edit_count,
         "ratings": Rating.objects.filter(user=user).count(),
     }
@@ -141,6 +192,11 @@ def home(request):
     show_testimonial_invite = testimonials_visible and not user.testimonials.exists()
     context = {
         "nav_active": "dashboard",
+        "formal_requests": formal_requests,
+        "formal_attendance": formal_attendance,
+        "formal_promises": formal_promises,
+        "formal_plans": formal_plans,
+        "formal_hosting": [event for event in running_events if event.is_formal][:3],
         "next_up": next_up,
         "super_events": super_events,
         "owned_tags": user.tags_owned.all(),
@@ -158,13 +214,16 @@ def home(request):
             f"/me/calendar.ics?token={user.get_calendar_token()}"
         ),
         "going_events": going_events,
+        "diary_events": diary_events,
         "running_events": running_events,
+        "ordinary_running_events": [event for event in running_events if not event.is_formal],
         "unrated_visits": unrated_visits,
         "show_guide_invite": guide_edit_count == 0,
         "stats": stats,
         "attention_count": (
             sum(1 for item in checklist if not item["done"]) + len(surveys_waiting) + len(polls_waiting)
             + len(unrated_visits) + int(guide_edit_count == 0) + int(show_testimonial_invite)
+            + int(bool(formal_requests)) + int(bool(formal_attendance))
         ),
     }
 
@@ -236,23 +295,38 @@ def calendar_feed(request):
     from events.ics import build_calendar
 
     token = request.GET.get("token", "")
-    user = User.objects.filter(calendar_token=token, is_banned=False).first() if token else None
+    user = User.objects.filter(calendar_token=token, is_banned=False, is_active=True).first() if token else None
     if user is None:
         raise Http404("No calendar found.")
     since = timezone.now() - datetime.timedelta(days=60)
+    cancelled_formal_ids = list(FormalBooking.objects.filter(
+        guest=user, status="cancelled", reserved_at__isnull=False,
+        listing__event__start__gte=since,
+    ).values_list("listing__event_id", flat=True))
     events = (
         Event.objects.filter(start__gte=since)
         .filter(
             Q(rsvps__user=user, rsvps__status=RSVP.Status.GOING)
+            | Q(formal_listing__bookings__guest=user,
+                formal_listing__bookings__status__in=["reserved", "attended"])
+            | Q(pk__in=cancelled_formal_ids)
             | Q(host=user) | Q(created_by=user)
         )
-        .distinct().select_related("category").order_by("start")
+        .distinct().select_related("category", "formal_listing").order_by("start")
     )
+    # Keep the same UID with a cancellation for a released guest reservation.
+    # Mutate only these in-memory feed objects, never the shared Event row.
+    for event in events:
+        if event.pk in cancelled_formal_ids and event.effective_host != user:
+            event.is_cancelled = True
     body = build_calendar(
         events, "MSS: my events",
         lambda e: request.build_absolute_uri(e.get_absolute_url()),
     )
-    return HttpResponse(body, content_type="text/calendar; charset=utf-8")
+    response = HttpResponse(body, content_type="text/calendar; charset=utf-8")
+    response["Cache-Control"] = "private, no-store"
+    response["X-Robots-Tag"] = "noindex, nofollow"
+    return response
 
 
 @login_required

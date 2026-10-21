@@ -1,0 +1,22 @@
+{% extends "formals/base.html" %}
+{% block title %}My plans · Formal Exchange{% endblock %}
+{% block formal_content %}
+<header class="formal-heading"><div><h1>My plans</h1><p class="lede">Your bookings, dinners and swaps in one place.</p></div><a class="formal-text-link" href="{% url 'formals:alerts' %}">My alerts</a></header>
+{% if not bookings and not listings and not exchanges %}<div class="formal-empty"><h2>Your next dinner starts here</h2><p>Browse the available formals or offer a guest place at your college.</p><a class="btn btn-accent" href="{% url 'formals:index' %}">Browse formals</a></div>{% endif %}
+{% if bookings %}<section class="formal-section" id="places"><h2>My bookings</h2>
+  <div class="formal-grid">{% for booking in bookings %}{% include "formals/_my_booking.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=bookings parameter="booking_page" label="Guest places" anchor="places" %}
+</section>{% endif %}
+{% if listings %}<section class="formal-section" id="hosting"><h2>I am hosting</h2>
+  <div class="formal-grid">{% for listing in listings %}{% if listing.event.end and listing.event.end <= now or not listing.event.end and listing.event.start <= now %}{% include "formals/_card.html" with awaiting_followup=True %}{% else %}{% include "formals/_card.html" %}{% endif %}{% endfor %}</div>{% include "formals/_pagination.html" with page=listings parameter="hosting_page" label="Hosted formals" anchor="hosting" %}
+</section>{% endif %}
+{% if exchanges %}<section class="formal-section" id="swaps"><h2>My swaps</h2>
+  {% if exchanges %}<div class="formal-grid">{% for exchange in exchanges %}{% include "formals/_exchange_card.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=exchanges parameter="exchange_page" label="Return promises" anchor="swaps" %}
+  {% endif %}
+</section>{% endif %}
+{% if history_count %}<details class="card formal-section formal-history" id="history"{% if request.GET.past_booking_page or request.GET.past_hosting_page or request.GET.past_exchange_page %} open{% endif %}>
+  <summary>Past plans <span class="small muted">Completed dinners, cancelled places and closed swaps</span></summary>
+  {% if past_bookings %}<section class="formal-section" id="past-places"><h2>Previous guest places</h2><div class="formal-grid">{% for booking in past_bookings %}{% include "formals/_my_booking.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=past_bookings parameter="past_booking_page" label="Past guest places" anchor="history" %}</section>{% endif %}
+  {% if past_listings %}<section class="formal-section" id="past-hosting"><h2>Previous hosted formals</h2><div class="formal-grid">{% for listing in past_listings %}{% include "formals/_card.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=past_listings parameter="past_hosting_page" label="Past hosted formals" anchor="history" %}</section>{% endif %}
+  {% if past_exchanges %}<section class="formal-section" id="past-swaps"><h2>Closed swaps</h2><div class="formal-grid">{% for exchange in past_exchanges %}{% include "formals/_exchange_card.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=past_exchanges parameter="past_exchange_page" label="Past swaps" anchor="history" %}</section>{% endif %}
+</details>{% endif %}
+{% endblock %}
