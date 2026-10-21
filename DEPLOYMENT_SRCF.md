@@ -313,6 +313,33 @@ Microsoft Entra tenant (`49a50445-bdfa-4b79-ade3-547b4f3986e9`).
 
 ## 11. Housekeeping
 
+- **Member notification emails**: apply notification migration `0003`, then add
+  this job alongside the existing formal and poll workers, using the deployed path:
+  `*/5 * * * * cd /public/societies/mss/mature-student-society && set -a && . ./.env && set +a && .venv/bin/python manage.py process_notifications --quiet`
+  Event cancellations, waitlist places and poll results are queued durably; the
+  in-app bell updates immediately. Check Admin → Health after the first run.
+  Messages retry five times with backoff. Fix delivery first, then run
+  `manage.py process_notifications --retry-failed` to requeue exhausted messages.
+  This deliberately retries failed messages, not successful deliveries. The
+  worker does not repeat the underlying booking or vote. SMTP delivery remains
+  at least once if a process stops between acceptance and recording success.
+
+- **Formal Exchange**: apply the `formals` migration and collect static files
+  with the normal upgrade process. Before enabling production reservations,
+  run `manage.py test formals.tests.test_concurrency` on an isolated database
+  using the deployment database engine (MySQL/InnoDB or PostgreSQL). SQLite
+  skips these row-lock tests. Schedule the durable notification queue and
+  return-hold expiry on sinkhole, using the correct deployed project path:
+  `*/5 * * * * cd /public/societies/mss/mature-student-society && set -a && . ./.env && set +a && .venv/bin/python manage.py process_formals --quiet`
+  Set `DJANGO_SITE_URL` to the HTTPS portal origin for absolute email links.
+  In-app notices are immediate; email requires this command. Expired holds
+  cannot block a new allocation even if cron is delayed. The command reports
+  delivery failures after five attempts; inspect `FormalEmail` in Django
+  admin, fix the email service, then reset failed rows' attempts/available_at
+  deliberately from the Django shell. Never delete the booking ledger to
+  resolve a notification fault. Delivery can duplicate an email if the worker
+  crashes after SMTP acceptance, but allocation remains idempotent.
+
 - **Quota**: 2 GB default (`srcf-quota` to check). Profile photos are resized
   on upload, but request more quota from the sysadmins before a big intake.
 - **Poster maps**: create a free Geoapify account (geoapify.com), make an API

@@ -21,7 +21,7 @@ import uuid
 from collections import Counter, defaultdict
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 from django.urls import reverse
 from django.utils import timezone
@@ -169,20 +169,40 @@ class Survey(models.Model):
 
     def resolve_if_due(self):
         if self.status == self.Status.OPEN and self.closes_at and self.closes_at <= timezone.now():
-            self.close()
+            return self.close(only_if_due=True)
+        return False
 
-    def close(self):
-        self.status = self.Status.CLOSED
-        self.closed_at = timezone.now()
-        self.save(update_fields=["status", "closed_at", "updated_at"])
+    def _copy_state(self, current):
+        for field in ("status", "closed_at", "opens_at", "closes_at", "updated_at"):
+            setattr(self, field, getattr(current, field))
 
+    @transaction.atomic
+    def close(self, *, only_if_due=False):
+        """Serialize closure with responses; a stale due job cannot close a rescheduled survey."""
+        current = Survey.objects.select_for_update().get(pk=self.pk)
+        now = timezone.now()
+        due = current.status == self.Status.OPEN and current.closes_at and current.closes_at <= now
+        changed = current.status != self.Status.CLOSED and (not only_if_due or due)
+        if changed:
+            current.status = self.Status.CLOSED
+            current.closed_at = now
+            current.save(update_fields=["status", "closed_at", "updated_at"])
+        self._copy_state(current)
+        return bool(changed)
+
+    @transaction.atomic
     def reopen(self):
         """Back to taking answers; a closing time already past is dropped."""
-        self.status = self.Status.OPEN
-        self.closed_at = None
-        if self.closes_at and self.closes_at <= timezone.now():
-            self.closes_at = None
-        self.save(update_fields=["status", "closed_at", "closes_at", "updated_at"])
+        current = Survey.objects.select_for_update().get(pk=self.pk)
+        changed = current.status != self.Status.OPEN
+        if changed:
+            current.status = self.Status.OPEN
+            current.closed_at = None
+            if current.closes_at and current.closes_at <= timezone.now():
+                current.closes_at = None
+            current.save(update_fields=["status", "closed_at", "closes_at", "updated_at"])
+        self._copy_state(current)
+        return changed
 
     # --- people -------------------------------------------------------------
 

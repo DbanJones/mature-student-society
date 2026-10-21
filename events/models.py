@@ -80,7 +80,10 @@ class EventQuerySet(models.QuerySet):
         """
         qs = self.filter(is_cancelled=False)
         if user is None or not user.is_authenticated:
-            return qs.filter(members_only=False, created_by__is_shadow_banned=False)
+            return qs.filter(
+                members_only=False, formal_listing__isnull=True,
+                created_by__is_shadow_banned=False,
+            ).exclude(category__slug="formal-exchange")
         if user.is_portal_admin:
             return qs
         return qs.filter(
@@ -227,7 +230,14 @@ class Event(models.Model):
         super().save(*args, **kwargs)
 
     def get_absolute_url(self):
+        if self.is_formal:
+            return self.formal_listing.get_absolute_url()
         return reverse("events:detail", args=[self.slug])
+
+    @property
+    def is_formal(self):
+        """Formal places are managed by Formal Exchange, never by RSVPs."""
+        return self.pk is not None and hasattr(self, "formal_listing")
 
     @property
     def effective_host(self):
@@ -250,10 +260,16 @@ class Event(models.Model):
 
     @property
     def going_count(self):
+        if self.is_formal:
+            return self.formal_listing.bookings.filter(
+                status__in=["reserved", "attended"]
+            ).aggregate(total=models.Sum("places", default=0))["total"]
         return self.rsvps.filter(status=RSVP.Status.GOING).count()
 
     @property
     def is_full(self):
+        if self.is_formal:
+            return self.formal_listing.spots_left == 0
         return self.capacity is not None and self.going_count >= self.capacity
 
     @property
@@ -261,7 +277,7 @@ class Event(models.Model):
         """The waitlist in the order people joined it."""
         return (
             self.rsvps.filter(status=RSVP.Status.WAITING)
-            .select_related("user").order_by("updated_at")
+            .select_related("user").order_by("updated_at", "pk")
         )
 
     @property
@@ -271,17 +287,8 @@ class Event(models.Model):
     def promote_waitlist(self):
         """Move people off the waitlist while there is room. Returns the
         RSVPs promoted; the caller tells them."""
-        promoted = []
-        if self.capacity is None:
-            waiters = list(self.waiting)
-        else:
-            room = self.capacity - self.going_count
-            waiters = list(self.waiting[:max(0, room)])
-        for rsvp in waiters:
-            rsvp.status = RSVP.Status.GOING
-            rsvp.save(update_fields=["status", "updated_at"])
-            promoted.append(rsvp)
-        return promoted
+        from .services import promote_waitlist
+        return promote_waitlist(self.pk)
 
     def user_rsvp(self, user):
         if not user.is_authenticated:
@@ -291,6 +298,10 @@ class Event(models.Model):
     def can_edit(self, user):
         """Creator, host, society admins — and the owners of the event's tag,
         who manage all their tag's events from the panel."""
+        if self.is_formal:
+            return user.is_authenticated and (
+                user == self.effective_host or user.is_portal_admin
+            )
         return user.is_authenticated and (
             user == self.created_by
             or user == self.host

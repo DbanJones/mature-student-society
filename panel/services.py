@@ -270,12 +270,13 @@ def top_restaurants(limit=5):
 def whats_on_events():
     """Events in the mailer window: next 14 days, not cancelled.
 
-    Members-only events are included — the mailing list is members.
+    Ordinary members-only events are included. Formal Exchange invitations
+    stay in the authenticated portal and their participant notifications.
     """
     return (
         Event.objects.in_next_days(MAILER_WINDOW_DAYS)
-        .filter(is_cancelled=False)
-        .select_related("category")
+        .filter(is_cancelled=False, formal_listing__isnull=True)
+        .select_related("category", "formal_listing")
     )
 
 
@@ -324,7 +325,7 @@ def build_whats_on_email(request):
             lines += _event_lines(request, event, official=False)
     from polls.models import Poll
 
-    open_polls = list(Poll.objects.open().select_related("event").order_by("closes_at"))
+    open_polls = list(Poll.objects.open().filter(event__formal_listing__isnull=True).select_related("event").order_by("closes_at"))
     if open_polls:
         lines += ["📊 HAVE YOUR SAY", "---------------", ""]
         for poll in open_polls:
@@ -627,14 +628,14 @@ def reached_as_member(member):
 
 
 def left_out(member):
-    """True when a matched member must not get the mailer at all: banned, or
+    """True when a matched member must not get the mailer at all: inactive, banned, or
     opted out on their profile (the old list must not undo either)."""
-    return bool(member and (member.is_banned or not member.wants_mailer))
+    return bool(member and (not member.is_active or member.is_banned or not member.wants_mailer))
 
 
 def old_list_audience(only_unmigrated=False):
     """Old-list entries the mailer may still reach: not unsubscribed, not a
-    banned or opted-out member, and with ``only_unmigrated`` not matched to
+    inactive, banned or opted-out member, and with ``only_unmigrated`` not matched to
     a website account at all."""
     subs = old_list_status(list(OldSubscriber.objects.filter(unsubscribed_at__isnull=True)))
     return [sub for sub in subs if not left_out(sub.member) and not (only_unmigrated and sub.member)]
@@ -820,7 +821,8 @@ def send_in_batches(request, config, subject, text, emails, copy_to=""):
             batch = good[start:start + MAILER_BATCH]
             message = mailer_message(request, config, subject, text, batch + (extra if start == 0 else []))
             try:
-                connection.send_messages([message])
+                if connection.send_messages([message]) != 1:
+                    raise RuntimeError("The email backend did not accept this batch.")
                 sent += len(batch)
             except Exception as exc:
                 failed += len(batch)
@@ -856,12 +858,14 @@ def send_test(request, config, subject, body, audience, to):
     """The message an audience would get, footer and headers included, sent
     to ``to`` alone."""
     text = body + footer_for(request, config, audience)
-    mailer_message(request, config, subject, text, [to], to=to).send()
+    if mailer_message(request, config, subject, text, [to], to=to).send() != 1:
+        raise RuntimeError("The email backend did not accept this message.")
 
 
 def send_one(request, config, subject, body, to):
     """The mailer to a single address (a list, or a check), as is."""
-    mailer_message(request, config, subject, body, [to], to=to).send()
+    if mailer_message(request, config, subject, body, [to], to=to).send() != 1:
+        raise RuntimeError("The email backend did not accept this message.")
 
 
 def describe_sent(sent):

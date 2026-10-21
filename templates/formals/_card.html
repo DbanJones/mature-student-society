@@ -1,0 +1,25 @@
+<article class="card formal-card formal-listing" id="formal-{{ listing.pk }}">
+  <div class="formal-listing-head">
+    <div class="formal-date" aria-hidden="true"><span>{{ listing.event.start|date:"M" }}</span><strong>{{ listing.event.start|date:"j" }}</strong><span>{{ listing.event.start|date:"D" }}</span></div>
+    <div class="formal-listing-title">
+      <div class="formal-badges"><span class="formal-college">{{ listing.get_college_display }}</span><span class="badge{% if listing.invitation_type == 'reciprocal' %} badge-warn{% endif %}">{% if listing.invitation_type == 'reciprocal' %}Swap{% else %}No obligation{% endif %}</span>{% if listing.event.is_cancelled %}<span class="badge badge-danger">Cancelled</span>{% endif %}</div>
+      <h2><a href="{{ listing.get_absolute_url }}">{{ listing.event.title }}</a></h2>
+      <p class="small muted"><time datetime="{{ listing.event.start|date:'c' }}">{{ listing.event.start|date:"D j M, H:i" }}</time> &middot; {{ listing.host.get_full_name|default:listing.host.username }}</p>
+    </div>
+  </div>
+  <div class="formal-listing-facts"><span class="formal-availability">{% if awaiting_followup %}Attendance to confirm{% elif listing.event.is_cancelled %}Cancelled{% elif listing.is_open and listing.spots_left %}{{ listing.spots_left }} place{{ listing.spots_left|pluralize }} available{% elif listing.is_open %}Full{% else %}Reservations closed{% endif %}</span><span>{{ listing.price_text|default:"Ask host about cost" }}</span></div>
+  {% if listing.invitation_type == 'reciprocal' %}<p class="formal-return-line small"><strong>{% if listing.return_places %}{{ listing.return_places }} return place{{ listing.return_places|pluralize }}{% else %}Matching places in return{% endif %}</strong> at {% if listing.allowed_return_colleges %}{{ listing.allowed_return_college_names|join:", " }}{% else %}any college{% endif %}, by {{ listing.return_by|date:"j M Y" }}.</p>{% endif %}
+  {% if inline_booking and listing.application %}
+    <details class="formal-quick-book">
+      <summary class="btn btn-accent">{% if listing.booking_mode == 'instant' %}Reserve places{% else %}Request places{% endif %}</summary>
+      {% include "formals/_application.html" with application=listing.application from_browse=True %}
+    </details>
+  {% endif %}
+  <div class="formal-card-footer">
+    {% if listing.my_booking %}<a class="btn btn-small btn-ghost" href="{{ listing.get_absolute_url }}">{{ listing.my_booking.places }} place{{ listing.my_booking.places|pluralize }} &middot; {{ listing.my_booking.get_status_display }}</a>
+    {% elif awaiting_followup or user.pk == listing.host.pk or listing.can_manage %}<a class="btn btn-small btn-ghost" href="{{ listing.get_absolute_url }}">{% if awaiting_followup %}Review attendance{% else %}Manage guests{% endif %}</a>
+    {% else %}<a class="formal-text-link" href="{{ listing.get_absolute_url }}">Dinner details <span aria-hidden="true">&rarr;</span></a>{% endif %}
+    {% include "formals/_share.html" with whatsapp_url=listing.whatsapp_url %}
+  </div>
+  {% if inline_booking and listing.eligibility_message %}<p class="small muted formal-status-text">{{ listing.eligibility_message }}</p>{% endif %}
+</article>

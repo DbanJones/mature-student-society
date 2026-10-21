@@ -1,0 +1,87 @@
+{% extends "formals/base.html" %}
+{% load static %}
+{% block title %}Formal Exchange statistics{% endblock %}
+{% block extra_css %}{{ block.super }}<link rel="stylesheet" href="{% static 'formals/reports.css' %}">{% endblock %}
+{% block formal_content %}
+<div class="page-head">
+  <div><p class="eyebrow">Admin only</p><h1>Formal Exchange statistics</h1><p class="lede">See the dinners we have supported, who went, and how return promises are progressing.</p></div>
+</div>
+<form method="get" class="card formal-report-filters" aria-label="Report filters">
+  {% if form.non_field_errors %}<div class="errorlist">{{ form.non_field_errors }}</div>{% endif %}
+  <div class="formal-filter">
+    {% for field in form %}<div><label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{{ field.errors }}</div>{% endfor %}
+    <div class="formal-filter-submit"><button class="btn" type="submit">Update report</button></div>
+  </div>
+  <div class="formal-report-filter-foot"><p class="small muted">Dates include the whole day in Cambridge. College means the college hosting the dinner. The guest list choice changes only the names below and the guest CSV.</p><div class="formal-actions"><a href="{% url 'formals:statistics' %}">This academic year</a><a href="{% url 'formals:statistics' %}?date_from=&amp;date_to=&amp;college=">All time</a></div></div>
+</form>
+{% if totals %}
+<p class="small muted formal-report-period">Dinner dates: {% if filters.date_from %}{{ filters.date_from|date:"j M Y" }}{% else %}the beginning{% endif %} to {% if filters.date_to %}{{ filters.date_to|date:"j M Y" }}{% else %}today and future dates{% endif %}. {{ college_name }}.</p>
+<section aria-labelledby="impact-heading" class="formal-section">
+  <h2 id="impact-heading">What we have supported</h2>
+  <div class="formal-report-metrics">
+    <div class="stat-tile"><span class="stat-label">Dinners with confirmed guests</span><div class="stat-number">{{ totals.supported_formals }}</div><p class="small muted">At least one guest attended.</p></div>
+    <div class="stat-tile"><span class="stat-label">Confirmed guest visits</span><div class="stat-number">{{ totals.guest_visits }}</div><p class="small muted">Includes {{ totals.companion_visits }} companion visit{{ totals.companion_visits|pluralize }}.</p></div>
+    <div class="stat-tile"><span class="stat-label">Member guests</span><div class="stat-number">{{ totals.unique_guests }}</div><p class="small muted">Distinct members who booked and attended.</p></div>
+    <div class="stat-tile"><span class="stat-label">Hosts of attended formals</span><div class="stat-number">{{ totals.unique_hosts }}</div><p class="small muted">Distinct hosts of those dinners.</p></div>
+  </div>
+  <dl class="formal-report-secondary">
+    <div><dt>Formals offered</dt><dd>{{ totals.formals_offered }}</dd></div>
+    <div><dt>Guest places offered</dt><dd>{{ totals.places_offered }}</dd></div>
+    <div><dt>Places still reserved</dt><dd>{{ totals.reserved_places }}</dd></div>
+    <div><dt>Cancelled formals</dt><dd>{{ totals.cancelled_formals }}</dd></div>
+  </dl>
+  <p class="small muted">Confirmed visits: {{ totals.open_visits }} open invitation{{ totals.open_visits|pluralize }}, {{ totals.reciprocal_visits }} first swap dinner{{ totals.reciprocal_visits|pluralize }} and {{ totals.return_visits }} return dinner{{ totals.return_visits|pluralize }}. Offered totals exclude cancelled formals.</p>
+  {% if totals.pending_attendance or totals.attendance_review %}<div class="formal-note"><p><strong>Attendance follow-up:</strong> {{ totals.pending_attendance }} past reservation{{ totals.pending_attendance|pluralize }} await{{ totals.pending_attendance|pluralize:"s," }} confirmation; {{ totals.attendance_review }} attendance record{{ totals.attendance_review|pluralize }} need{{ totals.attendance_review|pluralize:"s," }} review. These are not counted as confirmed visits or assumed to be absences.</p></div>{% endif %}
+</section>
+<section class="formal-section" aria-labelledby="exchange-heading">
+  <div class="formal-report-section-head"><h2 id="exchange-heading">Reciprocal exchanges</h2><a class="btn btn-small btn-ghost" href="{% url 'formals:statistics_export' %}?{{ filter_query }}&amp;kind=exchanges">Download exchange CSV</a></div>
+  <p>{{ totals.exchanges_total }} promise{{ totals.exchanges_total|pluralize }} agreed · <strong>{{ totals.exchanges_completed }} completed</strong> · {{ totals.exchanges_active }} active{% if totals.exchanges_overdue %} · {{ totals.exchanges_overdue }} active past the deadline{% endif %}.</p>
+  <p class="small muted">These are the current outcomes of swaps whose <strong>first dinner</strong> falls in the selected dates and host college. A return dinner may happen outside that period. This is not a count of completions during the period.</p>
+  <dl class="formal-report-statuses">{% for item in exchange_statuses %}<div><dt>{{ item.label }}</dt><dd>{{ item.count }}</dd></div>{% endfor %}</dl>
+</section>
+<section class="formal-section" aria-labelledby="members-heading">
+  <div class="formal-report-section-head"><h2 id="members-heading">Member participation</h2><a class="btn btn-small btn-ghost" href="{% url 'formals:statistics_export' %}?{{ filter_query }}&amp;kind=members">Download member CSV</a></div>
+  <p class="small muted">{% if member_rows|length > 25 %}Showing the first 25 of {{ member_rows|length }} members. The download includes everyone. {% endif %}Sorted by completed exchanges, then dinners hosted and personal guest visits. This named report is visible only to admins.</p>
+  {% if member_rows %}<div class="formal-report-table-wrap" role="region" aria-label="Member participation, scroll horizontally for all columns" tabindex="0"><table class="formal-report-table">
+    <caption class="sr-only">Confirmed participation by member</caption>
+    <thead><tr><th scope="col">Member</th><th scope="col">Dinners hosted</th><th scope="col">Personal guest visits</th><th scope="col">Completed exchanges</th><th scope="col">As original host</th><th scope="col">As return host</th></tr></thead>
+    <tbody>{% for row in member_rows|slice:":25" %}<tr><th scope="row">{{ row.name }}</th><td>{{ row.hosted_dinners }}</td><td>{{ row.guest_visits }}</td><td>{{ row.completed_exchanges }}</td><td>{{ row.completed_original_host }}</td><td>{{ row.completed_return_host }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<div class="formal-empty"><p>No confirmed member participation matches these dates.</p></div>{% endif %}
+  <p class="small muted">Hosted dinners and personal guest visits use the selected dinner dates and host college. Completed exchanges use the date and college of the <strong>first dinner</strong>, even if a return happens later. Hosting several guests at one dinner counts as one hosted dinner; a group swap counts as one exchange for each member involved. Companion visits are not attributed to the member who booked.</p>
+</section>
+<section class="formal-section" aria-labelledby="colleges-heading">
+  <h2 id="colleges-heading">By host college</h2>
+  {% if college_rows %}<div class="formal-report-table-wrap" role="region" aria-label="College statistics, scroll horizontally for all columns" tabindex="0"><table class="formal-report-table">
+    <caption class="sr-only">Formal Exchange activity by the college hosting each dinner</caption>
+    <thead><tr><th scope="col">College</th><th scope="col">Formals offered</th><th scope="col">Places offered</th><th scope="col">Dinners with guests</th><th scope="col">Confirmed visits</th><th scope="col">Member guests</th><th scope="col">Awaiting confirmation</th></tr></thead>
+    <tbody>{% for row in college_rows %}<tr><th scope="row">{{ row.name }}</th><td>{{ row.formals_offered }}</td><td>{{ row.places_offered }}</td><td>{{ row.supported_formals }}</td><td>{{ row.guest_visits }}</td><td>{{ row.unique_guests }}</td><td>{{ row.pending_attendance }}</td></tr>{% endfor %}</tbody>
+  </table></div><p class="small muted">Member guests counts members who booked and attended, once per college and once overall. Companions are included in confirmed visits; their names are not used to estimate unique people.</p>
+  {% else %}<div class="formal-empty"><p>No college activity matches these dates.</p></div>{% endif %}
+</section>
+<section class="formal-section" aria-labelledby="attendance-heading" id="guest-list">
+  <div class="formal-report-section-head"><h2 id="attendance-heading">{% if filters.ledger == 'attended' %}Who went{% elif filters.ledger == 'pending' %}Attendance to confirm{% else %}Guest requests and reservations{% endif %}</h2><a class="btn btn-small btn-ghost" href="{% url 'formals:statistics_export' %}?{{ filter_query }}&amp;kind=attendance">Download guest CSV</a></div>
+  <p class="small muted">{{ page.paginator.count }} record{{ page.paginator.count|pluralize }} match{{ page.paginator.count|pluralize:"es," }} the guest list filter. Names are for committee use. Downloads include the full filtered list.</p>
+  {% if attendance_rows %}<div class="formal-report-table-wrap" role="region" aria-label="Guest attendance, scroll horizontally for all columns" tabindex="0"><table class="formal-report-table formal-report-guests">
+    <caption class="sr-only">Guest places and attendance in the selected period</caption>
+    <thead><tr><th scope="col">Dinner</th><th scope="col">Host</th><th scope="col">Guests</th><th scope="col">Places</th><th scope="col">Attendance</th></tr></thead>
+    <tbody>{% for row in attendance_rows %}<tr>
+      <td><a href="{{ row.booking.listing.get_absolute_url }}">{{ row.booking.listing.event.title }}</a><span class="formal-report-detail">{{ row.booking.listing.event.start|date:"j M Y, H:i" }} · {{ row.booking.listing.get_college_display }}</span></td>
+      <td>{{ row.host_name }}</td><td>{% if row.attended_names %}{{ row.attended_names|join:", " }}<span class="formal-report-detail">Booked by {{ row.guest_name }}</span>{% else %}{{ row.guest_name }}{% if row.booking.companion_names %}<span class="formal-report-detail">Companions: {{ row.booking.companion_names|join:", " }}</span>{% endif %}{% endif %}</td><td>{{ row.booking.places }} booked<span class="formal-report-detail">{{ row.booking.get_purpose_display }}</span></td>
+      <td><strong>{{ row.outcome }}</strong>{% if row.booking.status == 'attended' %}<span class="formal-report-detail">{{ row.booking.confirmed_places }} of {{ row.booking.places }} attended</span>{% endif %}<span class="formal-report-detail">Host confirmed: {{ row.booking.host_confirmed|yesno:"yes,no" }}<br>Guest confirmed: {{ row.booking.guest_confirmed|yesno:"yes,no" }}</span></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% if page.has_other_pages %}<nav class="formal-actions formal-pagination" aria-label="Guest list pages">{% if page.has_previous %}<a class="btn btn-small btn-ghost" href="?{{ filter_query }}&amp;page={{ page.previous_page_number }}#guest-list">Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a class="btn btn-small btn-ghost" href="?{{ filter_query }}&amp;page={{ page.next_page_number }}#guest-list">Next</a>{% endif %}</nav>{% endif %}
+  {% else %}<div class="formal-empty"><p>{% if filters.ledger == 'attended' %}No confirmed guest visits in this period yet.{% elif filters.ledger == 'pending' %}No past reservations are waiting for attendance confirmation.{% else %}No requests or reservations match these dates.{% endif %}</p></div>{% endif %}
+</section>
+<details class="formal-report-definitions"><summary>How these figures are counted</summary><ul>
+  <li>Attendance is counted only when the booking is marked confirmed through the attendance process. A past date, ticket confirmation or reservation alone does not establish attendance.</li>
+  <li>Visits count the guests whose attendance was agreed, including companions. A reservation for three people with two confirmed attendees counts as two visits. Hosts are excluded.</li>
+  <li>Member guests counts distinct member accounts that booked and personally attended. Companion names are shown for attendance records, but are not assumed to identify unique people across bookings.</li>
+  <li>A completed reciprocal exchange means the first attendance and all agreed return places are confirmed. A group swap counts as one exchange. A waived or closed promise is not a completed exchange.</li>
+  <li>Past reservations awaiting confirmation use the dinner's end time, or its start time if no end was supplied.</li>
+  <li>Offered places are the places published on the platform. They do not measure spare college tickets or guests arranged outside it.</li>
+  <li>Figures reflect the current booking and exchange records. Confirmed attendance is retained even if an event is subsequently marked cancelled.</li>
+</ul></details>
+{% else %}<div class="formal-empty"><p>Correct the report filters above to view statistics or download a report.</p></div>{% endif %}
+{% endblock %}

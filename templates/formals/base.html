@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% load static %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'formals/formals.css' %}">{% endblock %}
+{% block content %}
+<nav class="formal-nav" aria-label="Formal Exchange">
+  <a href="{% url 'formals:index' %}"{% if formal_tab == 'browse' %} aria-current="page"{% endif %}>Browse formals</a>
+  <a href="{% url 'formals:mine' %}"{% if formal_tab == 'mine' %} aria-current="page"{% endif %}>My plans</a>
+  <a href="{% url 'formals:create' %}"{% if formal_tab == 'create' %} aria-current="page"{% endif %}>Host a formal</a>
+  {% if user.is_portal_admin %}<details class="formal-admin-nav"><summary{% if formal_tab == 'committee' or formal_tab == 'statistics' %} class="is-current"{% endif %}>Committee</summary><div><a href="{% url 'formals:statistics' %}"{% if formal_tab == 'statistics' %} aria-current="page"{% endif %}>Impact &amp; attendance</a><a href="{% url 'formals:committee' %}"{% if formal_tab == 'committee' %} aria-current="page"{% endif %}>Help with swaps</a></div></details>{% endif %}
+</nav>
+<div class="formal-content">{% block formal_content %}{% endblock %}</div>
+{% endblock %}
+{% block extra_js %}<script src="{% static 'formals/formals.js' %}" defer></script>{% endblock %}

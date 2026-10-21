@@ -1,0 +1,27 @@
+{% extends "formals/base.html" %}
+{% block title %}Formal Exchange{% endblock %}
+{% block formal_content %}
+<header class="formal-heading"><div><p class="formal-eyebrow">Members only</p><h1>Formal Exchange</h1><p class="lede">Find a dinner. Bring your friends.</p></div><a class="formal-text-link" href="{% url 'formals:alerts' %}">My alerts</a></header>
+<div class="formal-browse-bar">
+  <p class="small muted">{{ page.paginator.count|default:0 }} upcoming formal{{ page.paginator.count|pluralize }}</p>
+  <details class="formal-filters"{% if filters_active or form.errors %} open{% endif %}>
+    <summary>Filter formals{% if filters_active %} <span class="formal-filter-dot" aria-label="Filters active"></span>{% endif %}</summary>
+    <form method="get" class="formal-filter" aria-label="Filter formals">
+      {% for field in form %}<div>{{ field.label_tag }}{{ field }}{{ field.errors }}</div>{% endfor %}
+      <div class="formal-filter-submit"><button class="btn btn-small" type="submit">Apply filters</button><a href="{% url 'formals:index' %}" class="small">Clear</a></div>
+    </form>
+  </details>
+</div>
+{% if page %}
+  <div class="formal-listings">{% for listing in page %}{% include "formals/_card.html" with inline_booking=True %}{% endfor %}</div>
+  {% if page.has_other_pages %}<nav class="formal-actions formal-pagination" aria-label="Formal pages">
+    {% if page.has_previous %}<a class="btn btn-small btn-ghost" href="?{{ filter_query }}&amp;page={{ page.previous_page_number }}">Previous</a>{% endif %}
+    <span class="small">Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a class="btn btn-small btn-ghost" href="?{{ filter_query }}&amp;page={{ page.next_page_number }}">Next</a>{% endif %}
+  </nav>{% endif %}
+{% else %}
+  <div class="formal-empty"><h2>No formals match just yet</h2><p>Try another filter, or offer places at your college.</p><div class="formal-actions"><a class="btn btn-ghost" href="{% url 'formals:index' %}">Clear filters</a><a class="btn btn-accent" href="{% url 'formals:create' %}">Host a formal</a></div></div>
+{% endif %}
+{% include "formals/_alert_offer.html" %}
+<p class="small muted formal-footnote">No obligation = just enjoy the dinner. Swap = host in return. Each invitation shows how many return places the host would like.</p>
+{% endblock %}

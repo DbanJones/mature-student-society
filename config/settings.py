@@ -104,6 +104,7 @@ INSTALLED_APPS = [
     "core",
     "accounts",
     "events",
+    "formals",
     "guide",
     "supper",
     "dashboard",
@@ -158,7 +159,8 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # --- Database -----------------------------------------------------------------
-# Default: SQLite (fine for dev; also workable on SRCF for a society-sized site).
+# Default: SQLite for local development. Formal Exchange production bookings
+# need MySQL/InnoDB or PostgreSQL for database row locking.
 # On SRCF, set DB_ENGINE=mysql plus DB_NAME/DB_USER/DB_PASSWORD to use the
 # society MySQL database instead.
 

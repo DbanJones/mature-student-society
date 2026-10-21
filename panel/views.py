@@ -15,6 +15,7 @@ from django.http import Http404, HttpResponse
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q
+from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -561,8 +562,16 @@ def member_delete(request, pk):
             f"{cascades['ratings']} own ratings, plus {others_rsvps} RSVPs and "
             f"{others_ratings} ratings by others on their events"
         )
-        with listsync.deleting(request.user, "an account was deleted") as queued:
-            member.delete()
+        try:
+            with listsync.deleting(request.user, "an account was deleted") as queued:
+                member.delete()
+        except ProtectedError:
+            messages.error(
+                request,
+                "This member has Formal Exchange history, so their account cannot be "
+                "deleted here. Suspend the account and resolve any outstanding exchanges.",
+            )
+            return redirect("panel:members")
         AuditLog.record(request.user, "delete_user", target=target, detail=detail)
         messages.success(request, f"Deleted {target}.")
         if queued:
@@ -648,6 +657,7 @@ def _cleanup_candidates():
         .filter(Q(first_name="") | Q(last_name="") | Q(college="") | Q(mobile=""))
         .exclude(events_created__isnull=False)
         .exclude(rsvps__isnull=False)
+        .exclude(formal_bookings__isnull=False)
         .order_by("created_at")
     )
 
@@ -791,7 +801,7 @@ def events_admin(request):
     """Add, remove or ban (cancel/hide) events; toggle official status."""
     q = request.GET.get("q", "").strip()
     show = request.GET.get("show", "upcoming")
-    events_qs = Event.objects.select_related("category", "created_by").annotate(
+    events_qs = Event.objects.select_related("category", "created_by", "formal_listing").annotate(
         going_count_agg=Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
     )
     if q:
@@ -825,19 +835,22 @@ def events_admin(request):
 @require_POST
 def event_action(request, pk):
     event = get_object_or_404(Event, pk=pk)
+    if event.is_formal:
+        messages.info(request, "Manage this formal and its guest places in Formal Exchange.")
+        return redirect(event)
     action = request.POST.get("action")
 
     if action == "cancel":
-        from events.views import tell_attendees_cancelled
+        from events.services import cancel_event
 
-        event.is_cancelled = True
-        event.save(update_fields=["is_cancelled", "updated_at"])
-        tell_attendees_cancelled(event, actor=request.user)
+        event = cancel_event(request.user, event.pk)
         AuditLog.record(request.user, "cancel_event", target=event.title)
         messages.success(request, f"Cancelled “{event.title}” — it's off the calendar.")
     elif action == "restore":
-        event.is_cancelled = False
-        event.save(update_fields=["is_cancelled", "updated_at"])
+        with transaction.atomic():
+            event = Event.objects.select_for_update().get(pk=event.pk)
+            event.is_cancelled = False
+            event.save(update_fields=["is_cancelled", "updated_at"])
         AuditLog.record(request.user, "restore_event", target=event.title)
         messages.success(request, f"Restored “{event.title}” to the calendar.")
     elif action == "toggle_official":
@@ -1541,8 +1554,8 @@ def tagged_events(request):
     going = Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
     for tag in tags:
         events = (
-            tag.events.filter(is_cancelled=False)
-            .select_related("created_by", "host")
+            tag.events.filter(is_cancelled=False, formal_listing__isnull=True)
+            .select_related("created_by", "host", "formal_listing")
             .annotate(going_count_agg=going)
         )
         tag.upcoming_events = list(
@@ -1556,10 +1569,10 @@ def tagged_events(request):
     adopt_results = []
     if adopt_q and tags:
         adopt_results = list(
-            Event.objects.filter(is_cancelled=False, start__gte=now)
+            Event.objects.filter(is_cancelled=False, start__gte=now, formal_listing__isnull=True)
             .exclude(category__in=tags, is_official=True)
             .search(adopt_q)
-            .select_related("category", "created_by")
+            .select_related("category", "created_by", "formal_listing")
             .order_by("start")[:12]
         )
 
@@ -1579,6 +1592,10 @@ def tagged_event_action(request, pk):
     one. Every path re-checks ownership server-side; society admins may act
     on any tag."""
     event = get_object_or_404(Event.objects.select_related("category"), pk=pk)
+    if event.is_formal:
+        if not event.can_edit(request.user):
+            raise PermissionDenied("Only the formal host or committee may manage it.")
+        return redirect(event)
     action = request.POST.get("action")
 
     def owns(tag):
@@ -1610,6 +1627,8 @@ def tagged_event_action(request, pk):
             )
     elif action == "adopt":
         tag = get_object_or_404(Category, pk=request.POST.get("tag"))
+        if tag.slug == "formal-exchange":
+            raise PermissionDenied("Create formal invitations through Formal Exchange.")
         if not owns(tag):
             raise PermissionDenied(f"You don't own the “{tag.name}” tag.")
         old_tag = event.category
@@ -1845,7 +1864,7 @@ def _earlier_send(audience, subject, to=""):
     listed = (SiteConfig.get().mailing_list_address or "").strip().lower()
     to_list = audience == "address" and bool(listed) and to.strip().lower() == listed
     if audience == "address" and not to_list:
-        logs = MailLog.objects.filter(audience="address", recipients=to[:200])
+        logs = MailLog.objects.filter(audience="address", recipients__iexact=to[:200])
     else:
         overlapping = Q(audience__in=OVERLAPS["both"] if to_list else OVERLAPS[audience])
         if listed:
@@ -1893,7 +1912,18 @@ def _send_mailer(request, config, form):
         if not members and not old:
             messages.error(request, "Nobody to send to: that audience has no addresses.")
             return None
-    earlier = _earlier_send(audience, subject, form.cleaned_data.get("recipient", ""))
+    # Claim a send before contacting SMTP. The singleton settings row serialises
+    # concurrent committee submissions, including overlapping audiences, without
+    # holding a database lock while the email server is contacted.
+    with transaction.atomic():
+        SiteConfig.objects.select_for_update().get(pk=config.pk)
+        earlier = _earlier_send(audience, subject, form.cleaned_data.get("recipient", ""))
+        if not earlier:
+            target = form.cleaned_data["recipient"] if audience == "address" else f"{len(members) + len(old)} addresses (sending)"
+            log = MailLog.objects.create(
+                subject=subject, body=body, recipients=target[:200], sent_by=request.user,
+                ok=False, error=STARTED, audience=audience,
+            )
     if earlier:
         when = f"{timezone.localtime(earlier.sent_at):%H:%M}"
         label = (earlier.recipients if earlier.audience == "address"
@@ -1910,8 +1940,6 @@ def _send_mailer(request, config, form):
         return None
     if audience == "address":
         to = form.cleaned_data["recipient"]
-        log = MailLog.objects.create(subject=subject, body=body, recipients=to[:200], sent_by=request.user,
-                                     ok=False, error=STARTED, audience=audience)
         ok, error = True, ""
         try:
             services.send_one(request, config, subject, body, to)
@@ -1919,10 +1947,6 @@ def _send_mailer(request, config, form):
             ok, error = False, str(exc)[:300]
         recipient = to
     else:
-        log = MailLog.objects.create(
-            subject=subject, body=body, recipients=f"{len(members) + len(old)} addresses (sending)",
-            sent_by=request.user, ok=False, error=STARTED, audience=audience,
-        )
         sent, failed, error = services.send_mailer(request, config, subject, body, request.user.email, members, old)
         ok = failed == 0
         if failed:

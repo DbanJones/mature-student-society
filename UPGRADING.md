@@ -10,6 +10,22 @@ webserver.srcf.net. Apache serves `/static/` straight from
 `/public/societies/mss/public_html/static`; the portal copies the current
 stylesheets, scripts and fonts there every time it starts.
 
+## Portal reliability and member plans update
+
+Apply the new notifications migration with the normal upgrade steps, and add
+`process_notifications --quiet` every five minutes alongside `process_formals`
+and `close_polls` (exact cron lines are in DEPLOYMENT_SRCF.md, section 11).
+Notification emails now wait safely in the database until this worker runs.
+Admin → Health checks both email workers and reports stuck or failed messages.
+
+Before release, run event, poll, survey and formal concurrency tests against an isolated
+database using the live database engine; SQLite skips row-lock checks. The
+changes protect last places, waitlists, volunteer slots, final poll outcomes and
+survey responses submitted while an organiser changes or closes the survey.
+The member dashboard includes formal plans. Members can include available
+formals in the calendar using a filter that starts switched off. Draft messages
+and invalid forms keep their contents so members can correct them.
+
 ## What lives where (and what must survive an upgrade)
 
 | Thing | Where it is | Touched by an upgrade? |

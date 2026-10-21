@@ -7,6 +7,7 @@ import datetime
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -20,7 +21,7 @@ from notifications.models import Notification
 from notifications.services import notify
 from panel.models import AuditLog
 
-from .forms import AlreadyAnswered, QuestionForm, ResponseForm, SurveyForm
+from .forms import AlreadyAnswered, QuestionForm, ResponseForm, SurveyChanged, SurveyForm
 from .models import Participation, Question, Survey
 
 REMINDER_GAP = datetime.timedelta(hours=20)
@@ -36,7 +37,12 @@ def _survey(request, slug):
 
 
 def _manageable(request, slug):
-    survey = get_object_or_404(Survey.objects.prefetch_related("admins"), slug=slug)
+    surveys = Survey.objects.prefetch_related("admins")
+    if request.method == "POST":
+        # All management POST views are atomic. Take the same lock as a
+        # response save before checking permissions, state or answer counts.
+        surveys = surveys.select_for_update()
+    survey = get_object_or_404(surveys, slug=slug)
     if not survey.can_manage(request.user):
         if survey.is_draft:
             raise Http404("No survey here.")  # a draft's existence is the runners' business
@@ -54,7 +60,7 @@ def index(request):
     """Every survey a member may see: live ones to answer, ones opening
     soon, closed ones with their results, and drafts for those who run them."""
     for survey in Survey.objects.due():
-        survey.close()
+        survey.resolve_if_due()
     surveys = (
         Survey.objects.visible_to(request.user)
         .prefetch_related("admins")
@@ -103,6 +109,9 @@ def detail(request, slug):
                     form.save()
                 except AlreadyAnswered:
                     messages.info(request, "You had already answered this survey.")
+                    return redirect(survey)
+                except SurveyChanged as error:
+                    messages.error(request, str(error))
                     return redirect(survey)
                 messages.success(
                     request,
@@ -215,6 +224,7 @@ def create(request):
 
 
 @login_required
+@transaction.atomic
 def edit(request, slug):
     survey = _manageable(request, slug)
     form = SurveyForm(request.POST or None, instance=survey, can_set_admins=request.user.is_portal_admin)
@@ -227,6 +237,7 @@ def edit(request, slug):
 
 
 @login_required
+@transaction.atomic
 def question_add(request, slug):
     survey = _manageable(request, slug)
     if survey.is_locked:
@@ -251,6 +262,7 @@ def _wording(question):
 
 
 @login_required
+@transaction.atomic
 def question_edit(request, slug, pk):
     survey = _manageable(request, slug)
     question = get_object_or_404(Question, survey=survey, pk=pk)
@@ -273,6 +285,7 @@ def question_edit(request, slug, pk):
 
 @login_required
 @require_POST
+@transaction.atomic
 def question_delete(request, slug, pk):
     survey = _manageable(request, slug)
     question = get_object_or_404(Question, survey=survey, pk=pk)
@@ -288,6 +301,7 @@ def question_delete(request, slug, pk):
 
 @login_required
 @require_POST
+@transaction.atomic
 def question_move(request, slug, pk):
     survey = _manageable(request, slug)
     questions = list(survey.questions.all())
@@ -306,6 +320,7 @@ def question_move(request, slug, pk):
 
 @login_required
 @require_POST
+@transaction.atomic
 def open_survey(request, slug):
     """Open a draft, or reopen a closed survey. Members are told once: all
     of them when it first opens, those who haven't answered when it reopens."""
@@ -349,6 +364,7 @@ def open_survey(request, slug):
 
 @login_required
 @require_POST
+@transaction.atomic
 def close_survey(request, slug):
     survey = _manageable(request, slug)
     if survey.status == Survey.Status.OPEN:
@@ -360,6 +376,7 @@ def close_survey(request, slug):
 
 @login_required
 @require_POST
+@transaction.atomic
 def delete_survey(request, slug):
     survey = _manageable(request, slug)
     title = survey.title
@@ -371,6 +388,7 @@ def delete_survey(request, slug):
 
 @login_required
 @require_POST
+@transaction.atomic
 def remind(request, slug):
     survey = _manageable(request, slug)
     if not survey.is_live:

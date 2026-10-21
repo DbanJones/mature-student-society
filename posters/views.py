@@ -35,6 +35,8 @@ def _event(request, slug):
     event = get_object_or_404(
         Event.objects.select_related("category", "created_by", "host"), slug=slug
     )
+    if event.is_formal and not event.can_edit(request.user):
+        raise Http404("No event found.")
     if (
         event.created_by.is_shadow_banned
         and request.user != event.created_by
@@ -292,6 +294,8 @@ def map_image(request, slug):
 def scan(request, slug):
     """The short link printed in the QR code: count the scan, go to the event."""
     event = get_object_or_404(Event, slug=slug)
+    if event.is_formal and not request.user.is_authenticated:
+        raise Http404("No event found.")
     PosterScan.objects.create(
         event=event, device=PosterScan.device_from(request.META.get("HTTP_USER_AGENT", ""))
     )

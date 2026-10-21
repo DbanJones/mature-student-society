@@ -12,7 +12,31 @@
   </div>
 </div>
 
+<form class="menu-search" method="get" action="{% url 'core:search' %}" role="search"><input type="search" name="q" placeholder="Search the site…" aria-label="Search the site"><button type="submit" class="btn btn-small">Search</button></form>
 <div class="menu-grid">
+  {% if user.is_authenticated %}
+    <section class="card">
+      <h2>Members portal</h2>
+      <ul class="menu-list">
+        {% url 'formals:index' as formals_url %}{% if formals_url %}<li><a href="{{ formals_url }}">Formal Exchange</a></li>{% endif %}
+        <li><a href="{% url 'dashboard:home' %}">🏠 Dashboard</a></li>
+        {% if "members" in visible_tabs %}<li><a href="{% url 'members:directory' %}">👥 Members</a></li>{% endif %}
+        {% if "messages" in visible_tabs %}<li><a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</a></li>{% endif %}
+        <li><a href="{% url 'notifications:index' %}">🔔 Notifications{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</a></li>
+        <li><a href="{% url 'surveys:index' %}">📋 Surveys</a></li>
+        {% for page in nav_pages_members %}<li><a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a></li>{% endfor %}
+        <li><a href="{% url 'accounts:profile' %}">✏️ My profile</a></li>
+        {% if user.is_portal_admin %}<li><a href="{% url 'panel:home' %}">🛠️ Admin panel</a></li>{% endif %}
+        <li><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button type="submit" class="linklike">👋 Log out</button></form></li>
+      </ul>
+    </section>
+  {% else %}
+    <section class="card">
+      <h2>Members</h2>
+      <p><a class="btn btn-accent" href="{% url 'accounts:login' %}">Member login</a></p>
+      <p class="small" style="margin:0"><a href="{% url 'accounts:waitlist' %}">No CRSid? Request an account</a></p>
+    </section>
+  {% endif %}
   <section class="card">
     <h2>What's on</h2>
     <ul class="menu-list">
@@ -55,34 +79,8 @@
     </section>
   {% endif %}
 
-  {% if user.is_authenticated %}
-    <section class="card">
-      <h2>Members portal</h2>
-      <ul class="menu-list">
-        <li><a href="{% url 'dashboard:home' %}">🏠 Dashboard</a></li>
-        {% if "members" in visible_tabs %}<li><a href="{% url 'members:directory' %}">👥 Members</a></li>{% endif %}
-        {% if "messages" in visible_tabs %}<li><a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %} ({{ unread_messages }}){% endif %}</a></li>{% endif %}
-        <li><a href="{% url 'notifications:index' %}">🔔 Notifications{% if unread_notifications %} ({{ unread_notifications }}){% endif %}</a></li>
-        <li><a href="{% url 'surveys:index' %}">📋 Surveys</a></li>
-        {% for page in nav_pages_members %}<li><a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a></li>{% endfor %}
-        <li><a href="{% url 'accounts:profile' %}">✏️ My profile</a></li>
-        {% if user.is_portal_admin %}<li><a href="{% url 'panel:home' %}">🛠️ Admin panel</a></li>{% endif %}
-        <li><form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button type="submit" class="linklike">👋 Log out</button></form></li>
-      </ul>
-    </section>
-  {% else %}
-    <section class="card">
-      <h2>Members</h2>
-      <p><a class="btn btn-accent" href="{% url 'accounts:login' %}">Member login</a></p>
-      <p class="small" style="margin:0"><a href="{% url 'accounts:waitlist' %}">No CRSid? Request an account</a></p>
-    </section>
-  {% endif %}
 
-  <section class="card">
-    <h2>Search</h2>
-    <form method="get" action="{% url 'core:search' %}" role="search">
-      <input type="search" name="q" placeholder="Search the site…" aria-label="Search the site">
-    </form>
-  </section>
+
+
 </div>
 {% endblock %}

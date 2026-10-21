@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.core.signals import setting_changed
 from django.db import connection
-from django.db.models import Q, Sum
+from django.db.models import Count, Min, Q, Sum
 from django.utils import timezone
 from django.utils.timesince import timesince
 
@@ -759,7 +759,7 @@ def scheduled_jobs(ctx):
     from polls.models import Poll
     from surveys.models import Survey
 
-    beats = {beat.name: beat for beat in JobHeartbeat.objects.filter(name__in=["close_polls", "health_check"])}
+    beats = {beat.name: beat for beat in JobHeartbeat.objects.filter(name__in=["close_polls", "health_check", "process_formals", "process_notifications"])}
     hour_ago = ctx.now - datetime.timedelta(hours=1)
     overdue = 0
     if ctx.production:  # a development copy has no cron, so its polls wait for a visit
@@ -791,6 +791,28 @@ def scheduled_jobs(ctx):
         statuses.append("warn")
         notes.append("a poll or survey is past its closing time but still open" if overdue == 1 else
                      f"{overdue} polls and surveys are past their closing time but still open")
+    for name, label in (("process_formals", "formal invitations and alerts"), ("process_notifications", "member notification emails")):
+        beat = beats.get(name)
+        details.append((name, f"last finished {ago(beat.last_finished, ctx.now)}" if beat and beat.last_finished else "never"))
+        if beat is None or beat.last_finished is None:
+            if not ctx.production:
+                statuses.append("off")
+            elif _installed_lately(ctx):
+                statuses.append("unknown")
+            else:
+                statuses.append("warn")
+                notes.append(f"the job for {label} has never reported a completed run")
+        elif not beat.last_ok:
+            statuses.append("warn")
+            notes.append(f"the job for {label} failed last time")
+        elif beat.last_started and beat.last_started > beat.last_finished and beat.last_started < ctx.now - datetime.timedelta(minutes=15):
+            statuses.append("warn")
+            notes.append(f"the job for {label} started but did not finish")
+        elif ctx.production and beat.last_finished < ctx.now - datetime.timedelta(minutes=15):
+            statuses.append("warn")
+            notes.append(f"the job for {label} last ran {ago(beat.last_finished, ctx.now)}; it should run every five minutes")
+        else:
+            statuses.append("ok")
     daily = beats.get("health_check")
     details.append(("Daily health check", f"last ran {ago(daily.last_finished, ctx.now)}"
                     if daily and daily.last_finished else "never"))
@@ -802,18 +824,53 @@ def scheduled_jobs(ctx):
     status = worst(statuses)
     if status in ("warn", "fail"):
         return Result(status, sentence("; ".join(notes)) + ".", fix="Tell the webmaster.", who="webmaster",
-                      details=details, webmaster=f"The cron lines are in {CRON_DOC} and DEPLOYMENT_SRCF.md; "
-                                                 "crontab -l on sinkhole shows what's scheduled.")
+                      details=details, webmaster=f"The cron lines are in {CRON_DOC}, README.md and DEPLOYMENT_SRCF.md; "
+                                                 "crontab -l on sinkhole shows what's scheduled. Run process_formals --quiet and process_notifications --quiet every five minutes.")
     if status == "off":
         return Result("off", "No scheduled jobs on this copy.", details=details)
     if status == "unknown":
-        return Result("unknown", "The job that closes polls hasn't reported in since this version was installed; "
-                                 "it should within 15 minutes.", details=details)
+        return Result("unknown", "Scheduled jobs have not all reported in since this version was installed; "
+                                 "they should within 15 minutes.", details=details)
     extra = "" if daily else " There's no daily health check yet, so problems are only found when someone opens this page."
-    return Result("ok", "Polls and surveys close on time." + extra, details=details,
+    return Result("ok", "Scheduled jobs are reporting normally." + extra, details=details,
                   webmaster="" if daily else "Add the daily `manage.py health_check --trigger cron --quiet --prune` "
                                              "cron line (UPGRADING.md); cron then emails you only when something "
                                              "is wrong.")
+
+
+@check("queued_messages", "Queued emails are being delivered", "email")
+def queued_messages(ctx):
+    from formals.models import FormalEmail
+    from notifications.models import NotificationEmail
+
+    queues = (
+        ("Formal invitations and alerts", FormalEmail.objects.filter(sent_at__isnull=True), Q(attempts__gte=5)),
+        ("Member notifications", NotificationEmail.objects.filter(status__in=["pending", "sending", "failed"]), Q(status="failed")),
+    )
+    pending = failed = delayed = 0
+    details = []
+    for label, queue, failed_filter in queues:
+        counts = queue.aggregate(
+            total=Count("pk"), failed=Count("pk", filter=failed_filter),
+            delayed=Count("pk", filter=Q(created_at__lt=ctx.now - datetime.timedelta(minutes=30)) & ~failed_filter),
+            oldest=Min("created_at"),
+        )
+        pending += counts["total"]
+        failed += counts["failed"]
+        delayed += counts["delayed"]
+        details.append((label, f"{counts['total']} waiting; {counts['failed']} exhausted retries" + (f"; oldest {ago(counts['oldest'], ctx.now)}" if counts["oldest"] else "")))
+    if failed:
+        return Result("warn", f"{failed} email{'s' if failed != 1 else ''} could not be delivered after repeated attempts.",
+                      metric=f"{failed} failed", fix="Ask the webmaster to fix email delivery and retry the failed messages.",
+                      who="webmaster", details=details,
+                      webmaster="Inspect the notification and formal email queues. Fix SMTP before resetting failed attempts; do not resend messages already marked sent.")
+    if delayed and ctx.production:
+        return Result("warn", f"{delayed} email{'s have' if delayed != 1 else ' has'} been waiting more than 30 minutes.",
+                      metric=f"{pending} queued", fix="Ask the webmaster to check the email jobs are running.", who="webmaster", details=details,
+                      webmaster="Check process_notifications and process_formals heartbeats, SMTP, and the five-minute cron entries. A growing queue may need a larger worker --limit.")
+    if not ctx.production:
+        return Result("off", f"{pending} email{'s' if pending != 1 else ''} queued on this development copy; scheduled delivery is optional here.", details=details)
+    return Result("ok", "No overdue or failed email deliveries." if not pending else f"{pending} email{'s are' if pending != 1 else ' is'} queued for the next delivery run.", details=details)
 
 
 def _installed_lately(ctx, within=datetime.timedelta(hours=1)):

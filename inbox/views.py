@@ -74,7 +74,7 @@ def inbox(request):
     committee = []
     if restricted and not request.user.is_muted:
         committee = list(
-            User.objects.filter(is_portal_admin=True, is_banned=False)
+            User.objects.filter(is_portal_admin=True, is_banned=False, is_active=True)
             .exclude(pk=request.user.pk)
             .order_by("first_name", "last_name")
         )
@@ -92,18 +92,26 @@ def inbox(request):
 def thread(request, username):
     member = _get_member(request, username)
 
+    draft = ""
+    compose_error = ""
+    status = 200
+    send_denied = _send_denied_reason(request.user, member)
     if request.method == "POST":
-        body = (request.POST.get("body") or "").strip()[:MAX_MESSAGE_LENGTH]
-        denied = _send_denied_reason(request.user, member)
-        if denied:
-            messages.error(request, denied)
+        draft = request.POST.get("body") or ""
+        body = draft.strip()
+        if send_denied:
+            status = 403
         elif not body:
-            messages.error(request, "Write something first.")
+            compose_error = "Write a message before sending."
+            status = 400
+        elif len(body) > MAX_MESSAGE_LENGTH:
+            compose_error = f"Keep your message under {MAX_MESSAGE_LENGTH:,} characters. Your draft is still below."
+            status = 400
         else:
             DirectMessage.objects.create(
                 sender=request.user, recipient=member, body=body
             )
-        return redirect("inbox:thread", username=member.username)
+            return redirect("inbox:thread", username=member.username)
 
     thread_messages = list(
         DirectMessage.objects.between(request.user, member)
@@ -121,9 +129,10 @@ def thread(request, username):
         "is_blocked": MessageBlock.objects.filter(
             user=request.user, blocked=member
         ).exists(),
-        "send_denied": _send_denied_reason(request.user, member),
+        "send_denied": send_denied,
         "max_length": MAX_MESSAGE_LENGTH,
-    })
+        "draft": draft, "compose_error": compose_error,
+    }, status=status)
 
 
 @login_required

@@ -108,9 +108,13 @@ class VenuePollTests(PollTestCase):
         self.assertEqual(self.event.location, "The Granta")
         self.assertEqual(poll.outcome_option, a)
         self.assertIsNotNone(poll.applied_at)
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("ali1@cam.ac.uk", mail.outbox[0].bcc)
-        self.assertIn("host1@cam.ac.uk", mail.outbox[0].bcc)
+        from notifications.models import NotificationEmail
+        from notifications.services import process_notification_emails
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertSetEqual(set(NotificationEmail.objects.values_list("recipient__email", flat=True)), {"ali1@cam.ac.uk", "host1@cam.ac.uk"})
+        process_notification_emails()
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertSetEqual({message.to[0] for message in mail.outbox}, {"ali1@cam.ac.uk", "host1@cam.ac.uk"})
         self.assertTrue(AuditLog.objects.filter(action="apply_poll").exists())
 
     def test_tie_waits_for_the_host_to_decide(self):

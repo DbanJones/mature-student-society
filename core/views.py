@@ -81,7 +81,7 @@ def home(request):
     next_events = (
         Event.objects.visible_to(request.user)
         .upcoming()
-        .select_related("category")
+        .select_related("category", "formal_listing")
         .annotate(
             num_going=Count("rsvps", filter=Q(rsvps__status=RSVP.Status.GOING))
         )
@@ -305,7 +305,8 @@ def winter_ball(request):
     """
     ball = (
         Event.objects.visible_to(request.user)
-        .filter(title__icontains="winter ball")
+        .filter(title__icontains="winter ball", formal_listing__isnull=True)
+        .select_related("formal_listing")
         .upcoming()
         .first()
     )
@@ -537,7 +538,7 @@ def search(request):
     if q:
         results["events"] = list(
             Event.objects.visible_to(request.user).search(q)
-            .select_related("category").order_by("-start")[:10]
+            .select_related("category", "formal_listing").order_by("-start")[:10]
         )
         results["guide"] = _search_guide(
             GuidePage.objects.filter(is_published=True), q

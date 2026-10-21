@@ -12,8 +12,8 @@ from core.models import SitePage
 from events.models import RSVP, Category, Event
 from testimonials.models import Testimonial
 
-from .models import Notification
-from .services import notify
+from .models import Notification, NotificationEmail
+from .services import notify, process_notification_emails
 
 
 def make_user(username, **extra):
@@ -66,8 +66,11 @@ class NotificationTests(TestCase):
             "Something", "/x/", email_subject="Something", exclude=[self.host],
         )
         self.assertEqual(len(rows), 1)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(NotificationEmail.objects.count(), 1)
+        process_notification_emails()
         self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].bcc, ["ali1@cam.ac.uk"])
+        self.assertEqual(mail.outbox[0].to, ["ali1@cam.ac.uk"])
 
     def test_cancelling_an_event_tells_attendees_in_app_and_by_email(self):
         mail.outbox = []
@@ -77,6 +80,8 @@ class NotificationTests(TestCase):
         self.assertIn("cancelled", row.text)
         self.assertEqual(row.kind, "event")
         self.assertFalse(Notification.objects.filter(recipient=self.host).exists())
+        self.assertEqual(len(mail.outbox), 0)
+        process_notification_emails()
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("Cancelled", mail.outbox[0].subject)
 

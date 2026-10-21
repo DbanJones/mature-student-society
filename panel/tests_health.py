@@ -318,8 +318,8 @@ class FrameworkTests(TestCase):
         self.assertIn("database", snapshot.statuses)
         self.assertEqual(snapshot.overall, core.worst(snapshot.statuses.values()))
 
-    def test_there_are_23_checks_in_eight_sections(self):
-        self.assertEqual(len(core.REGISTRY), 23)
+    def test_there_are_24_checks_in_eight_sections(self):
+        self.assertEqual(len(core.REGISTRY), 24)
         self.assertEqual({item.section for item in core.REGISTRY.values()}, {key for key, _ in core.SECTIONS})
 
 
@@ -642,6 +642,8 @@ class EmailAndJobChecksTests(TestCase):
         call_command("close_polls", stdout=io.StringIO())
         beat = JobHeartbeat.objects.get(name="close_polls")
         self.assertTrue(beat.last_ok)
+        for name in ("process_formals", "process_notifications"):
+            JobHeartbeat.objects.create(name=name, last_finished=timezone.now(), last_ok=True)
         self.assertEqual(checks.scheduled_jobs(ctx(production=True)).status, "ok")
         beat.last_finished = timezone.now() - datetime.timedelta(hours=3)
         beat.save()
@@ -1037,7 +1039,7 @@ class HealthPageTests(TestCase):
             self.assertRedirects(response, reverse("panel:health"))
             snapshot = HealthSnapshot.objects.get()
             self.assertEqual((snapshot.trigger, snapshot.full, snapshot.run_by), ("button", True, self.admin))
-            self.assertEqual(len(snapshot.results), 23)
+            self.assertEqual(len(snapshot.results), len(core.REGISTRY))
             self.assertTrue(AuditLog.objects.filter(action="run_health_check", actor=self.admin).exists())
             page = self.client.get(reverse("panel:health"))
             self.assertContains(page, "Checked just now, with “Run all checks”")

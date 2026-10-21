@@ -1,0 +1,6 @@
+<section class="card formal-card">
+  <h2><a href="{{ booking.listing.get_absolute_url }}">{{ booking.listing.event.title }}</a></h2>
+  <p class="small muted">{{ booking.listing.event.start|date:"D j M Y, H:i" }} &middot; {{ booking.listing.get_college_display }}</p>
+  {% if booking.listing.event.is_cancelled %}<p class="badge badge-danger">Formal cancelled</p>{% endif %}
+  {% include "formals/_booking.html" with listing=booking.listing can_manage=False %}
+</section>

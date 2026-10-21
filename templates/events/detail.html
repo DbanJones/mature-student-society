@@ -162,6 +162,7 @@
       {% if can_rsvp %}
         <form method="post" action="{% url 'events:rsvp' event.slug %}" class="stack">
           {% csrf_token %}
+          <input type="hidden" name="action" value="{% if is_going or is_waiting %}cancel{% else %}join{% endif %}">
           {% if is_going %}
             <button type="submit" class="btn btn-ghost">Can't make it any more</button>
           {% elif is_waiting %}

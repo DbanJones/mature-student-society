@@ -1,0 +1,11 @@
+{% extends "formals/base.html" %}
+{% block title %}Formal Exchange committee{% endblock %}
+{% block formal_content %}
+<div class="page-head"><div><h1>Committee</h1><p class="lede">Help members with attendance questions and return invitations.</p></div><a class="btn btn-ghost" href="{% url 'formals:statistics' %}">View impact &amp; attendance</a></div>
+<div class="stat-row"><div class="stat-tile"><span class="stat-label">Active promises</span><div class="stat-number">{{ open_count }}</div></div><div class="stat-tile"><span class="stat-label">Review requested</span><div class="stat-number">{{ disputed_count }}</div></div><div class="stat-tile"><span class="stat-label">Past the deadline</span><div class="stat-number">{{ overdue_count }}</div></div></div>
+{% if failed_email_count %}<div class="formal-note formal-warning"><p><strong>{{ failed_email_count }} email update{{ failed_email_count|pluralize }} need{{ failed_email_count|pluralize:"s," }} attention.</strong> Delivery has failed repeatedly. Ask the site administrator to check the email queue. Members can still see updates in their portal notifications.</p></div>{% endif %}
+<section class="formal-section"><h2>Needs attention</h2><p class="small muted">A missed deadline does not automatically decide whether someone attended or close the promise. Check the exchange history and speak with both members before recording a decision.</p>
+  {% if attention %}<div class="formal-grid">{% for exchange in attention %}{% include "formals/_exchange_card.html" %}{% endfor %}</div>{% include "formals/_pagination.html" with page=attention parameter="page" label="Committee queue" anchor="main" %}
+  {% else %}<div class="formal-empty"><p>No exchanges currently need committee review.</p></div>{% endif %}
+</section>
+{% endblock %}

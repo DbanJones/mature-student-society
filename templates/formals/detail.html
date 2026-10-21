@@ -1,0 +1,37 @@
+{% extends "formals/base.html" %}
+{% load md %}
+{% block title %}{{ listing.event.title }}{% endblock %}
+{% block formal_content %}
+{% include "includes/form_errors.html" with form=reason_form %}
+<a class="formal-back small" href="{% url 'formals:index' %}">&larr; All formals</a>
+<header class="formal-heading"><div><div class="formal-badges"><span class="formal-college">{{ listing.get_college_display }}</span><span class="badge{% if listing.invitation_type == 'reciprocal' %} badge-warn{% endif %}">{% if listing.invitation_type == 'reciprocal' %}Swap{% else %}No obligation{% endif %}</span>{% if listing.event.is_cancelled %}<span class="badge badge-danger">Cancelled</span>{% endif %}</div><h1>{{ listing.event.title }}</h1><p class="lede"><time datetime="{{ listing.event.start|date:'c' }}">{{ listing.event.start|date:"l j F Y, H:i" }}</time>{% if listing.event.end %} &ndash; {{ listing.event.end|date:"H:i" }}{% endif %}</p></div>{% include "formals/_share.html" %}</header>
+<div class="formal-dinner-summary"><div><span class="formal-meta-label">Host</span><strong>{{ listing.host.get_full_name|default:listing.host.username }}</strong></div><div><span class="formal-meta-label">Cost</span><strong>{{ listing.price_text|default:"Ask the host" }}</strong></div><div><span class="formal-meta-label">Meet at</span><strong>{{ listing.event.location|default:"Contact the host" }}</strong></div><div><span class="formal-meta-label">Guest places</span><strong>{% if listing.is_open %}{{ listing.spots_left }} of {{ listing.capacity }} available{% else %}Reservations closed{% endif %}</strong></div></div>
+{% if listing.event.is_cancelled %}<div class="formal-note formal-warning"><p>This formal has been cancelled. Check outstanding return invitations in <a href="{% url 'formals:mine' %}">My plans</a>.</p></div>{% endif %}
+{% if can_manage %}
+  <section class="card formal-next formal-section" id="guests"><div class="page-head"><h2>Guests</h2><span class="small muted">{{ listing.occupied_count }} of {{ listing.capacity }} places allocated</span></div>
+    {% for booking in bookings %}{% include "formals/_booking.html" %}{% empty %}<p class="muted">No requests yet. Share your formal to invite other members.</p>{% include "formals/_share.html" %}{% endfor %}
+  </section>
+{% endif %}
+{% if my_booking and not can_manage %}
+  <section class="card formal-next formal-section" aria-label="Your reservation">{% include "formals/_booking.html" with booking=my_booking can_manage=False %}</section>
+{% elif application %}
+  <section class="card formal-next formal-section"><h2>{% if listing.booking_mode == 'instant' %}Reserve places{% else %}Request places{% endif %}</h2>
+    {% if listing.invitation_type == 'open' %}<p class="small">No return invitation needed. You manage the booking for your group.</p>{% endif %}
+    {% include "formals/_application.html" %}
+  </section>
+{% elif eligibility_message %}<div class="formal-note"><p>{{ eligibility_message }}</p><a href="{% url 'formals:index' %}">Find another formal</a></div>
+{% elif not can_manage and not listing.is_open %}<div class="formal-note"><p>Reservations are closed. <a href="{% url 'formals:index' %}">Browse other formals</a>.</p></div>
+{% elif not can_manage and not listing.spots_left %}<div class="formal-note"><p>All guest places are allocated. <a href="{% url 'formals:index' %}">Browse other formals</a>.</p></div>{% endif %}
+{% if messaging_members %}<section class="formal-section"><h2 class="formal-small-heading">Going to this formal</h2><p class="small muted">Message a member before the formal starts.</p><div class="formal-people">{% for member in messaging_members %}<a href="{% url 'inbox:thread' member.username %}" aria-label="Message {{ member.get_full_name|default:member.username }}">{{ member.get_full_name|default:member.username }} <span aria-hidden="true">&rarr;</span></a>{% endfor %}</div></section>{% endif %}
+<section class="formal-dinner-details formal-section">
+  {% if not application %}{% include "formals/_invitation_terms.html" %}{% endif %}
+  {% if listing.event.description %}<div class="prose">{{ listing.event.description|markdown }}</div>{% endif %}
+  {% if listing.practical_details %}<h2>Good to know</h2><div class="prose">{{ listing.practical_details|linebreaks }}</div>{% endif %}
+  <p class="small muted">Reservations close {{ listing.booking_closes_at|date:"j M, H:i" }}. College tickets are confirmed separately by the host.</p>
+  <div class="formal-actions"><a class="formal-text-link" href="{% url 'events:ics' listing.event.slug %}">Add to calendar</a>{% if can_edit %}<a class="formal-text-link" href="{% url 'formals:edit' listing.pk %}">Edit formal</a>{% endif %}</div>
+</section>
+{% if can_manage %}<div class="formal-management formal-section">
+  {% if activity %}<details class="formal-history"><summary>Invitation history</summary><ol class="formal-timeline">{% for item in activity %}<li><time datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:"j M Y, H:i" }}</time>{{ item.text }}{% if item.actor %}<span class="small muted"> &mdash; {{ item.actor.get_full_name|default:item.actor.username }}</span>{% endif %}</li>{% endfor %}</ol></details>{% endif %}
+  {% if not listing.event.is_cancelled and listing.event.start > now or reason_form.errors %}<details{% if reason_form.errors %} open{% endif %}><summary>Cancel this formal</summary><p class="small muted">Guests will be notified. Return invitations already owed remain open.</p><form method="post" action="{% url 'formals:cancel' listing.pk %}" data-confirm="Cancel this formal and notify its guests?">{% csrf_token %}{% include "formals/_field.html" with field=reason_form.reason optional=True %}<button type="submit" class="btn btn-small btn-danger">Cancel formal</button></form></details>{% endif %}
+</div>{% endif %}
+{% endblock %}

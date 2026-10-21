@@ -1,0 +1,8 @@
+{% extends "formals/base.html" %}
+{% block title %}My formal alerts{% endblock %}
+{% block formal_content %}
+<div class="page-head"><div><h1>My formal alerts</h1><p class="lede">Get an email and an in-app notification when a new formal matches what you want.</p></div><a class="btn btn-ghost" href="{% url 'formals:index' %}">Browse formals</a></div>
+{% for alert in alerts %}<article class="card formal-section"><p><strong>{{ alert.description }}</strong>{% if not alert.active %} <span class="badge">Paused</span>{% endif %}</p><form method="post" action="{% url 'formals:delete_alert' alert.pk %}" class="formal-actions">{% csrf_token %}<button type="submit" class="btn btn-small btn-ghost" name="action" value="{% if alert.active %}pause{% else %}resume{% endif %}">{% if alert.active %}Pause{% else %}Resume{% endif %}</button><button type="submit" class="formal-quiet-action" name="action" value="delete">Remove</button></form></article>{% empty %}<p class="formal-empty">No alerts yet. Save your filters while browsing, or choose what you want below.</p>{% endfor %}
+<details class="card formal-section"{% if form.errors or not alerts %} open{% endif %}><summary>Create an alert</summary><form method="post" action="{% url 'formals:save_alert' %}" class="formal-form">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}{% include "formals/_field.html" %}{% endfor %}<button type="submit" class="btn btn-accent">Save email and in-app alert</button></form></details>
+<p class="small muted">Alerts are for new invitations, not existing formals or newly freed places. We check your college eligibility for swaps. Overlapping alerts send only one notification per formal. You can pause or remove an alert at any time.</p>
+{% endblock %}
