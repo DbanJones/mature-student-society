@@ -7,6 +7,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
 
+LUNCH_SWAP_SLUG = "lunch-swap"
+
 
 class Category(models.Model):
     """An event tag, e.g. History Club, Supper Club, Coffee Club.
@@ -222,6 +224,15 @@ class Event(models.Model):
         return slug
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        rule_applies = update_fields is None or bool(
+            {"category", "category_id", "members_only"} & set(update_fields)
+        )
+        if rule_applies and not self.members_only and self.is_lunch_swap:
+            # Lunch swaps are for members: no form or panel action can open one up.
+            self.members_only = True
+            if update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"members_only"}
         if not self.slug:
             self.slug = self.build_slug()
             update_fields = kwargs.get("update_fields")
@@ -238,6 +249,11 @@ class Event(models.Model):
     def is_formal(self):
         """Formal places are managed by Formal Exchange, never by RSVPs."""
         return self.pk is not None and hasattr(self, "formal_listing")
+
+    @property
+    def is_lunch_swap(self):
+        """A lunch at the host's college. An ordinary event in every other way."""
+        return self.category_id is not None and self.category.slug == LUNCH_SWAP_SLUG
 
     @property
     def effective_host(self):

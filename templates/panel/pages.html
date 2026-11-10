@@ -7,10 +7,10 @@
   <div>
     <h1>Pages</h1>
     <p class="muted">
-      Every page on the site, under the menu it sits in. Fixed pages keep
-      their layout, and every piece of text on them is editable here. Pages
-      you add can be edited, renamed, moved between menus, re-ordered,
-      unpublished and deleted.
+      The site's pages, grouped as the menu shows them. Press “Edit this
+      page” to change a page's wording and pictures. Lists that fill
+      themselves, like events, are shown there too, with a note on where they
+      come from.
     </p>
   </div>
   <div class="actions">
@@ -34,19 +34,12 @@
               <strong>{{ row.title }}</strong> <span class="badge">fixed page</span>
               <a class="small" href="{{ row.url }}">view</a>
               {% if row.note %}<p class="small muted">{{ row.note }}</p>{% endif %}
-              {% if row.blocks %}
-                <ul class="tree-blocks">
-                  {% for block in row.blocks %}
-                    <li><a href="{% url 'panel:text_edit' block.key %}">{{ block.label }}</a>{% if block.edited %} <span class="badge badge-ok">edited</span>{% endif %}</li>
-                  {% endfor %}
-                </ul>
-              {% endif %}
-              {% if row.body %}
-                <p class="small">Body text: <a href="{% url 'core:site_page_edit' row.body.slug %}">edit</a> · <a href="{% url 'panel:page_edit' row.body.pk %}">settings</a> · <a href="{% url 'core:site_page_history' row.body.slug %}">history</a></p>
-              {% elif row.key == 'wellbeing' %}
-                <p class="small"><a href="{% url 'panel:page_create' %}">Create the body page</a> (slug “wellbeing”).</p>
-              {% endif %}
-              {% for label, url in row.links %}<a class="btn btn-small btn-ghost" href="{{ url }}" style="margin-top:.3rem">{{ label }}</a> {% endfor %}
+              {% if row.count %}<span class="small muted">{{ row.count }} section{{ row.count|pluralize }} you can edit</span>{% endif %}
+              {% if row.edited_count %}<span class="badge badge-ok">{{ row.edited_count }} edited</span>{% endif %}
+            </div>
+            <div class="tree-controls">
+              {% if row.editable %}<a class="btn btn-small" href="{% url 'panel:page_text' row.key %}">Edit this page</a>{% endif %}
+              {% for label, url in row.links %}<a class="btn btn-small btn-ghost" href="{{ url }}">{{ label }}</a>{% endfor %}
             </div>
           </li>
         {% else %}

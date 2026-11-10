@@ -12,9 +12,12 @@ from django.utils import timezone
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
-from .forms import EventForm, TagPageForm
-from .models import RSVP, Category, Event
-from . import services
+from core import ball
+from core.pictures import enable_uploads
+
+from .forms import EventForm, LunchSwapForm, TagPageForm
+from .models import LUNCH_SWAP_SLUG, RSVP, Category, Event
+from . import lunch, services
 
 
 def _attendees_of(event):
@@ -96,8 +99,9 @@ def calendar_view(request):
     """Public month-grid calendar plus a 'coming up' list.
 
     Supports free-text search (?q=) across title, description, location and
-    tag, and tag filtering (?cat=). Anonymous visitors never see members_only
-    events (Event.objects.visible_to) and only see attendance counts, never
+    tag, and tag filtering (?cat=; ?tags=open keeps the tag list unfolded
+    after a pick). Anonymous visitors never see members_only events
+    (Event.objects.visible_to) and only see attendance counts, never
     names/initials.
     """
     today = timezone.localdate()
@@ -123,8 +127,10 @@ def calendar_view(request):
     view = request.GET.get("view", "")
     if view not in ("grid", "list"):
         view = ""
+    # The tag list is folded away unless a link inside it asked to keep it open.
+    tags_open = request.GET.get("tags") == "open"
 
-    weeks = calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, month)
+    weeks =calendar_mod.Calendar(firstweekday=0).monthdatescalendar(year, month)
     grid_start, grid_end = weeks[0][0], weeks[-1][-1]
 
     visible = Event.objects.visible_to(request.user).select_related("category", "formal_listing").annotate(
@@ -219,7 +225,8 @@ def calendar_view(request):
     prev_year, prev_month = (year - 1, 12) if month == 1 else (year, month - 1)
     next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
 
-    # Each pill toggles its own tag in/out of the active set.
+    # Each pill toggles its own tag in or out of the active set, and keeps the
+    # tag list open so several can be picked one after another.
     pills = []
     for cat in categories:
         toggled = [s for s in active_slugs if s != cat.slug]
@@ -228,8 +235,18 @@ def calendar_view(request):
         pills.append({
             "cat": cat,
             "active": cat.slug in active_slugs,
-            "query": _month_query(year, month, toggled, q, view, include_formals),
+            "query": _month_query(year, month, toggled, q, view, include_formals, tags_open=True),
         })
+    # The chips beside the closed list: each one removes its own tag.
+    chips = [
+        {
+            "cat": cat,
+            "query": _month_query(
+                year, month, [s for s in active_slugs if s != cat.slug], q, view, include_formals
+            ),
+        }
+        for cat in active_categories
+    ]
 
     return render(request, "events/calendar.html", {
         "nav_active": "calendar",
@@ -239,6 +256,9 @@ def calendar_view(request):
         "include_formals": include_formals,
         "month_date": datetime.date(year, month, 1),
         "pills": pills,
+        "tags_open": tags_open,
+        "chips": chips,
+        "all_open_query": _month_query(year, month, [], q, view, include_formals, tags_open=True),
         "active_categories": active_categories,
         "active_slugs": active_slugs,
         "upcoming": upcoming,
@@ -255,7 +275,7 @@ def calendar_view(request):
     })
 
 
-def _month_query(year, month, cat_slugs, q="", view="", include_formals=False):
+def _month_query(year, month, cat_slugs, q="", view="", include_formals=False, tags_open=False):
     from urllib.parse import urlencode
     params = [("y", year), ("m", month)]
     params += [("cat", slug) for slug in cat_slugs]
@@ -265,6 +285,8 @@ def _month_query(year, month, cat_slugs, q="", view="", include_formals=False):
         params.append(("view", view))
     if include_formals:
         params.append(("formals", "1"))
+    if tags_open:
+        params.append(("tags", "open"))
     return "?" + urlencode(params)
 
 
@@ -320,12 +342,25 @@ def detail(request, slug):
         and event.restaurant_id is not None
         and event.category.has_restaurant_ratings
     )
+    lunch_host = (
+        event.is_lunch_swap and request.user.is_authenticated
+        and request.user.pk == event.effective_host.pk
+    )
+    # A host who somehow holds a place (the event was re-tagged) can still give it back.
+    host_needs_no_place = lunch_host and not (is_going or is_waiting)
+    can_host_back = (
+        event.is_lunch_swap and is_going and not lunch_host
+        and event.is_past and not event.is_cancelled
+    )
 
+    ball_page_url = ball.page_for(event, request.user, request=request)
     share_url = ""
     if request.user.is_authenticated:
-        share_url = event.whatsapp_share_url(
-            request.build_absolute_uri(event.get_absolute_url())
+        share_path = (
+            ball.page_for(event, audience="public", request=request)
+            or event.get_absolute_url()
         )
+        share_url = event.whatsapp_share_url(request.build_absolute_uri(share_path))
 
     from inbox.policy import can_message
     can_message_host = (
@@ -356,8 +391,12 @@ def detail(request, slug):
         "waiting_position": waiting_position,
         "can_rsvp": can_rsvp,
         "can_rate": can_rate,
+        "lunch_host": lunch_host,
+        "host_needs_no_place": host_needs_no_place,
+        "can_host_back": can_host_back,
         "can_edit": event.can_edit(request.user),
         "share_url": share_url,
+        "ball_page_url": ball_page_url,
     })
 
 
@@ -400,6 +439,27 @@ def create(request):
         "form": form,
         "event": None,
         "cat_ratings": _ratings_map(),
+    })
+
+
+@login_required
+def lunch_new(request):
+    """The short "Host a lunch swap" form. It makes an ordinary members-only
+    event with the Lunch Swap tag; after that it is edited like any other."""
+    back = lunch.return_target(
+        request.user, request.POST.get("back") or request.GET.get("back")
+    )
+    form = LunchSwapForm(request.POST or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        event = lunch.create_lunch(request.user, form.cleaned_data, back=back)
+        messages.success(
+            request,
+            "Your lunch is on the calendar. We'll tell you each time someone takes a place.",
+        )
+        return redirect(event)
+    return render(request, "events/lunch_form.html", {
+        "nav_active": "calendar", "form": form, "back": back,
+        "tag": lunch.lunch_swap_tag(),
     })
 
 
@@ -607,6 +667,7 @@ def tag_page(request, slug):
         "upcoming": upcoming,
         "past": past,
         "can_edit": tag.can_edit_page(request.user),
+        "is_lunch_tag": tag.slug == LUNCH_SWAP_SLUG,
     })
 
 
@@ -618,6 +679,7 @@ def tag_edit(request, slug):
     if not tag.can_edit_page(request.user):
         raise PermissionDenied("Only this tag's owners or an admin can edit its page.")
     form = TagPageForm(request.POST or None, instance=tag)
+    enable_uploads(form, "page_content", request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, f"The {tag.name} page has been updated.")

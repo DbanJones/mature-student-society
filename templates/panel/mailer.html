@@ -6,7 +6,7 @@
 <div class="page-head">
   <div>
     <h1>What's On mailer</h1>
-    <p class="muted">A plain-text digest of the next two weeks, drafted from the calendar. Edit anything before sending.</p>
+    <p class="muted">An email of the next two weeks, drafted from the calendar. Edit anything before sending: the preview under the box shows what people will see.</p>
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'panel:mailer' %}">Refresh draft</a>
@@ -67,13 +67,14 @@
               {% if not site_config.email_api_key %}disabled title="Set an AI API key on the Super admin tab first"{% endif %}>
         ✨ Draft with AI
       </button>
+      <button type="submit" class="btn btn-ghost" formaction="{% url 'panel:mailer_preview' %}" formtarget="_blank" formnovalidate>Open preview in a new tab</button>
       <button type="submit" name="action" value="test" class="btn btn-ghost"{% if not user.email %} disabled title="Your account has no email address"{% endif %}>Send a test to me</button>
       <button type="submit" name="action" value="send" class="btn btn-accent" data-confirm="Send the mailer now?">Send mailer</button>
     </div>
     <p class="small muted" style="margin:.5rem 0 0">
       “Draft with AI” rewrites the body above in the society’s tone using
-      {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %} —
-      events, dates and links are kept exactly; you review before sending.
+      {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %}.
+      Events, dates and links are kept, and a rewrite that changes a link is thrown away. Check it before sending.
     </p>
   </form>
 </div>

@@ -1,0 +1,38 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Winter Ball event{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <p class="small" style="margin-bottom:.4rem"><a href="{% url 'panel:pages' %}#page-ball">&larr; Pages</a></p>
+    <h1>Winter Ball event</h1>
+    <p class="muted">
+      The Winter Ball page takes its date, venue and bookings from one event
+      on the calendar. Wherever that event is listed, its title opens the
+      Winter Ball page.
+    </p>
+  </div>
+</div>
+
+<div class="card" style="max-width: 40rem;">
+  {% if showing %}
+    <p>
+      <strong>Showing now:</strong> {{ showing.title }},
+      {{ showing.start|date:"l j F Y, H:i" }}{% if showing.location %}, {{ showing.location }}{% endif %}.
+      <a href="{% url 'core:winter_ball' %}">View the page</a>
+    </p>
+  {% else %}
+    <p><strong>No event is showing.</strong> The page says the date is still to be announced.</p>
+  {% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <p>
+      {{ form.event.label_tag }} {{ form.event }}
+      <span class="helptext">“Find it for me” uses the next super event with “Winter Ball” in its title. Pick the event yourself if it is called something else.</span>
+      {{ form.event.errors }}
+    </p>
+    <button type="submit" class="btn btn-accent">Save</button>
+  </form>
+</div>
+{% endblock %}

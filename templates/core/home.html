@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static md %}
+{% load static md event_links %}
 
 {% block title %}Welcome{% endblock %}
 {% block main_class %}{% endblock %}
@@ -33,7 +33,7 @@
 
 <section class="band">
   <div class="container">
-    <h2>What's on next</h2>
+    {% text "home.events_heading" as events_heading %}{% if events_heading %}<h2>{{ events_heading }}</h2>{% endif %}
     {% if next_events %}
       <div class="grid grid-2">
         {% for event in next_events %}
@@ -46,7 +46,7 @@
               <span class="cat-chip" style="background: {{ event.category.color }}">{{ event.category.emoji }} {{ event.category.name }}</span>
               {% if event.is_super %}<span class="badge badge-super">Super event</span>{% elif event.is_official %}<span class="badge badge-official">{{ event.category.name }}</span>{% endif %}
               {% if event.members_only %}<span class="badge badge-members">Members only</span>{% endif %}
-              <h3><a href="{% url 'events:detail' event.pk %}">{{ event.title }}</a></h3>
+              <h3><a href="{% event_url event %}">{{ event.title }}</a></h3>
               <p class="small muted">
                 {{ event.start|date:"D j M, H:i" }}
                 {% if event.location %} &middot; {{ event.location }}{% endif %}
@@ -57,7 +57,7 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="empty">Nothing scheduled just yet — check back soon.</div>
+      <div class="empty">{% text "home.events_empty" %}</div>
     {% endif %}
     <p class="band-more"><a href="{% url 'events:calendar' %}">See the full calendar &rarr;</a></p>
   </div>
@@ -65,7 +65,7 @@
 
 <section class="band band-sage">
   <div class="container">
-    <h2>What we do</h2>
+    {% text "home.what_we_do_heading" as what_heading %}{% if what_heading %}<h2>{{ what_heading }}</h2>{% endif %}
     <div class="lede">{% text "home.what_we_do" %}</div>
     <div class="grid grid-3">
       {% for emoji, name, blurb in activities %}
@@ -83,7 +83,7 @@
 {% if testimonials and "testimonials" in visible_tabs %}
 <section class="band">
   <div class="container">
-    <h2>In members' words</h2>
+    {% text "home.testimonials_heading" as words_heading %}{% if words_heading %}<h2>{{ words_heading }}</h2>{% endif %}
     <div class="grid grid-3">
       {% for t in testimonials %}
         <blockquote class="card testimonial{% if t.is_featured %} featured{% endif %}">
@@ -101,7 +101,7 @@
 
 <section class="band">
   <div class="container">
-    <h2>The Mature Students Guide</h2>
+    {% text "home.guide_heading" as guide_heading %}{% if guide_heading %}<h2>{{ guide_heading }}</h2>{% endif %}
     <p class="lede">{% text "home.guide_lede" %}</p>
     {% if guide_pages %}
       <div class="grid grid-3">
@@ -120,7 +120,7 @@
 
 <section class="band band-sage">
   <div class="container">
-    <h2>The Supper Club</h2>
+    {% text "home.supper_heading" as supper_heading %}{% if supper_heading %}<h2>{{ supper_heading }}</h2>{% endif %}
     <p class="lede">{% text "home.supper_lede" %}</p>
     {% if top_restaurants %}
       <div class="grid grid-3">

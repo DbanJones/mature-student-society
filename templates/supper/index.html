@@ -8,17 +8,11 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>🍽️ The MSS Supper Club</h1>
-    <p class="lede">
-      Eating our way through Cambridge's international cheap-eats, one restaurant
-      at a time. Every attendee scores the visit — food, service, atmosphere and
-      value for money — and the leaderboard below settles the arguments.
-    </p>
-    <p class="muted small">
-      Everyone can browse the scores; voting is reserved for members who were at
-      the table.
-    </p>
+    <h1>{% text "supper.title" %}</h1>
+    {% text "supper.lede" as supper_lede %}{% if supper_lede %}<p class="lede">{{ supper_lede }}</p>{% endif %}
+    {% text "supper.note" as supper_note %}{% if supper_note %}<p class="muted small">{{ supper_note }}</p>{% endif %}
   </div>
+  <div class="actions">{% include "core/_edit_text.html" with page_key="supper" %}</div>
 </div>
 
 {% if next_event %}
@@ -37,12 +31,12 @@
   </div>
 {% else %}
   <div class="card supper-next">
-    <h2>🍽️ No supper on the books yet</h2>
-    <p class="muted">Watch the <a href="{% url 'events:calendar' %}">calendar</a> — the next outing won't be far away.</p>
+    {% text "supper.none_heading" as none_heading %}{% if none_heading %}<h2>{{ none_heading }}</h2>{% endif %}
+    {% text "supper.none_text" as none_text %}{% if none_text %}<p class="muted">{{ none_text }}</p>{% endif %}
   </div>
 {% endif %}
 
-<h2>The leaderboard</h2>
+{% text "supper.board_heading" as board_heading %}{% if board_heading %}<h2>{{ board_heading }}</h2>{% endif %}
 {% if rated %}
   <ol class="leaderboard">
     {% for row in rated %}
@@ -81,8 +75,8 @@
 {% endif %}
 
 {% if unrated %}
-  <h2>Not yet rated</h2>
-  <p class="muted small">On the hit list — awaiting a visit, or the scores from one.</p>
+  {% text "supper.unrated_heading" as unrated_heading %}{% if unrated_heading %}<h2>{{ unrated_heading }}</h2>{% endif %}
+  {% text "supper.unrated_text" as unrated_text %}{% if unrated_text %}<p class="muted small">{{ unrated_text }}</p>{% endif %}
   <div class="grid grid-3">
     {% for restaurant in unrated %}
       <div class="card">

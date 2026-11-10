@@ -17,6 +17,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.http import urlencode
 
+from core import ball
 from events.models import Event
 
 from . import geocode, layout
@@ -299,4 +300,4 @@ def scan(request, slug):
     PosterScan.objects.create(
         event=event, device=PosterScan.device_from(request.META.get("HTTP_USER_AGENT", ""))
     )
-    return redirect(event)
+    return redirect(ball.event_url(event, request.user, request=request))

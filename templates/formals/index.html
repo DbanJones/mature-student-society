@@ -1,7 +1,10 @@
 {% extends "formals/base.html" %}
+{% load md %}
 {% block title %}Formal Exchange{% endblock %}
 {% block formal_content %}
-<header class="formal-heading"><div><p class="formal-eyebrow">Members only</p><h1>Formal Exchange</h1><p class="lede">Find a dinner. Bring your friends.</p></div><a class="formal-text-link" href="{% url 'formals:alerts' %}">My alerts</a></header>
+{% text "formals.lede" as formals_lede %}
+<header class="formal-heading"><div><p class="formal-eyebrow">Members only</p><h1>Formal Exchange</h1>{% if formals_lede %}<p class="lede">{{ formals_lede }}</p>{% endif %}</div><a class="formal-text-link" href="{% url 'formals:alerts' %}">My alerts</a></header>
+{% if user.is_authenticated and user.is_portal_admin %}<p>{% include "core/_edit_text.html" with page_key="formals" %}</p>{% endif %}
 <div class="formal-browse-bar">
   <p class="small muted">{{ page.paginator.count|default:0 }} upcoming formal{{ page.paginator.count|pluralize }}</p>
   <details class="formal-filters"{% if filters_active or form.errors %} open{% endif %}>
@@ -23,5 +26,5 @@
   <div class="formal-empty"><h2>No formals match just yet</h2><p>Try another filter, or offer places at your college.</p><div class="formal-actions"><a class="btn btn-ghost" href="{% url 'formals:index' %}">Clear filters</a><a class="btn btn-accent" href="{% url 'formals:create' %}">Host a formal</a></div></div>
 {% endif %}
 {% include "formals/_alert_offer.html" %}
-<p class="small muted formal-footnote">No obligation = just enjoy the dinner. Swap = host in return. Each invitation shows how many return places the host would like.</p>
+{% text "formals.footnote" as formals_footnote %}{% if formals_footnote %}<p class="small muted formal-footnote">{{ formals_footnote }}</p>{% endif %}
 {% endblock %}

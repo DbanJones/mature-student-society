@@ -13,7 +13,7 @@
   </div>
 </div>
 
-{% if not event %}{% url 'formals:create' as formal_create_url %}{% if formal_create_url %}<p class="small">Offering college dinner places? <a href="{{ formal_create_url }}">Host a formal</a>.</p>{% endif %}{% endif %}
+{% if not event %}{% url 'formals:create' as formal_create_url %}<p class="small">Inviting people to lunch at your college? <a href="{% url 'events:lunch_new' %}">Host a lunch swap</a>.{% if formal_create_url %} Offering college dinner places? <a href="{{ formal_create_url }}">Host a formal</a>.{% endif %}</p>{% endif %}
 <div class="card" style="max-width: 46rem;">
   <form method="post" enctype="multipart/form-data" novalidate>
     {% csrf_token %}

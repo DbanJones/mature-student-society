@@ -357,6 +357,47 @@ class AssociateInviteTests(TestCase):
         self.assertTrue(assoc.check_password("orange-bicycle-42"))
 
 
+class AccountEmailHtmlTests(TestCase):
+    """The welcome and reminder emails carry an HTML part beside the text,
+    with each link shown as words (Outlook garbles a visible web address)."""
+
+    VISIBLE_ADDRESS = r">[^<]*(?:https?://|www\.)[^<]*<"
+
+    def html_and_links(self, message):
+        (html, mimetype), = message.alternatives
+        self.assertEqual(mimetype, "text/html")
+        found = [(href, re.sub(r"<[^>]+>", "", words))
+                 for href, words in re.findall(r'<a href="([^"]*)"[^>]*>(.*?)</a>', html, re.S)]
+        return html, found
+
+    def test_invite_email_has_an_html_part_with_the_link_behind_words(self):
+        assoc = make_associate(email="newbie@example.com", password=None)
+        url = send_associate_invite(assoc, RequestFactory().get("/", secure=True))
+        message = mail.outbox[0]
+        self.assertIn(f"Set your password using this one-time link:\n\n    {url}\n\n", message.body)  # the text is as it was
+        html, found = self.html_and_links(message)
+        self.assertIn((url, "Open the page to set your password"), found)
+        self.assertIn(f'href="{url}"', html)
+        self.assertIn('class="em-btn"', html)
+        self.assertEqual(re.findall(self.VISIBLE_ADDRESS, html), [])
+        self.assertIn("<title>Your MSS account is approved</title>", html)
+        self.assertIn("Hi Ann,", html)
+
+    def test_profile_reminder_has_an_html_part_with_the_link_behind_words(self):
+        from .services import send_profile_reminder
+
+        member = make_member("pr123", complete=False, first_name="Pat")
+        send_profile_reminder(member, RequestFactory().get("/"))
+        message = mail.outbox[0]
+        self.assertEqual(message.to, ["pr123@cam.ac.uk"])
+        self.assertIn("\n    http://testserver/accounts/login/\n", message.body)  # the text is as it was
+        html, found = self.html_and_links(message)
+        self.assertEqual(found, [("http://testserver/accounts/login/", "Open the log-in page")])
+        self.assertEqual(re.findall(self.VISIBLE_ADDRESS, html), [])
+        # lines wrapped by hand in the text run on as one paragraph
+        self.assertIn("Mature Student Society members&#x27; portal but didn&#x27;t quite finish.", html)
+
+
 class ProfileDetailTests(TestCase):
     """The talk-to-me-about / work / interests profile fields."""
 

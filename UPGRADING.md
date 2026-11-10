@@ -310,7 +310,9 @@ Do these once, in order, between steps 2 and 3.
   the site's address to the list's accepted senders. The site
   won't send the same mailer to the list and to a website audience within
   ten minutes, but a held post can be approved much later, so send each
-  What's On to the list or to the website's audiences, not both.
+  What's On to the list or to the website's audiences, not both. The mailer
+  is a designed (HTML) email: see "November update" below for the one
+  setting the list needs.
 - **gunicorn 23.** Step 2's `pip install` brings it in. With
   `header_map = "drop"` in `gunicorn.conf.py` it ignores look-alike
   headers such as `X_MSS_Remote_User`, which older gunicorn read as the Raven
@@ -389,12 +391,13 @@ Do these once, in order, between steps 2 and 3.
 - **"Draft with AI" takes instructions.** A box on the Mailer tab shapes
   the tone, length and order of an issue; the society's tone of voice and
   the rules about dates and links still apply.
-- **Every page is editable from Admin → Content → Pages.** The tab is now
-  a tree of the site's menus; fixed pages list their text blocks (the
-  home page welcome, About, Community policies, the Winter Ball copy, the
-  Guide and group introductions and so on), and custom pages can be moved
-  between menus and re-ordered. The About introduction that used to live
-  in the Django admin is carried across by a migration.
+- **Every page is editable from Admin → Content → Pages.** The tab is a
+  tree of the site's menus. Each fixed page (Home, About, Community
+  policies, the Winter Ball, the Guide front page and so on) has an "Edit
+  this page" button that opens all of its wording on one screen, with one
+  Save; the November update below describes that screen. Custom pages can
+  be moved between menus and re-ordered. The About introduction that used
+  to live in the Django admin is carried across by a migration.
 - **Surveys** are new, under Members portal → Surveys and Admin → People →
   Surveys. A society admin creates a survey and names the members who run
   it; they write the questions, open it, see the results and send
@@ -438,6 +441,109 @@ button.
   than a week ago (the events stay), and pictures no event uses any more.
   It shows what would go first, and nothing happens until an admin presses
   the button. Members' photos and the pages' pictures are never touched.
+
+## November update: calendar tag filter, the mailer as a designed email, Winter Ball links, lunch swaps, the page editor
+
+### On the server
+
+Follow "Step by step" above, as for any release: take the backup, put the
+new code in place, run step 2, then **restart**. A pull alone is not
+enough this time, because the restart applies three migrations and copies
+the changed stylesheets and scripts into place.
+
+| Migration file | What it does |
+|---|---|
+| `core/migrations/0017_siteconfig_ball_event.py` | Adds one column to the site's settings: which event the Winter Ball page shows. |
+| `core/migrations/0018_about_lede_block.py` | Changes no tables. Copies a customised tagline into the About page's new "Line under the title" section, so the About page reads as before. |
+| `events/migrations/0008_lunch_swap_tag.py` | Changes no tables. Adds the "Lunch Swap" tag (or adopts a tag already called that). |
+
+There is no new cron line, no new `.env` setting and no new package. The
+emails to a lunch's host go out through the existing
+`process_notifications` job. Pictures added from an editor go under
+`media/public/pictures/`, like those from the Pictures tab, so the existing
+backup of `media/` covers them.
+
+### Three things to check afterwards
+
+1. **The Winter Ball page shows the right event.** Open the Winter Ball
+   page and check that it shows this year's date and venue. Left to itself
+   the page picks the next event that is ticked "Super event" and has
+   "Winter Ball" in its title. If the page says the date is to be
+   announced, the event isn't ticked or is called something else: either a
+   super admin ticks "Super event" on the event's edit form, or any admin
+   picks the event by hand at Admin → Content → Pages → Winter Ball →
+   Choose the event. If the event is ticked "Hide from the public
+   calendar", visitors who aren't logged in are asked to log in to see the
+   date and venue.
+2. **Mailman lets the designed email through** (once, before the mailer is
+   next posted to `mss-members`; copies the website sends to members
+   itself aren't affected). Open
+   <https://lists.srcf.net/mailman/admin/mss-members/contentfilter> and
+   either set "Should Mailman filter the content of list traffic" to No, or,
+   if it is Yes: make sure `multipart/alternative`, `text/plain` and
+   `text/html` are all in the list of types to pass, and set both "collapse
+   multipart/alternative to its first part content" and "convert text/html
+   parts to plain text" to No. Then post a test and look at it in Outlook.
+   If this is wrong nothing breaks, but list readers get the plain-text
+   copy, and Outlook garbles its links as it did before. The list's own
+   footer may arrive as a small attachment under the email instead of as
+   text. That is Mailman's doing and harmless. Leave the footer in place:
+   it tells list readers how to leave (step 5 of "Setting up
+   `mss-members`" above).
+3. **The Lunch Swap tag has an owner.** The new tag starts with none, and
+   a tag's edit form won't save without one. In Admin → Super admin →
+   Tags, edit Lunch Swap and pick whoever should look after it.
+
+### What changed
+
+- **The calendar's tag filter folds away.** One "Filter by tag" button opens
+  the list; chosen tags show beside it with a cross to remove each, and
+  "Clear tags".
+- **The What's On mailer is a designed email.** It now goes out as a
+  designed email with a plain-text copy inside it. Links show as words and
+  buttons, so Outlook can no longer turn them into long "safelinks"
+  addresses. The Mailer tab's writing box has a toolbar and shows the
+  email as it will arrive; "Open preview in a new tab" shows it full size.
+  "Draft with AI" refuses a rewrite that changes any link.
+- **Other emails** (notifications, welcome and reminder emails, formal
+  alerts, unsubscribe confirmations) get the same look and the same
+  readable links. Their words are unchanged, and if the designed part
+  can't be built the email still goes as plain text.
+- **The Winter Ball event links through to the Winter Ball page.**
+  Wherever the event is listed (home page, calendar, dashboard, search,
+  group pages, the What's On mailer, the poster's QR code), the link
+  opens the Winter Ball page, where a member books in one press. The
+  event's own page stays for managing it and for the map.
+- **Lunch swaps.** A member can invite a few others to lunch at their
+  college from Add an event, the Lunch Swap group page or the Menu page.
+  Lunches are ordinary events with the new "Lunch Swap" tag, always
+  members only; the host is told each time a guest takes or gives back a
+  place, and the What's On draft lists them in one short section.
+- **The page editor: every section of every fixed page, on one screen.**
+  Admin → Content → Pages now has one "Edit this page" button for each
+  fixed page, and the same button shows to admins on the page itself. It
+  opens every part of that page in the order it appears: headings, lines
+  and longer text can be changed and saved with one Save. Lists that fill
+  themselves (events, the committee, testimonials) are shown too, with a
+  note on where they come from or a button to the screen that edits them.
+  "Back to the default wording" puts the original text back in the box;
+  nothing changes on the site until Save. Emptying an optional heading or
+  line hides it; a page's title can't be left empty. If two admins change
+  the same section at once, the second is shown the other's wording
+  instead of overwriting it. Supper Club, Formal Exchange, Log in and the
+  waitlist page have joined the list.
+- **Pictures can be added while editing.** The formatted-text boxes (fixed
+  pages, custom pages, guide articles, group pages) have an "Add a picture"
+  button: choose the picture, describe it, and it is uploaded, shrunk and
+  put into the text. Admins, people named as a page's editor and group
+  owners can add pictures; ordinary members can't, because these pictures
+  are visible to everyone on the internet. Admin → Content → Pictures now
+  says where each picture is used, and a picture a page still shows can't
+  be deleted until it is taken off that page. The mailer has no picture
+  button: emails carry no pictures.
+- **Pictures are checked more strictly.** Only JPEG, PNG, WebP and GIF
+  files are accepted, and nothing over 50 megapixels. This applies to
+  profile and event photos as well as pictures for the pages.
 
 ## If something goes wrong
 

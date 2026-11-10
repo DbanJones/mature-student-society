@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static event_links %}
 
 {% block title %}Search{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/guide.css' %}">{% endblock %}
@@ -25,7 +25,7 @@
     <div class="stack">
       {% for event in results.events %}
         <div class="card search-hit">
-          <h3><a href="{{ event.get_absolute_url }}">{{ event.category.emoji }} {{ event.title }}</a></h3>
+          <h3><a href="{% event_url event %}">{{ event.category.emoji }} {{ event.title }}</a></h3>
           <p class="search-snippet">{{ event.start|date:"D j M Y, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}{% if event.is_past %} · past{% endif %}</p>
         </div>
       {% endfor %}

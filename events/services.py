@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Event, RSVP
+from . import lunch
 
 
 class EventBookingError(ValidationError):
@@ -64,6 +65,7 @@ def tell_promoted(event, promoted):
         email_body=(f'A place has come free at "{event.title}" on {when}, and you have moved off the waitlist. '
                     f"You are now going. If you cannot make it, cancel from the event page so the next member can join: {url}"),
     )
+    lunch.tell_host(event, joined=[rsvp.user for rsvp in promoted])
 
 
 @transaction.atomic
@@ -95,10 +97,14 @@ def set_rsvp(user, event_id, action="toggle"):
         return _result(event, existing, False, previous)
     if action == "cancel" and previous == RSVP.Status.CANCELLED:
         return _result(event, existing, False, previous)
+    if action == "join" and event.is_lunch_swap and user.pk == event.effective_host.pk:
+        raise EventBookingError("You're hosting this lunch, so you don't need a place.")
 
     if action == "cancel":
         existing.status = RSVP.Status.CANCELLED
         existing.save(update_fields=["status", "updated_at"])
+        if previous == RSVP.Status.GOING:
+            lunch.tell_host(event, left=[user])
         tell_promoted(event, _promote_locked(event))
         return _result(event, existing, True, previous)
 
@@ -110,6 +116,8 @@ def set_rsvp(user, event_id, action="toggle"):
     else:
         existing.status = status
         existing.save(update_fields=["status", "updated_at"])
+    if status == RSVP.Status.GOING:
+        lunch.tell_host(event, joined=[user])
     return _result(event, existing, True, previous)
 
 

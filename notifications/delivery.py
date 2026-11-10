@@ -8,6 +8,8 @@ from django.core.mail import send_mail
 from django.db.models import F
 from django.utils import timezone
 
+from core import emailbody
+
 from .models import NotificationEmail
 
 MAX_ATTEMPTS = 5
@@ -58,7 +60,8 @@ def deliver_emails(limit=100):
             continue
         try:
             accepted = send_mail(job.subject, job.body, settings.DEFAULT_FROM_EMAIL,
-                                 [member.email], fail_silently=False)
+                                 [member.email], fail_silently=False,
+                                 html_message=emailbody.plain_html(job.body, title=job.subject))
             if not accepted:
                 raise RuntimeError("Mail backend did not accept the message")
         except Exception as error:

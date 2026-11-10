@@ -83,6 +83,29 @@ def dt_local(value):
     return timezone.localtime(value).strftime("%Y-%m-%dT%H:%M")
 
 
+def page_tags(response, name):
+    """Every <name> start tag on a page, as a list of attribute dicts."""
+    from html.parser import HTMLParser
+
+    class Tags(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.found = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == name:
+                self.found.append(dict(attrs))
+
+    parser = Tags()
+    parser.feed(response.content.decode())
+    return parser.found
+
+
+def query_of(link):
+    from urllib.parse import parse_qs, urlsplit
+    return parse_qs(urlsplit(link).query)
+
+
 @override_settings(ROOT_URLCONF="events.tests")
 class EventTestCase(TestCase):
     @classmethod
@@ -475,6 +498,93 @@ class AdditiveFilterTests(EventTestCase):
         response = self.client.get(reverse("events:calendar"), {"cat": "not-a-tag"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Public pub night")  # no filter applied
+
+
+class TagFilterTests(EventTestCase):
+    """The calendar's tag filter folds away; chosen tags stay in view as chips."""
+
+    def tag_list(self, response):
+        """The attributes of the fold-away tag list."""
+        return next(d for d in page_tags(response, "details") if d.get("class") == "tag-filter")
+
+    def test_the_tag_list_starts_closed_and_quiet(self):
+        response = self.client.get(reverse("events:calendar"))
+        self.assertNotIn("open", self.tag_list(response))
+        self.assertContains(response, "Filter by tag")
+        self.assertNotContains(response, "tag-filter-count")
+        self.assertNotContains(response, "tag-active")
+        self.assertNotContains(response, "Clear tags")
+        self.assertFalse(response.context["tags_open"])
+        self.assertEqual(response.context["chips"], [])
+
+    def test_chosen_tags_show_as_chips_with_a_count_while_the_list_is_closed(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": ["pub-nights", "supper-club"]})
+        self.assertNotIn("open", self.tag_list(response))
+        self.assertContains(
+            response,
+            '<span class="tag-filter-count">2<span class="visually-hidden"> chosen</span></span>',
+            html=True,
+        )
+        self.assertContains(response, "Showing only")
+        self.assertContains(response, "Clear tags")
+        self.assertContains(response, '<span class="visually-hidden">Remove </span>', count=2)
+        chips = response.context["chips"]
+        self.assertEqual([chip["cat"].slug for chip in chips], ["pub-nights", "supper-club"])
+        first = query_of(chips[0]["query"])
+        self.assertEqual(first["cat"], ["supper-club"])  # removes itself, keeps the other
+        self.assertNotIn("tags", first)                  # and leaves the list closed
+        self.assertNotIn("cat", query_of(response.context["all_query"]))
+        self.assertNotIn("tags", query_of(response.context["all_query"]))
+
+    def test_picking_a_tag_keeps_the_list_open(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "pub-nights"})
+        pills = {pill["cat"].slug: pill for pill in response.context["pills"]}
+        add = query_of(pills["supper-club"]["query"])
+        self.assertEqual(sorted(add["cat"]), ["pub-nights", "supper-club"])
+        self.assertEqual(add["tags"], ["open"])
+        remove = query_of(pills["pub-nights"]["query"])
+        self.assertNotIn("cat", remove)
+        self.assertEqual(remove["tags"], ["open"])
+        everything = query_of(response.context["all_open_query"])
+        self.assertNotIn("cat", everything)
+        self.assertEqual(everything["tags"], ["open"])
+        opened = self.client.get(reverse("events:calendar") + pills["supper-club"]["query"])
+        self.assertIn("open", self.tag_list(opened))
+        self.assertTrue(opened.context["tags_open"])
+        self.assertEqual(opened.context["active_slugs"], ["pub-nights", "supper-club"])
+        self.assertContains(opened, "Public pub night")
+
+    def test_nothing_outside_the_list_keeps_it_open(self):
+        response = self.client.get(
+            reverse("events:calendar"),
+            {"cat": "pub-nights", "q": "pub", "view": "grid", "tags": "open"},
+        )
+        self.assertIn("open", self.tag_list(response))
+        for key in ("prev_query", "next_query", "today_query", "grid_query", "list_query",
+                    "clear_search_query", "all_query"):
+            self.assertNotIn("tags", query_of(response.context[key]), key)
+        for chip in response.context["chips"]:
+            self.assertNotIn("tags", query_of(chip["query"]))
+        for week in response.context["grid"]:
+            for day in week["days"]:
+                self.assertNotIn("tags", query_of(day["more_query"]))
+        self.assertNotContains(response, 'name="tags"')  # searching closes the list
+        other = self.client.get(reverse("events:calendar"), {"tags": "1"})
+        self.assertNotIn("open", self.tag_list(other))  # only tags=open opens it
+
+    def test_filter_links_come_back_to_the_filter_and_say_which_are_chosen(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "pub-nights"})
+        links = [a for a in page_tags(response, "a")
+                 if "tag-pill" in a.get("class", "") or a.get("class") == "tag-clear"]
+        # "All", one pill per tag, one chip for the chosen tag, and "Clear tags".
+        self.assertEqual(len(links), len(response.context["pills"]) + 3)
+        for link in links:
+            self.assertTrue(link["href"].endswith("#tag-filter"), link["href"])
+            self.assertEqual(link.get("rel"), "nofollow")
+        # Chosen is said in words: once in the list (Pub Nights), not on "All".
+        self.assertContains(response, '<span class="visually-hidden">, chosen</span>', count=1)
+        unfiltered = self.client.get(reverse("events:calendar"))
+        self.assertContains(unfiltered, 'All<span class="visually-hidden">, chosen</span>', count=1)
 
 
 class WaitlistTests(EventTestCase):

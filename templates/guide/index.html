@@ -11,7 +11,7 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>The Mature Students Guide</h1>
+    <h1>{% text "guide.title" %}</h1>
     <p class="lede">{% text "guide.lede" %}</p>
   </div>
   <div class="actions">
@@ -33,30 +33,23 @@
     <a class="faq-portal" href="{% url 'faq:contacts' %}">
       <span class="faq-portal-emoji">🧭</span>
       <strong>Who to contact</strong>
-      <span class="muted small">A decision map: the right person, what to
-        say, and a ready-to-fill email for any problem.</span>
+      <span class="muted small">{% text "guide.portal_contacts" %}</span>
     </a>
     <a class="faq-portal" href="{% url 'faq:colleges' %}">
       <span class="faq-portal-emoji">🏰</span>
       <strong>College-specific info</strong>
-      <span class="muted small">All 31 colleges: character, what to verify,
-        formal hall rhythm, mature-student notes.</span>
+      <span class="muted small">{% text "guide.portal_colleges" %}</span>
     </a>
     <a class="faq-portal" href="{% url 'faq:departments' %}">
       <span class="faq-portal-emoji">🔬</span>
       <strong>Department-specific info</strong>
-      <span class="muted small">Workload, contacts and pitfalls by School —
-        labs, essays, placements, group projects.</span>
+      <span class="muted small">{% text "guide.portal_departments" %}</span>
     </a>
   </div>
 {% endif %}
 
 {% if not user.is_authenticated %}
-  <p class="muted small">
-    Spotted something missing or out of date?
-    <a href="{% url 'accounts:login' %}">Log in</a> to contribute — any member
-    can write or improve a page.
-  </p>
+  {% text "guide.invite" as invite %}{% if invite %}<p class="muted small">{{ invite }}</p>{% endif %}
 {% endif %}
 
 {% if q %}

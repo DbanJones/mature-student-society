@@ -12,34 +12,48 @@
 <section class="ball-hero">
   <div class="container">
     <p class="ball-kicker">{% text "ball.kicker" %}</p>
-    <h1 class="ball-title">The Winter Ball</h1>
+    <h1 class="ball-title">{% text "ball.title" %}</h1>
     <p class="ball-flourish" aria-hidden="true">❄ ✦ ❄</p>
     {% if ball %}
       <p class="ball-when">{{ ball.start|date:"l j F Y" }} · {{ ball.start|date:"H:i" }} till late</p>
       <p class="ball-where">{{ ball.location }}</p>
-    {% else %}
-      <p class="ball-when">This December — date to be announced</p>
+    {% elif ball_locked %}
+      <p class="ball-when">This December</p>
       <p class="ball-where">Cambridge</p>
+    {% else %}
+      <p class="ball-when">{% text "ball.when_fallback" %}</p>
+      <p class="ball-where">{% text "ball.where_fallback" %}</p>
     {% endif %}
     <div class="ball-cta">
       {% if ball %}
-        {% if user.is_authenticated %}
-          {% if is_going %}
-            <a class="btn-ball btn-ball-ghost" href="{{ ball.get_absolute_url }}">You're on the list ✓ — view your RSVP</a>
-          {% else %}
-            <a class="btn-ball" href="{{ ball.get_absolute_url }}">Reserve your place</a>
-          {% endif %}
+        {% if not user.is_authenticated %}
+          <a class="btn-ball" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Log in to reserve your place</a>
+        {% elif is_going %}
+          <a class="btn-ball btn-ball-ghost" href="{{ ball.get_absolute_url }}">You're on the list. View your booking</a>
+        {% elif is_waiting %}
+          <a class="btn-ball btn-ball-ghost" href="{{ ball.get_absolute_url }}">You're on the waiting list. View your place</a>
+        {% elif can_reserve %}
+          <form class="ball-rsvp" method="post" action="{% url 'events:rsvp' ball.slug %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="join">
+            <button type="submit" class="btn-ball">{% if spots_left == 0 %}Join the waiting list{% else %}Reserve your place{% endif %}</button>
+          </form>
         {% else %}
-          <a class="btn-ball" href="{% url 'accounts:login' %}?next={{ ball.get_absolute_url|urlencode }}">Log in to reserve your place</a>
+          <p class="ball-capacity">Bookings have closed.</p>
         {% endif %}
         {% if spots_left is not None %}
-          <p class="ball-capacity">{{ going_count }} going · {% if spots_left %}{{ spots_left }} place{{ spots_left|pluralize }} left{% else %}fully booked — email us for the waiting list{% endif %}</p>
+          <p class="ball-capacity">{{ going_count }} going · {% if spots_left %}{{ spots_left }} place{{ spots_left|pluralize }} left{% else %}fully booked{% endif %}</p>
         {% endif %}
+        <p class="ball-more"><a href="{{ ball.get_absolute_url }}">{% if can_manage %}Manage this event{% else %}Event details and map{% endif %}</a></p>
+      {% elif ball_locked %}
+        <a class="btn-ball" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">Log in to see the date and reserve</a>
+        <p class="ball-capacity">The details are for members.</p>
       {% else %}
-        <p class="ball-capacity">Tickets open when the date is announced — watch the calendar and the What's On mailer.</p>
+        {% text "ball.tickets_note" as tickets_note %}{% if tickets_note %}<p class="ball-capacity">{{ tickets_note }}</p>{% endif %}
       {% endif %}
     </div>
     {% include "core/_edit_text.html" with page_key="ball" %}
+    {% if user.is_authenticated and user.is_portal_admin %}<a class="btn btn-ghost btn-small edit-text" href="{% url 'panel:ball_event' %}">Choose the event</a>{% endif %}
   </div>
 </section>
 
@@ -49,7 +63,7 @@
 
 <section class="ball-section ball-programme">
   <div class="container">
-    <h2>The evening</h2>
+    {% text "ball.timeline_heading" as timeline_heading %}{% if timeline_heading %}<h2>{{ timeline_heading }}</h2>{% endif %}
     {% text "ball.timeline" as timeline %}
     <ol class="ball-timeline">
       {% for time, what in timeline %}<li><span class="ball-time">{{ time }}</span><span class="ball-what">{{ what }}</span></li>{% endfor %}
@@ -66,7 +80,7 @@
 
 <section class="ball-section ball-faq-wrap">
   <div class="container">
-    <h2>Questions, answered</h2>
+    {% text "ball.faq_heading" as faq_heading %}{% if faq_heading %}<h2>{{ faq_heading }}</h2>{% endif %}
     {% text "ball.faq" as faq %}
     <dl class="ball-faq">
       {% for question, answer in faq %}<dt>{{ question }}</dt><dd>{{ answer }}</dd>{% endfor %}

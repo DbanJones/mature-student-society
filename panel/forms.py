@@ -8,6 +8,7 @@ from django.utils.text import slugify
 
 from accounts.forms import clean_mobile_number
 from accounts.models import User
+from core import ball, emailbody
 from core.models import (
     BUILTIN_TABS,
     VISIBILITY_CHOICES,
@@ -43,7 +44,7 @@ class MemberEditForm(forms.ModelForm):
 
 
 class MailerForm(forms.Form):
-    """The editable What's On draft: recipient, subject and plain-text body."""
+    """The editable What's On draft: recipient, subject and the body, in Markdown."""
 
     audience = forms.ChoiceField(
         label="To", widget=forms.RadioSelect, initial="members",
@@ -59,9 +60,14 @@ class MailerForm(forms.Form):
     subject = forms.CharField(max_length=200)
     body = forms.CharField(
         strip=False,
-        widget=forms.Textarea(
-            attrs={"class": "mailer-body", "rows": 24, "spellcheck": "false"}
-        ),
+        widget=forms.Textarea(attrs={
+            "class": "mailer-body", "rows": 24, "spellcheck": "false",
+            "data-editor": reverse_lazy("panel:mailer_preview"),
+            "data-editor-frame": "subject,audience",
+            "data-editor-tools": "Bold,Italic,Heading,List,Quote,Link",
+        }),
+        help_text="Links show as words, so Outlook can't garble them: use the Link button. "
+                  "A link on a line of its own becomes a button.",
     )
     instructions = forms.CharField(
         required=False, label="Instructions for the AI", max_length=1000,
@@ -70,6 +76,21 @@ class MailerForm(forms.Form):
                   "lead with the Winter Ball, warm sign-off from the committee”. The facts and "
                   "links stay as they are whatever you ask.",
     )
+
+    def clean_body(self):
+        body = self.cleaned_data["body"]
+        problem = richtext_problem(body)
+        if problem:
+            raise forms.ValidationError(f"This can't be sent: {problem}.")
+        try:
+            text, _html = emailbody.render_parts(body)
+        except Exception:
+            raise forms.ValidationError(
+                "This can't be made into an email. A list inside a list inside a list, many times over, is the usual cause."
+            )
+        if not text.strip():
+            raise forms.ValidationError("There is nothing to send yet.")
+        return body
 
     def clean(self):
         data = super().clean()
@@ -282,6 +303,25 @@ class TabVisibilityForm(forms.Form):
             for key, _label, _default in BUILTIN_TABS
         }
         config.save()
+
+
+class BallEventForm(forms.Form):
+    """Which calendar event the Winter Ball page shows."""
+
+    def __init__(self, *args, config=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Built here, not on the class: the list depends on the time now.
+        self.fields["event"] = forms.ModelChoiceField(
+            label="Winter Ball event",
+            queryset=ball.candidates(),
+            required=False,
+            empty_label="Find it for me",
+            initial=config.ball_event_id if config else None,
+        )
+
+    def apply(self, config):
+        config.ball_event = self.cleaned_data["event"]
+        config.save(update_fields=["ball_event"])
 
 
 class DepartmentContactForm(forms.ModelForm):

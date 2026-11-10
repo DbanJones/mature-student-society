@@ -2,7 +2,7 @@ import hashlib
 
 from django.utils import timezone
 
-from core.models import BUILTIN_TABS, SiteConfig, SitePage, visible_to
+from core.models import BUILTIN_TABS, SiteConfig, SitePage, tab_visible_to, visible_to
 
 
 def banner_key(config=None):
@@ -37,17 +37,10 @@ def navigation(request):
     """
     config = SiteConfig.get()
     user = request.user
-    visible = set()
-    for key, _label, _default in BUILTIN_TABS:
-        visibility = config.tab_visibility_for(key)
-        if visible_to(visibility, user):
-            visible.add(key)
-        elif (
-            visibility != "hidden"
-            and user.is_authenticated
-            and user.is_portal_admin
-        ):
-            visible.add(key)
+    visible = {
+        key for key, _label, _default in BUILTIN_TABS
+        if tab_visible_to(config, key, user)
+    }
     nav_pages = SitePage.objects.filter(is_published=True).exclude(nav_label="")
     by_section = {"about": [], "guide": [], "members": []}
     for page in nav_pages:

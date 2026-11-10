@@ -96,6 +96,22 @@ class PortalJourneyTests(TestCase):
             self.assertContains(result, event.title)
         self.assertContains(result, f'id="{target.fragment}"')
 
+    def test_tag_filter_links_keep_month_search_layout_and_formals(self):
+        Category.objects.create(name="Talks", slug="journey-talks")
+        self.client.force_login(self.guest)
+        response = self.calendar(cat=self.category.slug, q="Gathering", view="list", formals="1", tags="open")
+        queries = [pill["query"] for pill in response.context["pills"]]
+        queries += [chip["query"] for chip in response.context["chips"]]
+        queries += [response.context["all_query"], response.context["all_open_query"]]
+        self.assertGreaterEqual(len(queries), 5)
+        for query in queries:
+            params = parse_qs(urlsplit(query).query)
+            self.assertEqual(params["y"], [str(self.start.year)])
+            self.assertEqual(params["m"], [str(self.start.month)])
+            self.assertEqual(params["q"], ["Gathering"])
+            self.assertEqual(params["view"], ["list"])
+            self.assertEqual(params["formals"], ["1"])
+
     def test_dashboard_shows_group_plans_requests_and_the_actual_host(self):
         dinner = self.formal()
         dinner.event.created_by = self.creator

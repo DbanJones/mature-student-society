@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("menu/", views.menu, name="menu"),
     path("preview/", views.preview_markdown, name="preview"),
+    path("pictures/upload/", views.picture_upload, name="picture_upload"),
     path("unsubscribe/", views.unsubscribe, name="unsubscribe"),
     path("resubscribe/<str:token>/", views.resubscribe, name="resubscribe"),
     path("about/", views.about, name="about"),

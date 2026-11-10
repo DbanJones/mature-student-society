@@ -7,6 +7,8 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from core import emailbody
+
 
 def build_set_password_url(user, request):
     """Absolute URL for the one-time set-password page for ``user``."""
@@ -41,6 +43,7 @@ def send_associate_invite(user, request):
         message=body,
         from_email=None,  # DEFAULT_FROM_EMAIL
         recipient_list=[user.email],
+        html_message=emailbody.plain_html(body, base=request.build_absolute_uri("/"), title="Your MSS account is approved"),
     )
     return url
 
@@ -70,4 +73,5 @@ If you'd rather not have an account, you can ignore this email.
         message=body,
         from_email=None,
         recipient_list=[user.email],
+        html_message=emailbody.plain_html(body, base=request.build_absolute_uri("/"), title="Finish setting up your MSS account"),
     )

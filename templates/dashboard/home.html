@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static event_links %}
 
 {% block title %}My dashboard{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
@@ -39,7 +39,7 @@
           </div>
           <div>
             <p class="eyebrow">Next up for you{% if next_up.viewer_is_host %} &middot; you are hosting{% endif %}</p>
-            <h2><a href="{{ next_up.get_absolute_url }}">{{ next_up.title }}</a></h2>
+            <h2><a href="{% event_url next_up %}">{{ next_up.title }}</a></h2>
             <p class="small muted" style="margin:0">
               <span class="cat-chip" style="background: {{ next_up.category.color }}">{{ next_up.category.emoji }} {{ next_up.category.name }}</span>
               {{ next_up.start|date:"D j M, H:i" }}{% if next_up.location %} &middot; {{ next_up.location }}{% endif %}
@@ -55,10 +55,10 @@
         <h3 class="dash-sub">Also in your diary</h3>
         <ul class="dash-list">
           {% for event in diary_events %}{% if event != next_up %}
-            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="muted small">{{ event.start|date:"H:i" }}</span></li>
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{% event_url event %}">{{ event.title }}</a> <span class="muted small">{{ event.start|date:"H:i" }}</span></li>
           {% endif %}{% endfor %}
           {% for event in waiting_events %}
-            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="badge">waitlist</span></li>
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{% event_url event %}">{{ event.title }}</a> <span class="badge">waitlist</span></li>
           {% endfor %}
         </ul>
       {% endif %}
@@ -67,7 +67,7 @@
         <h3 class="dash-sub">Don't miss</h3>
         <ul class="dash-list">
           {% for event in super_events %}
-            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{{ event.get_absolute_url }}">{{ event.title }}</a> <span class="badge badge-super">Super event</span>{% if event.already_going %} <span class="muted small">you're going ✓</span>{% endif %}</li>
+            <li><span class="dash-when">{{ event.start|date:"D j M" }}</span> <a href="{% event_url event %}">{{ event.title }}</a> <span class="badge badge-super">Super event</span>{% if event.already_going %} <span class="muted small">you're going ✓</span>{% endif %}</li>
           {% endfor %}
         </ul>
       {% endif %}

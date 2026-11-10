@@ -565,3 +565,24 @@ class FormalServiceTests(TestCase):
             self.apply(listing)
         send.assert_not_called()
         self.assertTrue(FormalEmail.objects.filter(sent_at__isnull=True).exists())
+
+    @override_settings(SITE_URL="https://portal.example.test")
+    def test_delivered_formal_email_has_an_html_part_with_the_link_behind_words(self):
+        import re
+
+        listing = self.listing()
+        self.apply(listing)
+        queued = FormalEmail.objects.filter(sent_at__isnull=True).count()
+        self.assertTrue(queued)
+        mail.outbox = []
+        self.assertEqual(services.deliver_emails(limit=50), queued)
+        self.assertEqual(len(mail.outbox), queued)
+        for message in mail.outbox:
+            self.assertIn("\n\nhttps://portal.example.test/formals/", message.body)  # the text is as it was
+            (html, mimetype), = message.alternatives
+            self.assertEqual(mimetype, "text/html")
+            self.assertIn("<title>Formal Exchange update</title>", html)
+            self.assertIn('href="https://portal.example.test/formals/', html)
+            self.assertIn(">Open Formal Exchange</a>", html)
+            self.assertIn("Sign in to your member account to view details.", html)
+            self.assertEqual(re.findall(r">[^<]*(?:https?://|www\.)[^<]*<", html), [])

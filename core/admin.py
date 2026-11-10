@@ -6,6 +6,7 @@ from .models import SiteConfig, TermsAcceptance, TermsRevision, TermsVersion
 @admin.register(SiteConfig)
 class SiteConfigAdmin(admin.ModelAdmin):
     exclude = ("about_text",)  # the About introduction is a text block on the Pages tab now
+    raw_id_fields = ["ball_event"]
 
     def has_add_permission(self, request):
         return not SiteConfig.objects.exists()

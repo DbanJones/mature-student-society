@@ -47,6 +47,11 @@
 }
 .btn-ball-ghost:hover { background: rgba(201, 160, 76, .12); }
 .ball-capacity { color: #aebbd1; font-size: .9rem; margin: .9rem 0 0; }
+/* Reserve is a form button, so a place is booked in one press. */
+.ball-rsvp { margin: 0; }
+button.btn-ball { border: 0; cursor: pointer; font-family: inherit; line-height: inherit; }
+.ball-more { margin: .9rem 0 0; font-size: .9rem; }
+.ball-more a, .ball-more a:hover { color: #f2e9d3; }
 
 /* --- sections -------------------------------------------------------- */
 

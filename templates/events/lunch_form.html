@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Host a lunch swap{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/events.css' %}">{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Host a lunch swap</h1>
+    <p class="lede">Invite a few members to lunch at your college.</p>
+  </div>
+</div>
+
+{% if back %}
+  <p class="flash flash-info" style="margin:0 0 1rem">You're inviting people back after {{ back.effective_host.first_name|default:"your host" }}'s lunch. We'll let them know when yours is on the calendar.</p>
+{% endif %}
+
+<div class="card" style="max-width: 46rem;">
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% if back %}<input type="hidden" name="back" value="{{ back.slug }}">{% endif %}
+    {% include "includes/form_errors.html" %}
+
+    <p>
+      {{ form.college.label_tag }} {{ form.college }}
+      <span class="helptext">{{ form.college.help_text }}</span>
+      {{ form.college.errors }}
+    </p>
+    <div class="grid grid-2">
+      <p>
+        {{ form.date.label_tag }} {{ form.date }}
+        {{ form.date.errors }}
+      </p>
+      <p>
+        {{ form.time.label_tag }} {{ form.time }}
+        {{ form.time.errors }}
+      </p>
+    </div>
+    <p>
+      {{ form.places.label_tag }} {{ form.places }}
+      <span class="helptext">{{ form.places.help_text }}</span>
+      {{ form.places.errors }}
+    </p>
+    <p>
+      {{ form.meet.label_tag }} {{ form.meet }}
+      <span class="helptext">{{ form.meet.help_text }}</span>
+      {{ form.meet.errors }}
+    </p>
+    <fieldset class="lunch-choices">
+      <legend>Who pays?</legend>
+      {{ form.paying }}
+      {{ form.paying.errors }}
+    </fieldset>
+    <p>
+      {{ form.note.label_tag }} {{ form.note }}
+      <span class="helptext">{{ form.note.help_text }}</span>
+      {{ form.note.errors }}
+    </p>
+
+    <p class="small muted">Members take the places first come, first served, and we tell you each time. Only members can see your lunch.</p>
+    <p style="margin:0">
+      <button type="submit" class="btn btn-accent">Put it on the calendar</button>
+      <a class="btn btn-ghost" href="{{ tag.get_absolute_url }}">Cancel</a>
+    </p>
+  </form>
+</div>
+<p class="small" style="margin-top:1rem">Need a picture, a longer description or a different kind of event? <a href="{% url 'events:create' %}">Use the full event form</a>.</p>
+{% endblock %}

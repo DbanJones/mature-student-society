@@ -475,7 +475,7 @@ a.avatar-token:hover { transform: translateY(-2px); color: #fff; z-index: 2; }
   background: rgba(255, 255, 255, .5);
 }
 .prose { max-width: 46em; }
-.prose img { max-width: 100%; border-radius: var(--radius-small); }
+.prose img, img.rich-img { max-width: 100%; height: auto; border-radius: var(--radius-small); }
 .prose blockquote { border-left: 3px solid var(--sage); margin-left: 0; padding-left: 1rem; color: var(--ink-soft); }
 code { background: var(--sage-100); border-radius: 4px; padding: .05rem .35rem; font-size: .88em; }
 pre { background: var(--pine-900); color: #e8efe9; padding: 1rem; border-radius: var(--radius-small); overflow-x: auto; }
@@ -616,3 +616,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .nav-menu-lin
 .editor-toolbar .editor-pictures { font-weight: 500; text-decoration: none; padding: .25rem .6rem; border: 1px solid var(--line); border-radius: var(--radius-small); font-size: .85rem; }
 .editor-preview { margin: .6rem 0 0; padding: .8rem 1rem; border: 1px dashed var(--line); border-radius: var(--radius-small); background: var(--card); }
 .editor-preview:empty::before { content: "Nothing to preview yet."; color: var(--ink-soft); }
+.editor-preview-frame { display: block; width: 100%; max-width: 680px; height: 32rem; margin: .6rem 0 0; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--card); resize: vertical; }
+.editor-preview-frame[hidden] { display: none; }
+/* The "Add a picture" panel between the toolbar and the box. */
+.editor-upload { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; margin: 0 0 .5rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--card); }
+.editor-upload[hidden] { display: none; }
+.editor-upload label { flex: 1 1 14rem; min-width: 0; }
+.editor-upload input { width: 100%; box-sizing: border-box; }
+.editor-upload p { flex-basis: 100%; margin: 0; }

@@ -221,7 +221,7 @@ class DateRotaAndVisibilityTests(PollTestCase):
         from django.test import RequestFactory
         request = RequestFactory().get("/")
         _subject, body = build_whats_on_email(request)
-        self.assertIn("HAVE YOUR SAY", body)
+        self.assertIn("## Have your say", body)
         self.assertIn(f"/polls/{poll.pk}/", body)
 
     def test_general_poll_is_admin_only_to_create_and_members_only_to_see(self):

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load md %}
-{% load static %}
+{% load static event_links %}
 
 {% block title %}Event Calendar — {{ month_date|date:"F Y" }}{% endblock %}
 
@@ -9,7 +9,7 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Event Calendar</h1>
+    <h1>{% text "calendar.title" %}</h1>
     <p class="lede">{% text "calendar.lede" %}</p>
   </div>
   <div class="actions">
@@ -34,23 +34,33 @@
     {% if user.is_authenticated %}<label class="cal-formals-filter"><input type="checkbox" name="formals" value="1"{% if include_formals %} checked{% endif %} data-calendar-formals>Include available formals</label>{% endif %}
   </form>
 
-  <div class="cat-filter{% if active_slugs %} filtered{% endif %}" role="group"
-       aria-label="Filter by tag (pick as many as you like)">
-    <a class="tag-pill{% if not active_slugs %} active{% endif %}" href="{{ all_query }}">All</a>
-    {% for pill in pills %}
-      <a class="tag-pill{% if pill.active %} active{% endif %}"
-         style="--tag-color: {{ pill.cat.color }};"
-         href="{{ pill.query }}"
-         title="{{ pill.cat.description }}{% if pill.active %} (click to remove){% endif %}"><span class="tag-dot" aria-hidden="true"></span>{{ pill.cat.emoji }} {{ pill.cat.name }}{% if pill.active %} ✕{% endif %}</a>
-    {% endfor %}
+  {% if pills %}
+  <div class="tag-bar" id="tag-filter">
+    <details class="tag-filter"{% if tags_open %} open{% endif %}>
+      <summary>Filter by tag{% if active_slugs %} <span class="tag-filter-count">{{ active_slugs|length }}<span class="visually-hidden"> chosen</span></span>{% endif %}</summary>
+      <p class="tag-hint small muted">Pick as many as you like.</p>
+      <div class="cat-filter" role="group" aria-label="Tags">
+        <a class="tag-pill{% if not active_slugs %} active{% endif %}" rel="nofollow"
+           href="{{ all_open_query }}#tag-filter">All{% if not active_slugs %}<span class="visually-hidden">, chosen</span>{% endif %}</a>
+        {% for pill in pills %}
+          <a class="tag-pill{% if pill.active %} active{% endif %}" rel="nofollow"
+             style="--tag-color: {{ pill.cat.color }};"
+             href="{{ pill.query }}#tag-filter"
+             title="{{ pill.cat.description }}{% if pill.active %} (click to remove){% endif %}"><span class="tag-dot" aria-hidden="true"></span>{{ pill.cat.emoji }} {{ pill.cat.name }}{% if pill.active %}<span class="visually-hidden">, chosen</span><span aria-hidden="true">✕</span>{% endif %}</a>
+        {% endfor %}
+      </div>
+    </details>
+    {% if chips %}
+      <p class="tag-active">
+        Showing only
+        {% for chip in chips %}<a class="tag-pill active" rel="nofollow"
+           style="--tag-color: {{ chip.cat.color }};"
+           href="{{ chip.query }}#tag-filter"
+           title="Stop showing {{ chip.cat.name }}"><span class="visually-hidden">Remove </span>{{ chip.cat.emoji }} {{ chip.cat.name }}<span aria-hidden="true">✕</span></a>{% endfor %}
+        <a class="tag-clear" rel="nofollow" href="{{ all_query }}#tag-filter">Clear tags</a>
+      </p>
+    {% endif %}
   </div>
-  {% if active_categories %}
-    <p class="small" style="margin:.4rem 0 0">
-      Showing
-      {% for cat in active_categories %}<strong>{{ cat.emoji }} <a href="{{ cat.get_absolute_url }}" title="About this club">{{ cat.name }}</a></strong>{% if not forloop.last %} + {% endif %}{% endfor %}
-      — pills toggle, so pick as many as you like ·
-      <a href="{{ all_query }}">clear filter</a>
-    </p>
   {% endif %}
 </div>
 
@@ -90,7 +100,7 @@
               style="--c: {{ event.category.color }};">
             <span class="agenda-time">{{ event.start|date:"H:i" }}</span>
             <span class="agenda-main">
-              <a class="agenda-title" href="{{ event.get_absolute_url }}">{% if event.is_super %}🌟 {% elif event.is_official %}★ {% endif %}{{ event.title }}</a>
+              <a class="agenda-title" href="{% event_url event %}">{% if event.is_super %}🌟 {% elif event.is_official %}★ {% endif %}{{ event.title }}</a>
               <span class="agenda-meta">
                 <span class="cat-chip" style="background-color: {{ event.category.color }};">{{ event.category.emoji }} {{ event.category.name }}</span>
                 {% if event.is_super %}<span class="badge badge-super">Super event</span>{% endif %}
@@ -121,7 +131,7 @@
         {% for event in cell.events|slice:":3" %}
           <a class="cal-event{% if event.is_super %} super{% elif event.is_official %} official{% endif %}"
              style="--c: {{ event.category.color }};"
-             href="{{ event.get_absolute_url }}"
+             href="{% event_url event %}"
              title="{{ event.title }} — {{ event.start|date:'H:i' }}{% if event.location %} · {{ event.location }}{% endif %}">
             {% if event.is_super %}<span class="off-star">🌟</span> {% elif event.is_official %}<span class="off-star">★</span> {% endif %}<span class="cal-time">{{ event.start|date:"H:i" }}</span> {{ event.category.emoji }} {{ event.title }}{% if event.open_poll_count %} 📊{% endif %}</a>
         {% endfor %}
@@ -150,7 +160,7 @@
             {% if event.members_only %}<span class="badge badge-members">Members</span>{% endif %}
             {% if event.open_poll_count %}<span class="badge badge-warn">📊 vote</span>{% endif %}
             <br>
-            <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+            <a class="up-title" href="{% event_url event %}">{{ event.title }}</a>
             <span class="up-meta">
               {{ event.start|date:"D j M, H:i" }}{% if event.location %} · {{ event.location }}{% endif %}
             </span>

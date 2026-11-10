@@ -85,11 +85,30 @@ table.data input[type="checkbox"] { width: auto; }
 .tree-row.tree-custom { border-left: 4px solid var(--gold); }
 .tree-main { flex: 1 1 22rem; min-width: 0; }
 .tree-main p { margin: .25rem 0 0; }
-.tree-blocks { margin: .35rem 0 0; padding-left: 1.1rem; columns: 2; column-gap: 1.5rem; font-size: .9rem; }
-.tree-blocks li { break-inside: avoid; margin: 0 0 .15rem; }
 .tree-controls { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
 .tree-controls form { margin: 0; }
 .tree-controls select { padding: .25rem .4rem; font-size: .85rem; }
+
+/* --- page editor: every section of one fixed page, one Save ------------------
+   Only the shared colour tokens are used, so dark mode needs no rules of its own. */
+.editor-sections { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .9rem; }
+.editor-section, .editor-elsewhere, .editor-auto { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; min-width: 0; }
+.editor-section.has-error { border-color: var(--danger); }
+.editor-section-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .35rem; }
+.editor-section-head label { font-weight: 600; color: var(--heading); margin: 0; }
+.editor-section input[type="text"], .editor-section textarea { width: 100%; box-sizing: border-box; }
+.editor-hint { margin: .3rem 0 0; font-size: .85rem; color: var(--ink-soft); }
+.editor-reset { margin-top: .5rem; }
+.editor-shown { margin-top: .5rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--paper); overflow-wrap: anywhere; }
+.editor-theirs { white-space: pre-wrap; border-style: dashed; }
+.editor-elsewhere, .editor-auto { background: transparent; border-style: dashed; display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; }
+.editor-elsewhere > div, .editor-auto > div { flex: 1 1 14rem; min-width: 0; }
+.page-editor-save { display: flex; flex-wrap: wrap; gap: .5rem; padding: .7rem 0; }
+.page-editor button[hidden] { display: none; }
+/* Sticky only where the site's tab bar is not fixed to the bottom (720px and under). */
+@media (min-width: 721px) {
+  .page-editor-save { position: sticky; bottom: 0; z-index: 5; background: var(--paper); border-top: 1px solid var(--line); }
+}
 
 /* the Pictures tab */
 .picture-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-top: 1.2rem; }

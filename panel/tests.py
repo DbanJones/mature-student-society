@@ -8,6 +8,7 @@ parallel. Stub routes provide every URL name that base.html references.
 
 import datetime
 import json
+import re
 import sys
 import types
 from unittest import mock
@@ -21,6 +22,7 @@ from django.utils import timezone
 
 from accounts.models import WaitlistRequest, WhatsAppAccessRequest
 from core.models import BUILTIN_TABS, SiteConfig, SitePage
+from events import lunch
 from events.models import Category, Event
 from panel import ai, services
 from panel.models import AuditLog, MailLog
@@ -68,6 +70,7 @@ urlpatterns = [
         ("pages/<slug:slug>/edit/", "site_page_edit"),
         ("pages/<slug:slug>/history/", "site_page_history"),
         ("winter-ball/", "winter_ball"), ("menu/", "menu"), ("preview/", "preview"),
+        ("pictures/upload/", "picture_upload"),
         ("unsubscribe/", "unsubscribe"), ("resubscribe/<str:token>/", "resubscribe"),
     ])),
     path("accounts/", _ns("accounts", [
@@ -103,6 +106,23 @@ urlpatterns = [
     path("surveys/", include("surveys.urls")),
     path("notifications/", include("notifications.urls")),
 ]
+
+
+# Text between two tags that shows a web address: what Outlook would garble.
+VISIBLE_ADDRESS = r">[^<]*(?:https?://|www\.)[^<]*<"
+
+
+def html_part(message):
+    """The HTML part of a sent email, which must be its one alternative."""
+    (content, mimetype), = message.alternatives
+    assert mimetype == "text/html", mimetype
+    return content
+
+
+def html_links(html):
+    """``[(address, words), ...]`` for every link in an email's HTML part."""
+    return [(href, re.sub(r"<[^>]+>", "", words))
+            for href, words in re.findall(r'<a href="([^"]*)"[^>]*>(.*?)</a>', html, re.S)]
 
 
 @override_settings(ROOT_URLCONF="panel.tests")
@@ -152,6 +172,9 @@ class PanelTestCase(TestCase):
             reverse("panel:health_run"),
             reverse("panel:health_error_resolve", args=[1]),
             reverse("panel:health_mail_handled", args=[1]),
+            reverse("panel:ball_event"),
+            reverse("panel:page_text", args=["about"]),
+            reverse("panel:page_body_create", args=["wellbeing"]),
         ]
 
 
@@ -174,7 +197,7 @@ class PermissionTests(PanelTestCase):
                      "messages", "whatsapp_requests", "content", "contact_map",
                      "pages", "navigation", "testimonials", "terms", "stats",
                      "mailer", "audit", "superadmin", "polls", "about", "surveys", "pictures", "old_list",
-                     "health"]:
+                     "health", "ball_event"]:
             response = self.client.get(reverse(f"panel:{name}"))
             self.assertEqual(response.status_code, 200, name)
 
@@ -451,12 +474,12 @@ class MailerTests(PanelTestCase):
         subject, body = services.build_whats_on_email(request)
 
         self.assertTrue(subject.startswith("MSS: What's On — "))
-        self.assertIn("⭐ OFFICIAL EVENTS", body)
-        self.assertIn("ALSO ON", body)
+        self.assertIn("## Official events", body)
+        self.assertIn("## Also on", body)
         self.assertLess(
             body.index("Official Garden Party"), body.index("Casual Pub Night")
         )
-        self.assertIn("★ [OFFICIAL] Official Garden Party", body)
+        self.assertIn("### Official Garden Party", body)
         # Members-only events are included: the list is members.
         self.assertIn("Members Only Social", body)
         # Window and cancellation filters hold.
@@ -464,6 +487,92 @@ class MailerTests(PanelTestCase):
         self.assertNotIn("Cancelled Thing", body)
         # RSVP links are absolute and use the name-and-date slug.
         self.assertIn(f"http://testserver/events/{self.official.slug}/", body)
+
+    def test_lunch_swaps_get_one_compact_section(self):
+        tag = lunch.lunch_swap_tag()
+        now = timezone.now()
+        for n in range(1, 9):
+            Event.objects.create(
+                title=f"Lunch at Wolfson with Host{n:02d}", category=tag,
+                start=now + datetime.timedelta(days=1, hours=n),
+                created_by=self.admin, capacity=2,
+            )
+        request = RequestFactory().get("/admin/mailer/")
+        _subject, body = services.build_whats_on_email(request)
+
+        low = body.lower()
+        self.assertLess(low.index("also on"), low.index("lunch swaps"))
+        self.assertLess(low.index("also on"), low.index("casual pub night"))
+        self.assertLess(low.index("casual pub night"), low.index("lunch swaps"))
+        # Six lines at most, soonest first, and never a full entry each.
+        shown = [n for n in range(1, 9) if f"Host{n:02d}" in body]
+        self.assertEqual(shown, [1, 2, 3, 4, 5, 6])
+        self.assertGreater(body.index("Host01"), low.index("lunch swaps"))
+        self.assertNotIn("### Lunch at Wolfson", body)
+        self.assertIn("and 2 more", low)
+        self.assertIn("(2 places left)", body)
+        self.assertIn("http://testserver/events/groups/lunch-swap/", body)
+        self.assertIn("[host one yourself](http://testserver/events/lunch/)", body)
+        self.assertEqual(low.count("## lunch swaps"), 1)
+
+    def test_no_lunch_section_without_lunches(self):
+        request = RequestFactory().get("/admin/mailer/")
+        _subject, body = services.build_whats_on_email(request)
+        self.assertNotIn("lunch swaps", body.lower())
+
+    def test_draft_is_markdown(self):
+        request = RequestFactory().get("/admin/mailer/")
+        _subject, body = services.build_whats_on_email(request)
+        self.assertIn(f"[RSVP and details](http://testserver/events/{self.casual.slug}/)", body)
+        self.assertIn("[See the full calendar](http://testserver/events/)", body)
+        self.assertNotIn("[OFFICIAL]", body)
+        self.assertTrue(body.endswith(f"The {SiteConfig.get().short_name} committee"))
+        # each event is a small heading with its details straight under it
+        self.assertIn("### Casual Pub Night\n🍺 Pub Nights · ", body)
+        self.assertIn("\n📍 Wolfson gardens\n[RSVP and details](", body)
+
+    def test_draft_makes_member_words_inert(self):
+        Event.objects.create(
+            title="[free](http://evil.example)", location="<b>Hall</b> *by the* [bar](/admin/)",
+            category=Category.objects.get(slug="pub-nights"),
+            start=timezone.now() + datetime.timedelta(days=1), created_by=self.admin,
+        )
+        self.client.force_login(self.admin)
+        body = self.client.get(reverse("panel:mailer")).context["form"]["body"].value()
+        self.assertIn("free", body)
+        self.client.post(reverse("panel:mailer"), {
+            "audience": "members", "subject": "MSS: What's On — test", "body": body, "action": "send",
+        })
+        html = html_part(mail.outbox[0])
+        self.assertEqual(re.findall(r'href="[^"]*evil\.example', html), [])
+        self.assertNotIn("<b>", html)
+        self.assertNotIn("<em", html)
+        self.assertNotIn('/admin/"', html)
+        self.assertIn("[free](http://evil.example)</h3>", html)  # shown as the words they are
+        self.assertIn("&lt;b&gt;Hall&lt;/b&gt; *by the* [bar](/admin/)", html)
+        self.assertIn("\n[free](http://evil.example)\n", mail.outbox[0].body)  # and in the text part too
+
+    def test_draft_leaves_out_the_contact_line_without_an_address(self):
+        request = RequestFactory().get("/admin/mailer/")
+        config = SiteConfig.get()
+        config.contact_email = "committee@example.org"
+        config.save()
+        _subject, body = services.build_whats_on_email(request)
+        self.assertIn("Questions, ideas or something to plug? Write to committee@example.org.", body)
+        config.contact_email = ""
+        config.save()
+        _subject, body = services.build_whats_on_email(request)
+        self.assertNotIn("Questions, ideas", body)
+        self.assertNotIn("Write to", body)
+        self.assertIn("[See the full calendar](", body)
+
+    def test_mailer_heading(self):
+        config = SiteConfig.get()
+        self.assertEqual(
+            services.mailer_heading(config, "[Test] MSS: What's On — 1 Nov to 15 Nov"), "What's On — 1 Nov to 15 Nov"
+        )
+        self.assertEqual(services.mailer_heading(config, "MSS: What's On — 1 Nov to 15 Nov"), "What's On — 1 Nov to 15 Nov")
+        self.assertEqual(services.mailer_heading(config, "A word from the committee"), "A word from the committee")
 
     def test_send_records_maillog_and_audit(self):
         self.client.force_login(self.admin)
@@ -484,6 +593,234 @@ class MailerTests(PanelTestCase):
         self.assertTrue(
             AuditLog.objects.filter(actor=self.admin, action="send_mailer").exists()
         )
+
+
+class MailerEmailTests(PanelTestCase):
+    """The mailer as a designed email: an HTML part beside the text, links
+    shown as words, and a preview that is the email itself."""
+
+    MEMBER_FOOTER = (
+        "You're getting this because you have an account on MSS. To stop these emails, "
+        "untick “Email me the What's On mailer” on your profile (http://testserver/accounts/profile/), "
+        "or unsubscribe here (http://testserver/unsubscribe/)."
+    )
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def _post(self, **extra):
+        data = {"audience": "members", "subject": "MSS: What's On — test", "body": "Hello all", "action": "send"}
+        data.update(extra)
+        return self.client.post(reverse("panel:mailer"), data, follow=True)
+
+    def test_send_carries_an_html_part(self):
+        from django.conf import settings
+
+        body = "Hello all,\n\n[See the full calendar](http://testserver/events/)\n\nMore at http://testserver/polls/3/ soon."
+        response = self._post(body=body)
+        self.assertContains(response, "handed to the mail server for 2 members")
+        message = mail.outbox[0]
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(len(message.alternatives), 1)
+        self.assertEqual(message.alternatives[0][1], "text/html")
+        self.assertEqual(
+            message.body,
+            "Hello all,\n\nSee the full calendar: http://testserver/events/\n\n"
+            "More at http://testserver/polls/3/ soon." + "\n\n--\n" + self.MEMBER_FOOTER,
+        )
+        html = html_part(message)
+        self.assertEqual(html_links(html), [
+            ("http://testserver/events/", "See the full calendar"),
+            ("http://testserver/polls/3/", "the poll"),
+            ("http://testserver/accounts/profile/", "your profile"),
+            ("http://testserver/unsubscribe/", "unsubscribe here"),
+        ])
+        self.assertEqual(re.findall(VISIBLE_ADDRESS, html), [])
+        self.assertEqual(html.count('class="em-btn"'), 1)  # the calendar link, alone on its line
+        self.assertIn("em-muted em-rule", html)  # the footer has its own quiet cell
+        self.assertIn("What&#x27;s On — test</h1>", html)
+        self.assertNotIn("MSS: What", html.split("<h1", 1)[1])  # the name is above the heading, not in it
+        self.assertEqual(message.extra_headers["List-Unsubscribe"], "<http://testserver/unsubscribe/>")
+        self.assertEqual(message.to, [settings.DEFAULT_FROM_EMAIL])
+        self.assertEqual(sorted(message.bcc), ["adm1@cam.ac.uk", "mem1@cam.ac.uk"])
+        self.assertEqual(message.recipients(), message.bcc)
+
+    def test_test_send_and_one_address_carry_an_html_part(self):
+        self._post(action="test")
+        test_copy = mail.outbox[-1]
+        self.assertEqual(test_copy.recipients(), ["adm1@cam.ac.uk"])
+        self.assertEqual(test_copy.subject, "[Test] MSS: What's On — test")
+        self.assertEqual(test_copy.body, "Hello all\n\n--\n" + self.MEMBER_FOOTER)
+        html = html_part(test_copy)
+        self.assertIn(("http://testserver/unsubscribe/", "unsubscribe here"), html_links(html))
+        self.assertIn("em-muted em-rule", html)
+        self.assertIn(">What&#x27;s On — test</h1>", html)  # no "[Test]" inside the email
+        self.assertEqual(re.findall(VISIBLE_ADDRESS, html), [])
+
+        self._post(audience="address", recipient="list@lists.example.org")
+        one = mail.outbox[-1]
+        self.assertEqual(one.to, ["list@lists.example.org"])
+        self.assertEqual(one.body, "Hello all")
+        html = html_part(one)
+        self.assertIn("<p style=\"margin:0 0 14px;\">Hello all</p>", html)
+        self.assertNotIn("em-muted em-rule", html)  # the list adds its own footer: none of ours
+        self.assertNotIn("unsubscribe here", html)
+
+    def test_old_list_copy_has_its_own_footer(self):
+        from panel.models import OldSubscriber
+
+        OldSubscriber.objects.create(email="old1@example.org")
+        response = self._post(audience="both")
+        self.assertContains(response, "handed to the mail server for 2 members + 1 on the old list")
+        self.assertEqual(len(mail.outbox), 2)
+        members, old = (html_part(message) for message in mail.outbox)
+        self.assertIn("unsubscribe here", members)
+        self.assertNotIn("Stop these emails", members)
+        self.assertIn(("http://testserver/unsubscribe/", "Stop these emails"), html_links(old))
+        self.assertIn(("http://testserver/", "join the website"), html_links(old))
+        self.assertNotIn("unsubscribe here", old)
+        self.assertIn("\n\n--\nYou're getting this because you were on the MSS mailing list. ", mail.outbox[1].body)
+        for html in (members, old):
+            self.assertEqual(re.findall(VISIBLE_ADDRESS, html), [])
+
+    def test_preview(self):
+        response = self.client.post(reverse("panel:mailer_preview"), {
+            "body": "Hello all,\n\n[See the full calendar](/events/)\n\n<script>alert(1)</script>",
+            "subject": "MSS: What's On —\n test", "audience": "old",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Security-Policy"].startswith("sandbox"))
+        self.assertEqual(response["Cache-Control"], "no-store")
+        page = response.content.decode()
+        self.assertIn('<base target="_blank">', page)
+        self.assertIn("Stop these emails", page)  # the old list's footer
+        self.assertIn("join the website", page)
+        self.assertNotIn("unsubscribe here", page)
+        self.assertIn(("http://testserver/events/", "See the full calendar"), html_links(page))
+        self.assertNotIn("<script", page)
+        self.assertIn("<title>MSS: What&#x27;s On — test</title>", page)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(MailLog.objects.exists())
+        self.assertFalse(AuditLog.objects.exists())
+        # one address has no footer, and a preview with no audience shows the members' one
+        page = self.client.post(reverse("panel:mailer_preview"), {"body": "Hello", "audience": "address"}).content.decode()
+        self.assertNotIn("em-muted em-rule", page)
+        page = self.client.post(reverse("panel:mailer_preview"), {"body": "Hello"}).content.decode()
+        self.assertIn("unsubscribe here", page)
+
+    @override_settings(SITE_URL="")
+    def test_ball_and_lunches_read_the_same_in_preview_test_and_send(self):
+        """Where the November changes meet: one draft holds the ordinary
+        sections, then the lunches, with the ball linked to its own page;
+        and the preview, the test send and the real send all show it the
+        same way."""
+        now = timezone.now()
+        socials = Category.objects.create(name="Socials", slug="socials", emoji="🎉")
+
+        def make(title, days, category=socials, **kwargs):
+            return Event.objects.create(
+                title=title, category=category, created_by=self.admin,
+                start=now + datetime.timedelta(days=days), **kwargs,
+            )
+
+        ball = make("Winter Ball 2026", 6, is_super=True, location="Churchill College")
+        quiz = make("Quiz Night", 3)
+        swap = make("Lunch at Darwin with Ada", 1, category=lunch.lunch_swap_tag(), capacity=2)
+
+        subject, body = services.build_whats_on_email(RequestFactory().get("/admin/mailer/"))
+        order = [body.index(mark) for mark in (
+            "## Super events", "### Winter Ball 2026", "## Also on", "### Quiz Night",
+            "## Lunch swaps", "Lunch at Darwin with Ada", "[See the full calendar]",
+        )]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("[RSVP and details](http://testserver/winter-ball/)", body)
+        self.assertNotIn(f"/events/{ball.slug}/", body)
+        self.assertNotIn("### Lunch at Darwin", body)
+
+        expected = [
+            ("http://testserver/winter-ball/", "RSVP and details"),
+            (f"http://testserver/events/{quiz.slug}/", "RSVP and details"),
+            (f"http://testserver/events/{swap.slug}/", "Lunch at Darwin with Ada"),
+            ("http://testserver/events/groups/lunch-swap/", "See the lunches and take a place"),
+            ("http://testserver/events/lunch/", "host one yourself"),
+            ("http://testserver/events/", "See the full calendar"),
+        ]
+        preview = self.client.post(reverse("panel:mailer_preview"), {
+            "body": body, "subject": subject, "audience": "members",
+        }).content.decode()
+        self._post(body=body, subject=subject, action="test")
+        test_copy = html_part(mail.outbox[-1])
+        self._post(body=body, subject=subject)
+        sent = html_part(mail.outbox[-1])
+        for html in (preview, test_copy, sent):
+            self.assertEqual(html_links(html)[:len(expected)], expected)
+            self.assertEqual(re.findall(VISIBLE_ADDRESS, html), [])
+            # three buttons: the ball, the quiz, the lunches; plus the calendar
+            self.assertEqual(html.count('class="em-btn"'), 4)
+        # The test copy and the real one differ only in the "[Test] " title.
+        self.assertEqual(test_copy.replace("[Test] ", ""), sent)
+
+    def test_preview_is_for_admins_and_posts_only(self):
+        url = reverse("panel:mailer_preview")
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.client.force_login(self.member)
+        response = self.client.post(url, {"body": "Hello all"})
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn(b"Hello all", response.content)
+        self.client.logout()
+        response = self.client.post(url, {"body": "Hello all"})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/accounts/login/", response.url)
+
+    def test_preview_says_why_it_cannot(self):
+        url = reverse("panel:mailer_preview")
+        response = self.client.post(url, {"body": "x" * 60001, "subject": "s", "audience": "members"})
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(response["Content-Type"].startswith("text/plain"))
+        self.assertTrue(response.content.decode().startswith("Can't preview: it is too long"))
+        with mock.patch("panel.services.render_mailer", side_effect=RecursionError("too deep")):
+            response = self.client.post(url, {"body": "Hello all", "subject": "s", "audience": "members"})
+        self.assertEqual(response.status_code, 413)
+        self.assertTrue(response.content.decode().startswith("Can't preview:"))
+
+    def test_body_must_be_sendable(self):
+        def refused(body):
+            response = self.client.post(reverse("panel:mailer"), {
+                "audience": "members", "subject": "MSS: What's On — test", "body": body, "action": "send",
+            })
+            self.assertEqual(response.status_code, 200)
+            return response.context["form"].errors["body"][0]
+
+        self.assertEqual(refused("   \n"), "There is nothing to send yet.")
+        self.assertTrue(refused("x" * 60001).startswith("This can't be sent: it is too long"))
+        with mock.patch("core.emailbody.render_parts", side_effect=RecursionError("too deep")):
+            self.assertTrue(refused("Hello all").startswith("This can't be made into an email."))
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(MailLog.objects.exists())
+
+    def test_mailer_page_offers_the_editor_and_preview(self):
+        response = self.client.get(reverse("panel:mailer"))
+        self.assertContains(response, 'data-editor="/admin/mailer/preview/"')
+        self.assertContains(response, 'data-editor-frame="subject,audience"')
+        self.assertContains(response, 'data-editor-tools="Bold,Italic,Heading,List,Quote,Link"')
+        self.assertContains(response, "Open preview in a new tab")
+        self.assertContains(response, 'formaction="/admin/mailer/preview/"')
+        self.assertContains(response, "formnovalidate")
+        self.assertContains(response, "js/editor.js")
+
+    def test_a_mailer_that_cannot_be_built_is_recorded_as_failed(self):
+        from panel.views import STARTED
+
+        with mock.patch("panel.services.render_mailer", side_effect=RuntimeError("boom")):
+            response = self._post()
+        self.assertContains(response, "2 addresses not sent: the email could not be built")
+        self.assertEqual(len(mail.outbox), 0)
+        log = MailLog.objects.get()
+        self.assertFalse(log.ok)
+        self.assertNotEqual(log.error, STARTED)
+        self.assertIn("the email could not be built (RuntimeError)", log.error)
+        self.assertEqual(log.recipients, "nobody")
+        self.assertTrue(AuditLog.objects.filter(action="send_mailer", detail__startswith="FAILED").exists())
 
 
 class MailerAIDraftTests(PanelTestCase):
@@ -557,6 +894,37 @@ class MailerAIDraftTests(PanelTestCase):
             response = self._draft()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pub night on Friday.")  # original kept
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_ai_rewrite_with_changed_links_is_refused(self):
+        draft = (
+            "Hello all,\n\n### Pub night\n[RSVP and details](http://testserver/events/pub-night/)\n\n"
+            "See [the full calendar](http://testserver/events/) too."
+        )
+        rewrite = (
+            "Hey everyone!\n\n### Pub night\n[Come along](http://testserver/events/pub-night/)\n\n"
+            "There is more on [our calendar](http://testserver/events/)."
+        )
+        spoiled = {
+            "a link dropped": "Hey everyone!\n\n### Pub night\n[Come along](http://testserver/events/pub-night/)",
+            "a link changed": rewrite.replace("pub-night/", "pub-nite/"),
+            "a link added": rewrite + "\n\nAlso look at https://elsewhere.example/ this week.",
+        }
+        for why, answer in spoiled.items():
+            with mock.patch("panel.ai.draft_email", return_value=answer):
+                response = self._draft(body=draft)
+            self.assertContains(
+                response, "AI drafting failed: The rewrite came back with different links", msg_prefix=why
+            )
+            self.assertEqual(response.context["form"]["body"].value(), draft, why)  # the admin's draft is kept
+        self.assertFalse(AuditLog.objects.filter(action="ai_draft_mailer").exists())
+        # the same links under different words: accepted, with or without a code fence round it
+        for answer in (rewrite, f"```markdown\n{rewrite}\n```"):
+            with mock.patch("panel.ai.draft_email", return_value=answer):
+                response = self._draft(body=draft)
+            self.assertNotContains(response, "AI drafting failed")
+            self.assertEqual(response.context["form"]["body"].value(), rewrite)
+        self.assertEqual(AuditLog.objects.filter(action="ai_draft_mailer").count(), 2)
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -1122,7 +1490,9 @@ class PagesAdminTests(PanelTestCase):
         response = self.client.get(reverse("panel:pages"))
         self.assertContains(response, "Sponsors")
         self.assertContains(response, "Mia Member")
-        self.assertContains(response, "Fixed pages")
+        # The fixed pages are listed beside it, each with its one editing screen.
+        self.assertContains(response, '<span class="badge">fixed page</span>')
+        self.assertContains(response, reverse("panel:page_text", args=["about"]))
 
     def test_edit_records_editors_in_the_audit_log(self):
         page = SitePage.objects.create(title="Rules", slug="rules", content="Be kind.")

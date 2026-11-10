@@ -7,8 +7,8 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>About Us</h1>
-    <p class="lede">{{ site_config.tagline }}</p>
+    <h1>{% text "about.title" %}</h1>
+    {% text "about.lede" as about_lede %}{% if about_lede %}<p class="lede">{{ about_lede }}</p>{% endif %}
   </div>
   <div class="actions">{% include "core/_edit_text.html" with page_key="about" %}</div>
 </div>
@@ -35,14 +35,12 @@
 </div>
 
 <div class="card" style="margin-top: 2rem;">
-  <h3>Get in touch</h3>
+  {% text "about.contact_heading" as contact_heading %}{% if contact_heading %}<h3>{{ contact_heading }}</h3>{% endif %}
+  {% text "about.contact_text" as contact_text %}
   <p>
-    Questions, ideas, or just want to say hello? Write to us at
+    {% if contact_text %}{{ contact_text }} {% endif %}Write to us at
     <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.
   </p>
-  <p class="small muted" style="margin-bottom: 0;">
-    Not a Cambridge member but connected to one?
-    <a href="{% url 'accounts:waitlist' %}">Request an associate account</a>.
-  </p>
+  {% text "about.associates" as associates %}{% if associates %}<p class="small muted" style="margin-bottom: 0;">{{ associates }}</p>{% endif %}
 </div>
 {% endblock %}

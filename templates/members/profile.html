@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static event_links %}
 
 {% block title %}{{ member.get_full_name|default:member.username }}{% endblock %}
 
@@ -122,7 +122,7 @@
                 <span class="up-mon">{{ event.start|date:"M" }}</span>
               </span>
               <span class="up-main">
-                <a class="up-title" href="{{ event.get_absolute_url }}">{{ event.title }}</a>
+                <a class="up-title" href="{% event_url event %}">{{ event.title }}</a>
                 <span class="up-meta">{{ event.start|date:"D j M, H:i" }}</span>
               </span>
             </li>

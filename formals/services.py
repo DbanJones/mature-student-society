@@ -16,6 +16,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from accounts.models import User
+from core import emailbody
 from events.models import Category, Event
 from inbox.models import MessageBlock
 from notifications.models import Notification
@@ -711,7 +712,8 @@ def deliver_emails(limit=50):
             job.save(update_fields=["attempts", "available_at"])
         try:
             if job.recipient.is_active and not job.recipient.is_banned and job.recipient.email:
-                delivered = send_mail(job.subject, job.body, settings.DEFAULT_FROM_EMAIL, [job.recipient.email], fail_silently=False)
+                delivered = send_mail(job.subject, job.body, settings.DEFAULT_FROM_EMAIL, [job.recipient.email], fail_silently=False,
+                                      html_message=emailbody.plain_html(job.body, title=job.subject))
                 if not delivered:
                     raise RuntimeError("Mail backend did not accept the message.")
             FormalEmail.objects.filter(pk=job.pk).update(sent_at=timezone.now(), last_error="")

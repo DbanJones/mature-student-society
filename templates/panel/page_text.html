@@ -1,0 +1,96 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Edit: {{ fixed_page.title }}{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Edit: {{ fixed_page.title }}</h1>
+    <p class="lede">Every part of this page, in the order it appears. Change what you like, then press Save once.</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost btn-small" href="{{ page_url }}">View the page</a>
+    <a class="btn btn-ghost btn-small" href="{% url 'panel:pages' %}#page-{{ fixed_page.key }}">All pages</a>
+  </div>
+</div>
+<form method="post" class="page-editor" data-page-editor{% if unsaved %} data-unsaved{% endif %}>
+  {% csrf_token %}
+  {# The first submit button in the form: Enter in a one-line box must Save, never put a default back. #}
+  <button type="submit" hidden tabindex="-1">Save</button>
+  <ol class="editor-sections">
+  {% for row in rows %}
+    {% if row.kind == "text" %}
+    <li class="editor-section{% if row.error %} has-error{% endif %}" id="{{ row.anchor }}">
+      <div class="editor-section-head">
+        <label for="f-{{ row.anchor }}">{{ row.label }}</label>
+        {% if row.edited %}<span class="badge badge-ok">edited</span>{% endif %}
+      </div>
+      <input type="hidden" name="was-{{ row.key }}" value="{{ row.was }}">
+      {% if row.one_line %}
+        <input type="text" id="f-{{ row.anchor }}" name="block-{{ row.key }}" value="{{ row.value }}" maxlength="{{ row.maxlength }}"{% if row.required %} required{% endif %} aria-describedby="h-{{ row.anchor }}{% if row.error %} e-{{ row.anchor }}{% endif %}"{% if row.error %} aria-invalid="true"{% endif %}>
+      {% else %}
+        <textarea id="f-{{ row.anchor }}" name="block-{{ row.key }}" rows="{{ row.rows }}"{% if row.maxlength %} maxlength="{{ row.maxlength }}"{% endif %}{% if row.required %} required{% endif %}{% if row.format == "markdown" %} data-editor="{% url 'core:preview' %}" data-upload="{{ upload_url }}" data-upload-max="{{ upload_max }}" data-pictures="{% url 'panel:pictures' %}"{% endif %} aria-describedby="h-{{ row.anchor }}{% if row.error %} e-{{ row.anchor }}{% endif %}"{% if row.error %} aria-invalid="true"{% endif %}>{{ row.value }}</textarea>
+      {% endif %}
+      <p class="editor-hint" id="h-{{ row.anchor }}">{{ row.hint }}{% if row.required %} This one can't be empty.{% else %} Leave it empty to hide it.{% endif %}</p>
+      {% if row.format == "markdown" %}<noscript><p class="small muted">To add a picture, upload it on the <a href="{% url 'panel:pictures' %}">Pictures tab</a>, then paste its line here.</p></noscript>{% endif %}
+      {% if row.error %}<p class="errorlist" id="e-{{ row.anchor }}" role="alert">{{ row.error }}</p>{% endif %}
+      {% if row.theirs %}<div class="editor-shown editor-theirs"><strong>Their wording:</strong>
+{{ row.theirs }}</div>{% endif %}
+      {% if previewing %}
+        <div class="editor-shown prose">
+          <p class="small muted">How it will look:</p>
+          {% if row.format == "lines" %}<dl>{% for first, second in row.preview %}<dt>{{ first }}</dt><dd>{{ second }}</dd>{% endfor %}</dl>{% else %}{{ row.preview }}{% endif %}
+        </div>
+      {% endif %}
+      {% if row.can_reset %}<button class="btn btn-ghost btn-small editor-reset" type="submit" name="reset" value="{{ row.key }}" formnovalidate formaction="#{{ row.anchor }}">Back to the default wording</button>{% endif %}
+    </li>
+    {% elif row.kind == "link" %}
+    <li class="editor-elsewhere">
+      <div><strong>{{ row.label }}</strong><p class="editor-hint">{{ row.why }}</p></div>
+      <a class="btn btn-small" href="{{ row.url }}">{{ row.button }}</a>
+    </li>
+    {% elif row.kind == "body" %}
+    <li class="editor-elsewhere">
+      {% if row.body %}
+        <div><strong>{{ row.label }}</strong><p class="editor-hint">Edited on its own screen, which keeps a history of changes.</p></div>
+        <a class="btn btn-small" href="{% url 'core:site_page_edit' row.body.slug %}">Edit the main text</a>
+      {% else %}
+        <div><strong>{{ row.label }}</strong><p class="editor-hint">This page is showing its built-in support text. Create an editable copy to change it. Save your other changes first.</p></div>
+        <button class="btn btn-small" type="submit" formnovalidate formaction="{% url 'panel:page_body_create' fixed_page.key %}">Create the main text</button>
+      {% endif %}
+    </li>
+    {% else %}
+    <li class="editor-auto">
+      <div><strong>{{ row.label }}</strong><p class="editor-hint">{{ row.why }}</p></div>
+      <span class="badge">automatic</span>
+    </li>
+    {% endif %}
+  {% endfor %}
+  </ol>
+  {% if has_text %}
+  <div class="page-editor-save">
+    <button class="btn btn-accent" type="submit">Save</button>
+    <button class="btn" type="submit" name="preview" value="1" formnovalidate>Preview</button>
+    <a class="btn btn-ghost" href="{% url 'panel:pages' %}#page-{{ fixed_page.key }}">Cancel</a>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block extra_js %}<script>
+(function () {
+  // Warn before leaving with changes that have not been saved.
+  var form = document.querySelector("form[data-page-editor]");
+  if (!form) { return; }
+  var dirty = form.hasAttribute("data-unsaved");
+  form.addEventListener("input", function (event) {
+    // The "Add a picture" boxes are not part of the page's wording.
+    if (event.target.closest && event.target.closest(".editor-upload")) { return; }
+    dirty = true;
+  });
+  form.addEventListener("submit", function () { dirty = false; });
+  window.addEventListener("beforeunload", function (event) {
+    if (dirty) { event.preventDefault(); event.returnValue = ""; }
+  });
+})();
+</script>{% endblock %}

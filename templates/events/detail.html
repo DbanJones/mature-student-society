@@ -11,6 +11,12 @@
     This event has been cancelled.
   </div>
 {% endif %}
+{% if ball_page_url %}
+  <div class="flash flash-info" style="margin-bottom: 1.25rem;">
+    This is the Winter Ball. The full programme is on the
+    <a href="{{ ball_page_url }}">Winter Ball page</a>.
+  </div>
+{% endif %}
 
 <div class="page-head">
   <div>
@@ -79,6 +85,22 @@
         <div class="prose">{{ event.description|markdown }}</div>
       {% endif %}
     </div>
+
+    {% if event.is_lunch_swap and user.is_authenticated and not event.is_cancelled %}
+      <div class="card lunch-card">
+        {% if can_host_back %}
+          <h2>Enjoyed lunch?</h2>
+          <p>Return the favour: invite {{ event.effective_host.first_name|default:"your host" }} and others to lunch at your college.</p>
+          <p><a class="btn btn-accent" href="{% url 'events:lunch_new' %}?back={{ event.slug }}">Host one back</a></p>
+        {% elif lunch_host %}
+          <p><strong>You're hosting this lunch.</strong> We'll tell you each time someone takes a place or gives one back.
+            <a href="{{ event.category.get_absolute_url }}">How lunch swaps work</a></p>
+        {% else %}
+          <p><strong>This is a lunch swap.</strong> A member invites a few others to lunch at their college. If you go, think about inviting people back to yours.
+            <a href="{{ event.category.get_absolute_url }}">How lunch swaps work</a> &middot; <a href="{% url 'events:lunch_new' %}">Host your own</a></p>
+        {% endif %}
+      </div>
+    {% endif %}
 
     {% if is_going and not event.is_cancelled %}
       <div class="card card-going">
@@ -160,6 +182,9 @@
       {% endif %}
 
       {% if can_rsvp %}
+        {% if host_needs_no_place %}
+          <p class="small muted">You're hosting, so you don't need a place.</p>
+        {% else %}
         <form method="post" action="{% url 'events:rsvp' event.slug %}" class="stack">
           {% csrf_token %}
           <input type="hidden" name="action" value="{% if is_going or is_waiting %}cancel{% else %}join{% endif %}">
@@ -173,6 +198,7 @@
             <button type="submit" class="btn btn-accent">I'm going</button>
           {% endif %}
         </form>
+        {% endif %}
         <p class="small row-actions" style="margin:.8rem 0 0">
           <a class="btn btn-ghost btn-small" href="{% url 'events:ics' event.slug %}">📆 Add to calendar</a>
           {% if user.is_authenticated and not event.is_cancelled %}
