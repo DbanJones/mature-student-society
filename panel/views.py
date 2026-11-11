@@ -115,7 +115,7 @@ def waitlist(request):
     if status not in WaitlistRequest.Status.values:
         status = WaitlistRequest.Status.PENDING
     queue = WaitlistRequest.objects.filter(status=status).select_related(
-        "reviewed_by", "created_user"
+        "reviewed_by", "created_user", "invitation__inviter"
     )
     if status != WaitlistRequest.Status.PENDING:
         queue = queue.order_by("-reviewed_at")
@@ -213,6 +213,9 @@ def _approve_waitlist_request(request, wreq, note):
         user.save()
         wreq.created_user = user
         _carry_over_terms_acceptance(wreq, user)
+        from accounts import invites
+
+        invites.credit(user, wreq.invitation)
         try:
             send_associate_invite(user, request)
             messages.success(
@@ -257,6 +260,24 @@ def _carry_over_terms_acceptance(wreq, user):
         source="waitlist",
         accepted_at=wreq.terms_accepted_at,
     )
+
+
+# --- invitations ---------------------------------------------------------------------
+
+@portal_admin_required
+def invitations(request):
+    """Who has invited people, and how many of them joined."""
+    from accounts import invites
+    from accounts.models import Invitation
+
+    return render(request, "panel/invitations.html", {
+        "panel_tab": "invitations",
+        "rows": invites.leaderboard(),
+        "total_sent": Invitation.objects.count(),
+        "total_joined": Invitation.objects.filter(joined_user__isnull=False).count(),
+        "recent": Invitation.objects.filter(joined_user__isnull=False)
+                  .select_related("inviter", "joined_user").order_by("-joined_at")[:20],
+    })
 
 
 # --- member management --------------------------------------------------------------
@@ -2199,7 +2220,7 @@ def mailer(request):
     else:
         subject, body = services.build_whats_on_email(request)
         form = _mailer_form(initial={
-            "audience": "members",
+            "audience": "both",
             "recipient": config.mailing_list_address,
             "subject": subject,
             "body": body,

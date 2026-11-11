@@ -870,3 +870,37 @@ class AttendeeListTests(EventTestCase):
         self.assertFalse(any(copy.show_attendees for copy in copies))
         self.client.force_login(self.member)
         self.assertContains(self.client.get(reverse("events:create")), "Show who")
+
+
+class DescriptionHtmlTests(TestCase):
+    """An event's description takes Markdown and basic typed HTML; anything
+    unsafe is stripped by the site's sanitiser."""
+
+    def test_typed_html_shows_and_scripts_do_not(self):
+        from django.contrib.auth import get_user_model
+
+        member = get_user_model().objects.create_user(
+            username="hd101", email="hd101@cam.ac.uk", first_name="Hal", last_name="Dee",
+            college="hughes-hall", mobile="+44 7700 900002", crsid="hd101",
+        )
+        category = Category.objects.create(name="Coffee Club", slug="coffee-club")
+        event = Event.objects.create(
+            title="HTML coffee", category=category, created_by=member,
+            start=timezone.now() + datetime.timedelta(days=3),
+            description='<u>Bring a mug</u> and <a href="https://example.org/menu">see the menu</a>.'
+                        '<script>alert(1)</script><b onclick="x()">Bold</b> **also bold**',
+        )
+        self.client.force_login(member)
+        page = self.client.get(event.get_absolute_url()).content.decode()
+        self.assertIn("<u>Bring a mug</u>", page)
+        self.assertIn('<a href="https://example.org/menu">see the menu</a>', page)
+        self.assertIn("<b>Bold</b>", page)
+        self.assertIn("<strong>also bold</strong>", page)
+        self.assertNotIn("<script>alert(1)", page)
+        self.assertNotIn("onclick", page.split('class="prose"')[1].split("</div>")[0])
+
+    def test_the_poster_text_drops_the_tags(self):
+        from posters.layout import plain_text
+
+        self.assertEqual(plain_text('<u>Bring a mug</u> and <a href="https://example.org">the menu</a>'),
+                         "Bring a mug and the menu")

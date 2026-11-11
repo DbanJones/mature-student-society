@@ -559,6 +559,36 @@ backup of `media/` covers them.
   files are accepted, and nothing over 50 megapixels. This applies to
   profile and event photos as well as pictures for the pages.
 
+## Mid-November update: invitations, a more visual dashboard
+
+Pull and restart as usual. One migration runs by itself on restart:
+`accounts/migrations/0009_invitations.py` (a new table for invitations and
+one new column on waitlist requests). There is no new cron line, `.env`
+setting or package.
+
+- **Invite a member.** Every member's dashboard has an "Invite a member"
+  box. They type an email address and the site sends that person one email
+  with a link of their own. When the person joins, by Raven or through an
+  approved waitlist request, the inviting member is credited. Admin ->
+  People -> Invitations shows who has brought in the most new members, and
+  the Waitlist tab shows "Invited by ..." on a request that came through a
+  link. A member can send ten invitations a day, never twice to the same
+  address, and never to someone who is already a member.
+  Invitation links are built from `DJANGO_SITE_URL` when it is set; check
+  it is set on the server so the link always carries the right address.
+- **The dashboard is more visual**: a green welcome banner with the
+  member's numbers, shortcut tiles, a picture-led "next up" card and
+  picture cards for super events. Only `templates/dashboard/home.html` and
+  `static/css/core.css` changed; `sync_static` copies the stylesheet.
+- **Event descriptions take basic HTML** as well as Markdown, with the
+  same toolbar and preview as the page editors. Anything unsafe (scripts,
+  styles, frames) is stripped, as it is on guide and group pages.
+- **The What's On mailer page is shorter.** The introduction and the long
+  explanation are gone, the tone of voice is folded away, and a new draft
+  is addressed to "Both: website members and the old list". The two
+  warnings (mail not being delivered, a From address that is not srcf.net)
+  still appear when they apply.
+
 ## If something goes wrong
 
 - **Something is red on Site health:** each red row says what's wrong and

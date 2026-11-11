@@ -51,6 +51,10 @@ class CrsidBackend(RemoteUserBackend):
             if not user.email:
                 user.email = f"{user.username}@cam.ac.uk"
             user.save(update_fields=["crsid", "account_type", "email"])
+        if created:
+            from . import invites  # here: the app registry is not ready at import time
+
+            invites.credit(user, invites.from_session(request))
         return user
 
     def user_can_authenticate(self, user):

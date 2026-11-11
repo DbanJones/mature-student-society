@@ -190,8 +190,11 @@ def home(request):
     testimonials_tab = SiteConfig.get().tab_visibility_for("testimonials")
     testimonials_visible = visible_to(testimonials_tab, user) or (testimonials_tab != "hidden" and user.is_portal_admin)
     show_testimonial_invite = testimonials_visible and not user.testimonials.exists()
+    from accounts import invites
+
     context = {
         "nav_active": "dashboard",
+        "invite_counts": invites.counts_for(user),
         "formal_requests": formal_requests,
         "formal_attendance": formal_attendance,
         "formal_promises": formal_promises,

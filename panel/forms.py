@@ -47,7 +47,7 @@ class MailerForm(forms.Form):
     """The editable What's On draft: recipient, subject and the body, in Markdown."""
 
     audience = forms.ChoiceField(
-        label="To", widget=forms.RadioSelect, initial="members",
+        label="To", widget=forms.RadioSelect, initial="both",
         choices=[
             ("members", "Website members"),
             ("old", "The old mailing list, everyone still on it"),

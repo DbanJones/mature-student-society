@@ -16,6 +16,7 @@ urlpatterns = [
     path("people/mailing-list/download/", views.mailing_list_download, name="mailing_list_download"),
     path("people/mailing-list/<int:pk>/done/", views.mailing_list_done, name="mailing_list_done"),
     path("people/mailing-list/<int:pk>/forget/", views.mailing_list_forget, name="mailing_list_forget"),
+    path("people/invitations/", views.invitations, name="invitations"),
     path("members/", views.members, name="members"),
     path("members/<int:pk>/edit/", views.member_edit, name="member_edit"),
     path("members/<int:pk>/toggle-admin/", views.member_toggle_admin, name="member_toggle_admin"),

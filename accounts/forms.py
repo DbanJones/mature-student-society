@@ -217,6 +217,12 @@ class WaitlistForm(forms.ModelForm):
             self._update_errors(e)
 
 
+class InviteForm(forms.Form):
+    """The dashboard's "Invite a member" box."""
+
+    email = forms.EmailField(max_length=254)
+
+
 class WhatsAppRequestForm(forms.ModelForm):
     """Ask an admin to re-admit you after the one-time link has been used."""
 

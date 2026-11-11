@@ -25,7 +25,7 @@
 {% if messaging_members %}<section class="formal-section"><h2 class="formal-small-heading">Going to this formal</h2><p class="small muted">Message a member before the formal starts.</p><div class="formal-people">{% for member in messaging_members %}<a href="{% url 'inbox:thread' member.username %}" aria-label="Message {{ member.get_full_name|default:member.username }}">{{ member.get_full_name|default:member.username }} <span aria-hidden="true">&rarr;</span></a>{% endfor %}</div></section>{% endif %}
 <section class="formal-dinner-details formal-section">
   {% if not application %}{% include "formals/_invitation_terms.html" %}{% endif %}
-  {% if listing.event.description %}<div class="prose">{{ listing.event.description|markdown }}</div>{% endif %}
+  {% if listing.event.description %}<div class="prose">{{ listing.event.description|richtext }}</div>{% endif %}
   {% if listing.practical_details %}<h2>Good to know</h2><div class="prose">{{ listing.practical_details|linebreaks }}</div>{% endif %}
   <p class="small muted">Reservations close {{ listing.booking_closes_at|date:"j M, H:i" }}. College tickets are confirmed separately by the host.</p>
   <div class="formal-actions"><a class="formal-text-link" href="{% url 'events:ics' listing.event.slug %}">Add to calendar</a>{% if can_edit %}<a class="formal-text-link" href="{% url 'formals:edit' listing.pk %}">Edit formal</a>{% endif %}</div>

@@ -1892,10 +1892,12 @@ class MailerDeliveryTests(TestCase):
             DEFAULT_FROM_EMAIL="MSS <mss-webmaster@srcf.net>",
         ):
             page = self.client.get(reverse("panel:mailer"))
-        self.assertContains(page, "leaves this server")
-        self.assertContains(page, "mss-webmaster@srcf.net")
+        # all is well: the page stays quiet, with no intro or explainer text
+        self.assertNotContains(page, "not being delivered")
         self.assertNotContains(page, "not an srcf.net address")
-        self.assertContains(page, "bcc'd in batches")  # how members are sent to, and the opt-out
+        self.assertNotContains(page, "bcc'd in batches")
+        # a fresh draft goes to both the old list and the website's members
+        self.assertEqual(page.context["form"].initial["audience"], "both")
         with override_settings(
             EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
             DEFAULT_FROM_EMAIL="MSS <maturesoc@cambridgesu.co.uk>",

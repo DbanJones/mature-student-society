@@ -216,6 +216,19 @@ instead of a full entry each. A lunch's place is stored as "meeting point,
 college", but its map is asked for the college alone (`Event.map_query`),
 because a meeting point such as "Porters' Lodge" matches every college.
 
+## Invitations
+
+`accounts.Invitation` is one member inviting one email address; the emailed
+link (`/accounts/join/<token>/`) keeps the token in the visitor's session.
+`accounts.invites.credit` fills in `joined_user` when the person joins:
+from `CrsidBackend.configure_user` on a first Raven login, or from the
+panel when a waitlist request (which remembers its invitation) is approved.
+With no token it falls back to matching the new member's email address. A
+new member is credited to one invitation only, and nobody is credited for
+themselves. Limits (ten a day per member, three members per address, never
+an existing member) live in `accounts/invites.py`. Admin -> People ->
+Invitations ranks members by people who joined.
+
 ## Event posters
 
 Any logged-in member can make a poster for an event (`/posters/<slug>/`).
@@ -458,6 +471,12 @@ header keeps the lion and a Menu link, and `/menu/` lists every section
 (logged-in members also get a bottom tab bar); dark mode
 re-points the CSS tokens; `data-confirm` forms confirm through a `<dialog>`
 and simply post without JavaScript.
+
+The member dashboard leads with a banner (`.dash-hero`) and picture cards
+(`.spot`, `.feature-media`) that are dark in both themes, so their colours
+are fixed in `core.css` instead of using the tokens. Event descriptions
+render with `richtext` (Markdown plus allow-listed HTML), like guide and
+group pages.
 
 ## Deliberate simplifications
 

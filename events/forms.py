@@ -59,7 +59,7 @@ class EventForm(forms.ModelForm):
         }
         help_texts = {
             "category": "e.g. Supper Club, History Club, Coffee Club.",
-            "description": "Markdown supported — links, lists, **bold**, *italics*.",
+            "description": "Use the buttons for bold, lists and links. Basic HTML works too, e.g. <b>, <u>, <a href>, tables.",
             "image": f"JPEG/PNG, up to {settings.MAX_UPLOAD_SIZE_MB} MB.",
             "host": "Defaults to you.",
             "end": "Two hours after the start unless you change it. Clear it later to make the event open-ended.",
@@ -75,7 +75,7 @@ class EventForm(forms.ModelForm):
                 attrs={"type": "datetime-local"}, format=DATETIME_LOCAL
             ),
             "capacity": forms.NumberInput(attrs={"min": 1}),
-            "description": forms.Textarea(attrs={"rows": 8}),
+            "description": forms.Textarea(attrs={"rows": 8, "data-editor": reverse_lazy("core:preview")}),
             "attendee_info": forms.Textarea(attrs={"rows": 4}),
         }
 
@@ -118,6 +118,13 @@ class EventForm(forms.ModelForm):
             )
         if not is_create:
             del self.fields["allow_past"]
+
+    def clean_description(self):
+        description = self.cleaned_data.get("description", "")
+        problem = richtext_problem(description)
+        if problem:
+            raise forms.ValidationError(f"This description can't be shown: {problem}.")
+        return description
 
     def clean_capacity(self):
         capacity = self.cleaned_data.get("capacity")
