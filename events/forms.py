@@ -1,3 +1,5 @@
+import datetime
+
 from django import forms
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -7,6 +9,7 @@ from django.utils import timezone
 from core.richtext import richtext_problem
 from supper.models import Restaurant
 
+from . import lunch
 from .models import Category, Event
 
 DATETIME_LOCAL = "%Y-%m-%dT%H:%M"
@@ -56,7 +59,7 @@ class EventForm(forms.ModelForm):
         }
         help_texts = {
             "category": "e.g. Supper Club, History Club, Coffee Club.",
-            "description": "Markdown supported — links, lists, **bold**, *italics*.",
+            "description": "Use the buttons for bold, lists and links. Basic HTML works too, e.g. <b>, <u>, <a href>, tables.",
             "image": f"JPEG/PNG, up to {settings.MAX_UPLOAD_SIZE_MB} MB.",
             "host": "Defaults to you.",
             "end": "Two hours after the start unless you change it. Clear it later to make the event open-ended.",
@@ -72,7 +75,7 @@ class EventForm(forms.ModelForm):
                 attrs={"type": "datetime-local"}, format=DATETIME_LOCAL
             ),
             "capacity": forms.NumberInput(attrs={"min": 1}),
-            "description": forms.Textarea(attrs={"rows": 8}),
+            "description": forms.Textarea(attrs={"rows": 8, "data-editor": reverse_lazy("core:preview")}),
             "attendee_info": forms.Textarea(attrs={"rows": 4}),
         }
 
@@ -115,6 +118,13 @@ class EventForm(forms.ModelForm):
             )
         if not is_create:
             del self.fields["allow_past"]
+
+    def clean_description(self):
+        description = self.cleaned_data.get("description", "")
+        problem = richtext_problem(description)
+        if problem:
+            raise forms.ValidationError(f"This description can't be shown: {problem}.")
+        return description
 
     def clean_capacity(self):
         capacity = self.cleaned_data.get("capacity")
@@ -190,6 +200,70 @@ class EventForm(forms.ModelForm):
         if commit:
             event.save()
         return event
+
+
+class LunchSwapForm(forms.Form):
+    """The short "Host a lunch swap" form. It is turned into an ordinary
+    event by events.lunch.create_lunch; after that the full form edits it."""
+
+    FURTHEST = datetime.timedelta(days=366)  # no lunch is planned more than a year ahead
+
+    college = forms.ChoiceField(
+        choices=[("", "Choose a college")] + lunch.HOST_COLLEGES, label="College",
+        help_text="Where you can bring guests in to eat.",
+        error_messages={"required": "Choose the college where you will host."},
+    )
+    date = forms.DateField(
+        label="Date", input_formats=["%Y-%m-%d", "%d/%m/%Y"],
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        error_messages={"required": "Pick a date."},
+    )
+    time = forms.ChoiceField(
+        choices=[(t, t) for t in lunch.TIMES], initial=lunch.TIME_DEFAULT, label="Time",
+    )
+    places = forms.TypedChoiceField(
+        coerce=int, choices=[(n, str(n)) for n in range(1, lunch.PLACES_MAX + 1)],
+        initial=lunch.PLACES_DEFAULT, label="How many guests can you take?",
+        help_text="Not counting you.",
+    )
+    meet = forms.CharField(
+        max_length=80, initial="Porters' Lodge", label="Where to meet",
+        help_text="Somewhere guests can reach without a college card.",
+        error_messages={"required": "Say where guests should meet you."},
+    )
+    paying = forms.ChoiceField(
+        choices=lunch.PAYING, widget=forms.RadioSelect, initial="own", label="Who pays?",
+    )
+    note = forms.CharField(
+        required=False, max_length=600, widget=forms.Textarea(attrs={"rows": 3}),
+        label="Anything guests should know?",
+        help_text="For example the rough cost, card only, or when you need to be back.",
+    )
+
+    def __init__(self, *args, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set per request: a class-level value would freeze on the day the server started.
+        today = timezone.localdate()
+        self.fields["date"].widget.attrs["min"] = today.isoformat()
+        self.fields["date"].widget.attrs["max"] = (today + self.FURTHEST).isoformat()
+        if user.college in dict(lunch.HOST_COLLEGES):
+            self.fields["college"].initial = user.college
+
+    def clean(self):
+        cleaned = super().clean()
+        day, at = cleaned.get("date"), cleaned.get("time")
+        if day and at:
+            start = timezone.make_aware(
+                datetime.datetime.combine(day, datetime.time.fromisoformat(at))
+            )
+            if start <= timezone.now():
+                self.add_error("date", "That time has already passed. Pick a later date or time.")
+            elif day > timezone.localdate() + self.FURTHEST:
+                # A slip of the year (2072 for 2027) would post a lunch nobody finds.
+                self.add_error("date", "That is more than a year away. Check the year.")
+            else:
+                cleaned["start"] = start
+        return cleaned
 
 
 class TagPageForm(forms.ModelForm):

@@ -10,9 +10,10 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from core.models import SiteConfig, TermsVersion
 from core.net import client_ip as core_client_ip
@@ -20,10 +21,12 @@ from core.net import client_ip as core_client_ip
 from .forms import (
     CRSID_RE,
     AssociateLoginForm,
+    InviteForm,
     ProfileForm,
     WaitlistForm,
     WhatsAppRequestForm,
 )
+from . import invites
 from .models import User, WaitlistRequest, WhatsAppAccessRequest
 
 
@@ -106,6 +109,8 @@ def dev_login(request):
                 "email": f"{crsid}@cam.ac.uk",
             },
         )
+        if created:
+            invites.credit(user, invites.from_session(request))
         if not created and not user.crsid:
             user.crsid = user.username
             user.account_type = User.AccountType.RAVEN
@@ -381,11 +386,41 @@ def waitlist(request):
                 or WaitlistRequest.objects.filter(email__iexact=email).exists()
             )
             if not already_known:
-                form.save()
+                wreq = form.save(commit=False)
+                wreq.invitation = invites.from_session(request)
+                wreq.save()
             return redirect("accounts:waitlist_done")
     else:
         form = WaitlistForm()
     return render(request, "accounts/waitlist.html", {"form": form})
+
+
+# --- Invite a member ---------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def invite(request):
+    """A member invites someone by email, from their dashboard."""
+    form = InviteForm(request.POST)
+    if form.is_valid():
+        ok, message = invites.send_invitation(request.user, form.cleaned_data["email"], request)
+        (messages.success if ok else messages.info)(request, message)
+    else:
+        messages.error(request, "That doesn't look like an email address.")
+    return redirect(reverse("dashboard:home") + "#invite")
+
+
+def invite_accept(request, token):
+    """PUBLIC: where an invitation email's link lands. Remembers who
+    invited the visitor, then shows the two ways to join. A link that is
+    wrong or already used shows the same page without a name."""
+    if request.user.is_authenticated:
+        return redirect("dashboard:home")
+    invitation = invites.remember(request, token)
+    return render(request, "accounts/invite_welcome.html", {
+        "inviter": invitation.inviter if invitation else None,
+    })
 
 
 def waitlist_done(request):

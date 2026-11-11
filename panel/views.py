@@ -40,7 +40,8 @@ from core.models import (
     TermsRevision,
     TermsVersion,
 )
-from core import mailinglist
+from core import ball, mailinglist
+from core.pictures import enable_uploads
 from core.richtext import richtext_problem
 from events.models import RSVP, Category, Event
 from faq.models import ContactNode, DepartmentContact
@@ -49,6 +50,7 @@ from inbox.models import DirectMessage
 from . import ai, listsync, services, sheets
 from .forms import (
     ActivityForm,
+    BallEventForm,
     BannerForm,
     TermDatesForm,
     CommitteeMemberForm,
@@ -113,7 +115,7 @@ def waitlist(request):
     if status not in WaitlistRequest.Status.values:
         status = WaitlistRequest.Status.PENDING
     queue = WaitlistRequest.objects.filter(status=status).select_related(
-        "reviewed_by", "created_user"
+        "reviewed_by", "created_user", "invitation__inviter"
     )
     if status != WaitlistRequest.Status.PENDING:
         queue = queue.order_by("-reviewed_at")
@@ -211,6 +213,9 @@ def _approve_waitlist_request(request, wreq, note):
         user.save()
         wreq.created_user = user
         _carry_over_terms_acceptance(wreq, user)
+        from accounts import invites
+
+        invites.credit(user, wreq.invitation)
         try:
             send_associate_invite(user, request)
             messages.success(
@@ -255,6 +260,24 @@ def _carry_over_terms_acceptance(wreq, user):
         source="waitlist",
         accepted_at=wreq.terms_accepted_at,
     )
+
+
+# --- invitations ---------------------------------------------------------------------
+
+@portal_admin_required
+def invitations(request):
+    """Who has invited people, and how many of them joined."""
+    from accounts import invites
+    from accounts.models import Invitation
+
+    return render(request, "panel/invitations.html", {
+        "panel_tab": "invitations",
+        "rows": invites.leaderboard(),
+        "total_sent": Invitation.objects.count(),
+        "total_joined": Invitation.objects.filter(joined_user__isnull=False).count(),
+        "recent": Invitation.objects.filter(joined_user__isnull=False)
+                  .select_related("inviter", "joined_user").order_by("-joined_at")[:20],
+    })
 
 
 # --- member management --------------------------------------------------------------
@@ -1000,27 +1023,36 @@ def message_remove(request, pk):
 @portal_admin_required
 def pages(request):
     """Every page on the site as a tree: each menu section, the fixed pages
-    in it with the text blocks an admin can edit, and the custom pages with
-    their controls (edit, rename, move, publish, delete)."""
-    from core.blocks import BLOCKS, PAGES, SECTIONS, blocks_for
-    from core.models import SECTION_CHOICES, TextBlock
+    in it (each with one "Edit this page" screen, see page_text), and the
+    custom pages with their controls (edit, rename, move, publish, delete)."""
+    from core.blocks import BLOCKS, PAGES, SECTIONS, layout_for, normalise, stored_texts
+    from core.models import SECTION_CHOICES
     from core.views import CANONICAL_PAGE_SLUGS
 
-    edited = set(TextBlock.objects.values_list("key", flat=True))
+    # "Edited" means the wording now differs from the built-in wording. A
+    # stored row that says the same (left by a migration or the Django admin,
+    # or holding a default that has since caught up) is not an edit.
+    edited = {
+        key for key, text in stored_texts().items()
+        if key in BLOCKS and normalise(BLOCKS[key]["format"], text)
+        != normalise(BLOCKS[key]["format"], BLOCKS[key]["default"])
+    }
     custom = list(SitePage.objects.prefetch_related("editors").select_related("updated_by"))
-    bodies = {page.slug: page for page in custom if page.slug in CANONICAL_PAGE_SLUGS}
     tree = []
     for section_key, section_title in SECTIONS:
         rows = []
         for page in PAGES:
             if page["section"] != section_key:
                 continue
+            layout = layout_for(page["key"])
+            keys = [item["key"] for item in layout if item["kind"] == "text"]
             rows.append({
                 "kind": "fixed", "key": page["key"], "title": page["title"], "url": reverse(page["url"]),
                 "note": page.get("note", ""),
                 "links": [(label, reverse(name)) for label, name in page.get("links", [])],
-                "blocks": [{"key": k, "label": BLOCKS[k]["label"], "edited": k in edited} for k in blocks_for(page["key"])],
-                "body": bodies.get(page["key"]),
+                "count": len(keys),
+                "edited_count": sum(1 for key in keys if key in edited),
+                "editable": any(item["kind"] != "auto" for item in layout),
             })
         own = [p for p in custom if p.section == section_key and p.slug not in CANONICAL_PAGE_SLUGS]
         for i, page in enumerate(own):
@@ -1039,7 +1071,10 @@ def pages(request):
 
 @portal_admin_required
 def pictures(request):
-    """Pictures for the pages: upload one, copy its line into any page."""
+    """Pictures for the pages: upload one, copy its line into any page, and
+    see where each one is used."""
+    from core.pictures import picture_uses
+
     form = PictureForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         picture = form.save(commit=False)
@@ -1048,23 +1083,34 @@ def pictures(request):
         AuditLog.record(request.user, "upload_picture", target=picture.alt[:200])
         messages.success(request, "Picture added. Copy its line into a page to show it.")
         return redirect("panel:pictures")
+    pictures = list(Picture.objects.select_related("uploaded_by"))
+    uses = picture_uses(pictures)
+    for picture in pictures:
+        picture.used_on = uses[picture.pk]
     return render(request, "panel/pictures.html", {
         "nav_active": "panel",
         "panel_tab": "pictures",
         "form": form,
-        "pictures": Picture.objects.select_related("uploaded_by"),
+        "pictures": pictures,
     })
 
 
 @portal_admin_required
 @require_POST
 def picture_delete(request, pk):
+    """Delete a picture, unless a page still shows it."""
+    from core.pictures import picture_uses
+
     picture = get_object_or_404(Picture, pk=pk)
     alt = picture.alt
+    used = picture_uses([picture])[picture.pk]
+    if used:
+        messages.error(request, f"“{alt}” is used on {', '.join(used)}. Take it off first, then delete it.")
+        return redirect("panel:pictures")
     picture.image.delete(save=False)
     picture.delete()
     AuditLog.record(request.user, "delete_picture", target=alt[:200])
-    messages.success(request, f"Deleted the picture “{alt}”. Any page that used it shows a broken picture until its line is removed.")
+    messages.success(request, f"Deleted the picture “{alt}”.")
     return redirect("panel:pictures")
 
 
@@ -1107,44 +1153,160 @@ def page_section(request, pk):
     return redirect(reverse("panel:pages") + f"#section-{page.section}")
 
 
+# The line of help under each box on the page editor, by the kind of box.
+PAGE_TEXT_HINTS = {
+    "line": "One line of plain text.",
+    "plain": "Plain text. Line breaks are ignored.",
+    "inline": "One line. For a link write [the words](https://address); for bold put **two stars** each side.",
+    "markdown": "Markdown and basic HTML work. Use “Add a picture” to put a picture in.",
+    "lines": "One entry per line, with “ | ” between its two parts. Markdown works inside each part.",
+}
+
+
 @portal_admin_required
-def text_edit(request, key):
-    """Edit one text block on a fixed page (see core/blocks.py)."""
-    from core.blocks import BLOCKS, PAGES_BY_KEY, forget_texts, render_value, value_of
+def page_text(request, page_key):
+    """Every section of one fixed page on one screen, with one Save.
+
+    Properties to keep if this is restructured (see core/blocks.py):
+    - All or nothing: one bad section means nothing is saved, and every typed
+      value comes back in its box.
+    - Untouched sections are never written. The hidden was-<key> field holds
+      a fingerprint of the wording the admin was shown; a box that still
+      matches it is skipped, so changing one section cannot undo a
+      colleague's edit to another.
+    - A clash (both people changed the same section) is refused once and
+      their wording is shown; a second Save overwrites on purpose.
+    - On a re-render the hidden field keeps the posted fingerprint, never the
+      fingerprint of what was typed, or the change would look untouched on
+      the next Save and be dropped without a word.
+    - Saving the default wording removes the stored row.
+    - "Back to the default wording" and Preview save nothing.
+    """
+    from core import blocks
     from core.models import TextBlock
 
-    block = BLOCKS.get(key)
-    if block is None:
-        raise Http404("No such text.")
-    page = PAGES_BY_KEY[block["page"]]
-    stored = TextBlock.objects.filter(key=key).first()
-    text = stored.text if stored else block["default"]
-    preview = None
-    if request.method == "POST":
-        text = request.POST.get("text", "")
-        if request.POST.get("reset"):
-            TextBlock.objects.filter(key=key).delete()
-            forget_texts()
-            AuditLog.record(request.user, "reset_text", target=f"{page['title']}: {block['label']}", detail=key)
-            messages.success(request, "The original wording is back.")
-            return redirect(reverse("panel:pages") + f"#page-{page['key']}")
-        if block["format"] == "plain":
-            text = " ".join(text.split())
-        problem = richtext_problem(text) if block["format"] == "markdown" else None
-        if problem:
-            messages.error(request, f"Not saved: {problem}.")
-        elif request.POST.get("preview"):
-            preview = render_value(block, text)
+    fixed_page = blocks.PAGES_BY_KEY.get(page_key)
+    layout = blocks.layout_for(page_key)
+    if fixed_page is None or not layout:
+        raise Http404("No such page.")
+    stored = blocks.stored_texts()
+    posted = request.method == "POST"
+    reset_key = request.POST.get("reset", "") if posted else ""
+    previewing = posted and bool(request.POST.get("preview"))
+    rows, changes, problems = [], [], 0
+    for item in layout:
+        row = dict(item)
+        rows.append(row)
+        if item["kind"] == "link":
+            row["url"] = reverse(item["url_name"])
+            continue
+        if item["kind"] == "body":
+            row["body"] = SitePage.objects.filter(slug=item["slug"]).first()
+            continue
+        if item["kind"] != "text":
+            continue
+        key = item["key"]
+        text_block = blocks.BLOCKS[key]
+        fmt = text_block["format"]
+        default = blocks.normalise(fmt, text_block["default"])
+        current = blocks.normalise(fmt, stored.get(key, text_block["default"]))
+        value, was, error, theirs = current, blocks.token(current), "", ""
+        if posted:
+            typed = blocks.normalise(fmt, request.POST.get(f"block-{key}", current))
+            was_posted = request.POST.get(f"was-{key}", "")
+            if key == reset_key:
+                value, was = default, was_posted or was
+            elif blocks.token(typed) == was_posted or typed == current:
+                pass  # untouched, or already what is live: show the live wording
+            elif was_posted and blocks.token(current) != was_posted:
+                value, theirs = typed, current
+                error = (f"Not saved: someone else changed “{text_block['label']}” while you were editing. "
+                         "Their wording is shown below yours; copy what you need and save again.")
+                # `was` is now the live fingerprint, so a second Save overwrites on purpose.
+            else:
+                value, was = typed, was_posted or was
+                problem = blocks.problem_with(text_block, typed)
+                if problem:
+                    error = f"Not saved: {problem}."
+                else:
+                    changes.append((key, text_block, typed, default))
+        problems += bool(error)
+        short = fmt == "plain" and len(text_block["default"]) <= 90
+        # A one-line box shows about 40 characters on a phone and hides the
+        # rest, so longer wording gets a box that wraps. Line breaks typed
+        # into it are still taken out when it is saved.
+        one_line = short and max(len(default), len(value)) <= 40
+        row.update({
+            "label": text_block["label"], "format": fmt, "required": text_block["required"],
+            "anchor": "s-" + key.replace(".", "-").replace("_", "-"),
+            "value": value, "was": was, "error": error, "theirs": theirs,
+            "edited": current != default, "can_reset": value != default,
+            "unsaved": value != current,
+            "was_reset": key == reset_key,
+            "one_line": one_line,
+            "rows": 2 if short else {"markdown": 10, "lines": 8}.get(fmt, 3),
+            "maxlength": {"plain": blocks.PLAIN_MAX, "inline": blocks.INLINE_MAX}.get(fmt),
+            "hint": PAGE_TEXT_HINTS["line" if one_line else fmt],
+            "preview": blocks.render_value(text_block, value) if previewing else None,
+        })
+    if posted and not reset_key and not previewing:
+        if problems:
+            messages.error(request, "Nothing was saved. Put right the section marked below, then press Save again.")
+        elif not changes:
+            messages.info(request, "Nothing was changed.")
+            return redirect("panel:page_text", page_key)
         else:
-            TextBlock.objects.update_or_create(key=key, defaults={"text": text, "updated_by": request.user})
-            AuditLog.record(request.user, "edit_text", target=f"{page['title']}: {block['label']}", detail=key)
+            with transaction.atomic():
+                for key, text_block, typed, default in changes:
+                    target = f"{fixed_page['title']}: {text_block['label']}"[:200]
+                    if typed == default:
+                        TextBlock.objects.filter(key=key).delete()
+                        AuditLog.record(request.user, "reset_text", target=target, detail=key)
+                    else:
+                        TextBlock.objects.update_or_create(
+                            key=key, defaults={"text": typed, "updated_by": request.user})
+                        AuditLog.record(request.user, "edit_text", target=target, detail=key)
+            blocks.forget_texts()
             messages.success(request, "Saved. The new wording is live.")
-            return redirect(reverse("panel:pages") + f"#page-{page['key']}")
-    return render(request, "panel/text_form.html", {
+            return redirect("panel:page_text", page_key)
+    if reset_key in blocks.BLOCKS:
+        messages.info(
+            request,
+            f"The default wording for “{blocks.BLOCKS[reset_key]['label']}” is back in the box. "
+            "Press Save to keep it.",
+        )
+    return render(request, "panel/page_text.html", {
         "nav_active": "panel", "panel_tab": "pages",
-        "text_block": block, "key": key, "page": page, "page_url": reverse(page["url"]),
-        "text": text, "is_default": stored is None, "preview": preview,
+        "fixed_page": fixed_page, "page_url": reverse(fixed_page["url"]), "rows": rows,
+        "has_text": any(row["kind"] == "text" for row in rows),
+        "previewing": previewing,
+        "unsaved": any(row.get("unsaved") for row in rows),
+        "upload_url": reverse("core:picture_upload"), "upload_max": settings.MAX_UPLOAD_SIZE_MB,
     })
+
+
+@portal_admin_required
+@require_POST
+def page_body_create(request, page_key):
+    """Make the editable main text of a fixed page, starting from the built-in
+    wording, so the support numbers are never replaced by a blank page."""
+    from core import blocks
+    from core.views import WELLBEING_FALLBACK
+
+    slugs = [item["slug"] for item in blocks.layout_for(page_key) if item["kind"] == "body"]
+    if not slugs:
+        raise Http404("No such page.")
+    # Only Wellbeing has a main text of its own, so the one constant is enough.
+    page, created = SitePage.objects.get_or_create(slug=slugs[0], defaults={
+        "title": blocks.PAGES_BY_KEY[page_key]["title"], "content": WELLBEING_FALLBACK,
+        "is_published": True, "nav_label": "", "nav_visibility": "public", "section": "about",
+        "sort_order": 50, "updated_by": request.user,
+    })
+    if created:
+        page.save_revision(request.user, SitePageRevision.Action.CREATED)
+        AuditLog.record(request.user, "create_page", target=page.title)
+        messages.success(request, "Created the main text from the built-in wording. Change it below, then save.")
+    return redirect("core:site_page_edit", page.slug)
 
 
 @portal_admin_required
@@ -1180,6 +1342,32 @@ def navigation(request):
             "lent_start": config.lent_start,
             "easter_start": config.easter_start,
         }),
+    })
+
+
+@portal_admin_required
+def ball_event(request):
+    """Which calendar event the Winter Ball page shows."""
+    config = SiteConfig.get()
+    if request.method == "POST":
+        form = BallEventForm(request.POST, config=config)
+        if form.is_valid():
+            form.apply(config)
+            chosen = form.cleaned_data["event"]
+            AuditLog.record(
+                request.user, "set_ball_event",
+                target=chosen.title if chosen else "",
+                detail="chosen by hand" if chosen else "found automatically",
+            )
+            messages.success(request, "Winter Ball event saved.")
+            return redirect("panel:ball_event")
+    else:
+        form = BallEventForm(config=config)
+    return render(request, "panel/ball_event.html", {
+        "nav_active": "panel",
+        "panel_tab": "pages",
+        "form": form,
+        "showing": ball.find_event(config),
     })
 
 
@@ -1254,6 +1442,7 @@ def page_create(request):
     if request.GET.get("section") in dict(SECTION_CHOICES):
         initial["section"] = request.GET["section"]
     form = SitePageForm(request.POST or None, initial=initial)
+    enable_uploads(form, "content", request.user)
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
         page.updated_by = request.user
@@ -1275,6 +1464,7 @@ def page_create(request):
 def page_edit(request, pk):
     page = get_object_or_404(SitePage, pk=pk)
     form = SitePageForm(request.POST or None, instance=page)
+    enable_uploads(form, "content", request.user)
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
         page.updated_by = request.user
@@ -2030,7 +2220,7 @@ def mailer(request):
     else:
         subject, body = services.build_whats_on_email(request)
         form = _mailer_form(initial={
-            "audience": "members",
+            "audience": "both",
             "recipient": config.mailing_list_address,
             "subject": subject,
             "body": body,
@@ -2055,6 +2245,31 @@ def mailer(request):
         "event_count": services.whats_on_events().count(),
         "recent_logs": MailLog.objects.select_related("sent_by")[:5],
     })
+
+
+@portal_admin_required
+@require_POST
+def mailer_preview(request):
+    """The whole email, exactly as a send would build it, for the preview
+    under the draft and for "Open preview in a new tab". Sends nothing and
+    records nothing. The answer is sandboxed, so it cannot run anything
+    even when opened as a page of its own."""
+    plain = "text/plain; charset=utf-8"
+    body = request.POST.get("body", "")
+    problem = richtext_problem(body)
+    if problem:
+        return HttpResponse(f"Can't preview: {problem}.", status=413, content_type=plain)
+    config = SiteConfig.get()
+    subject = " ".join(request.POST.get("subject", "").split())[:200]
+    footer = services.footer_for(request, config, request.POST.get("audience") or "members")
+    try:
+        _text, html = services.render_mailer(request, config, subject, body, footer, preview=True)
+    except Exception:
+        return HttpResponse("Can't preview: this can't be made into an email as it is.", status=413, content_type=plain)
+    response = HttpResponse(html)
+    response["Content-Security-Policy"] = "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; style-src 'unsafe-inline'"
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @portal_admin_required

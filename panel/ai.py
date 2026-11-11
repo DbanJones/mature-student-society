@@ -22,7 +22,7 @@ import urllib.request
 TIMEOUT_SECONDS = 30
 
 # Cap the drafted body — a "What's On" digest is short; this bounds cost.
-MAX_OUTPUT_TOKENS = 2000
+MAX_OUTPUT_TOKENS = 4000
 
 # Per-engine wiring: (protocol, endpoint, default model). The model can be
 # overridden per engine without a code change via an environment variable,

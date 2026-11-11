@@ -17,13 +17,14 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.core.mail import send_mail
 from django.db.models import Count, Q
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import date_format
 from django.views.decorators.http import require_POST
 
+from core import ball, emailbody
 from core.forms import SitePageContentForm
 from core.models import (
     Activity,
@@ -34,6 +35,7 @@ from core.models import (
     TermsVersion,
 )
 from core.net import absolute_url, client_ip
+from core.pictures import enable_uploads
 from core.richtext import richtext_problem
 from events.models import RSVP, Event
 from guide.models import GuidePage
@@ -182,6 +184,39 @@ def _allow(key, limit, seconds):
         return True
 
 
+PICTURE_UPLOADS_PER_HOUR = 20
+
+
+@login_required
+@require_POST
+def picture_upload(request):
+    """Add a picture from an editor's "Add a picture" button. Answers in JSON."""
+    from panel.forms import PictureForm
+    from panel.models import AuditLog
+
+    from .pictures import can_upload_pictures
+
+    if not can_upload_pictures(request.user):
+        return JsonResponse({"error": "You can't add pictures here."}, status=403)
+    if not _allow(f"picture-upload:{request.user.pk}", PICTURE_UPLOADS_PER_HOUR, 3600):
+        return JsonResponse({"error": "That's a lot of pictures. Try again in an hour."}, status=429)
+    if "image" not in request.FILES:
+        return JsonResponse({"error": "Choose a picture first."}, status=400)
+    if not request.POST.get("alt", "").strip():
+        return JsonResponse({"error": "Please describe the picture."}, status=400)
+    form = PictureForm(request.POST, request.FILES)
+    if not form.is_valid():
+        first = next(iter(form.errors.values()))[0]
+        return JsonResponse({"error": str(first)}, status=400)
+    picture = form.save(commit=False)
+    picture.uploaded_by = request.user
+    picture.save()
+    AuditLog.record(request.user, "upload_picture", target=picture.alt[:200], detail=picture.image.name)
+    alt = " ".join(picture.alt.replace("[", "(").replace("]", ")").split())
+    return JsonResponse({"id": picture.pk, "alt": picture.alt, "url": picture.image.url,
+                         "markdown": f"![{alt}]({picture.image.url})"})
+
+
 def _only_on_the_list(email):
     """Someone on the society's list who has no account and isn't on the old
     list: the website's mailer never reached them, but the page promised the
@@ -198,14 +233,14 @@ def _only_on_the_list(email):
         return  # already waiting
     if listsync.queue_removal([], None, "someone asked to leave on the website's unsubscribe page",
                               addresses=[email]):
+        subject = "You asked to leave the society's mailing list"
+        text = (
+            f"Someone asked, on the website's unsubscribe page, for this address ({email}) to come off the "
+            f"society's mailing list. The committee will take it off when it next tidies the list.\n\n"
+            f"If that wasn't you, reply to this email and they'll leave you on it.\n"
+        )
         try:
-            send_mail(
-                "You asked to leave the society's mailing list",
-                f"Someone asked, on the website's unsubscribe page, for this address ({email}) to come off the "
-                f"society's mailing list. The committee will take it off when it next tidies the list.\n\n"
-                f"If that wasn't you, reply to this email and they'll leave you on it.\n",
-                None, [email],
-            )
+            send_mail(subject, text, None, [email], html_message=emailbody.plain_html(text, title=subject))
         except Exception:
             logger.warning("Could not send the list-leaving confirmation", exc_info=True)
 
@@ -247,14 +282,17 @@ def unsubscribe(request):
                 )
                 undo = absolute_url(request, reverse("core:resubscribe", args=[token]))
                 also = f"{list_note}\n\n" if list_note else ""
+                subject = "You've been unsubscribed from the What's On mailer"
+                text = (
+                    f"This address ({email}) won't get the website's What's On mailer any more.\n\n"
+                    f"{also}"
+                    f"If that wasn't you, or you change your mind, put it back with this link "
+                    f"(it works for {RESUBSCRIBE_DAYS} days):\n{undo}\n"
+                )
                 try:
                     send_mail(
-                        "You've been unsubscribed from the What's On mailer",
-                        f"This address ({email}) won't get the website's What's On mailer any more.\n\n"
-                        f"{also}"
-                        f"If that wasn't you, or you change your mind, put it back with this link "
-                        f"(it works for {RESUBSCRIBE_DAYS} days):\n{undo}\n",
-                        None, [email],
+                        subject, text, None, [email],
+                        html_message=emailbody.plain_html(text, base=absolute_url(request, "/"), title=subject),
                     )
                 except Exception:
                     logger.warning("Could not send the unsubscribe confirmation", exc_info=True)
@@ -299,31 +337,38 @@ def menu(request):
 def winter_ball(request):
     """The Winter Ball's own page — the society's flagship night.
 
-    If a Winter Ball event exists on the calendar, the page wires its RSVP
-    button (and capacity counter) to it; otherwise it renders as a save-the-
-    date page.
+    core/ball.py decides which calendar event is the ball. With one, the
+    page shows its date and venue and takes bookings; without, it is a
+    save-the-date page. A members-only event keeps its details from
+    logged-out visitors.
     """
-    ball = (
-        Event.objects.visible_to(request.user)
-        .filter(title__icontains="winter ball", formal_listing__isnull=True)
-        .select_related("formal_listing")
-        .upcoming()
-        .first()
+    event = ball.current(request)
+    ball_locked = bool(
+        event and event.members_only and not request.user.is_authenticated
     )
+    if ball_locked:
+        event = None
     going_count = spots_left = None
-    is_going = False
-    if ball:
-        going_count = ball.going_count
-        if ball.capacity:
-            spots_left = max(0, ball.capacity - going_count)
-        rsvp = ball.user_rsvp(request.user)
+    is_going = is_waiting = can_reserve = can_manage = False
+    if event:
+        going_count = event.going_count
+        if event.capacity:
+            spots_left = max(0, event.capacity - going_count)
+        rsvp = event.user_rsvp(request.user)
         is_going = bool(rsvp and rsvp.status == RSVP.Status.GOING)
+        is_waiting = bool(rsvp and rsvp.status == RSVP.Status.WAITING)
+        can_reserve = request.user.is_authenticated and not event.is_past
+        can_manage = event.can_edit(request.user)
     return render(request, "core/winter_ball.html", {
         "nav_active": "ball",
-        "ball": ball,
+        "ball": event,
+        "ball_locked": ball_locked,
         "going_count": going_count,
         "spots_left": spots_left,
         "is_going": is_going,
+        "is_waiting": is_waiting,
+        "can_reserve": can_reserve,
+        "can_manage": can_manage,
     })
 
 
@@ -391,13 +436,32 @@ class _PreviewViewer:
         self.is_authenticated = authenticated
 
 
+# The Wellbeing page's built-in main text, as Markdown. It shows while there
+# is no editable "wellbeing" page (or the visitor may not see it), and it is
+# what "Create the main text" in the page editor starts the editable page from.
+WELLBEING_FALLBACK = """At MSS we know that mature students at Cambridge face particular pressures — often juggling study with careers, family responsibilities or major life changes. It is easy to feel isolated or overwhelmed, and asking early always beats asking late.
+
+## Where to get support
+
+**MSS is a peer community, not a counselling service.** We have no trained mental health practitioners on the committee. If you are struggling, please go to the University’s official support services below — they are free, confidential and staffed by qualified professionals.
+
+- **In an emergency, or if someone is in immediate danger — call 999.**
+- **University Student Wellbeing Service (including the University Counselling Service)** — the University’s official service for students: [studentwellbeing.admin.cam.ac.uk](https://www.studentwellbeing.admin.cam.ac.uk/)
+- **NHS 111** — free, 24/7; select the mental health option for urgent help.
+- **Samaritans — 116 123** — free, 24/7, any time, any reason.
+- **Your College Tutor or College Nurse** — your first port of call inside your college for anything affecting your work or your welfare.
+"""
+
+
 def wellbeing(request):
     """The Wellbeing page.
 
-    The body is an admin-editable SitePage (slug ``wellbeing``) so the
-    committee can change it from panel → Content without a deploy. The page
-    header and the crisis-support panel stay in the template: those are the
-    parts nobody should be able to delete by accident.
+    The main text is an admin-editable SitePage (slug ``wellbeing``) so the
+    committee can change it without a deploy. While that page does not
+    exist, or this visitor may not see it, the built-in support text
+    (``WELLBEING_FALLBACK``) shows in its place, so the support routes are
+    always on the page. The title, the line under it and the team card are
+    text blocks (core/blocks.py).
     """
     page = SitePage.objects.filter(slug=WELLBEING_SLUG).first()
     if page and not page.is_visible_to(request.user):
@@ -405,6 +469,7 @@ def wellbeing(request):
     return render(request, "core/wellbeing.html", {
         "page": page,
         "can_edit": page.can_edit(request.user) if page else False,
+        "fallback": WELLBEING_FALLBACK,
     })
 
 
@@ -453,6 +518,7 @@ def _editable_page_or_403(request, slug):
 def site_page_edit(request, slug):
     page = _editable_page_or_403(request, slug)
     form = SitePageContentForm(request.POST or None, instance=page)
+    enable_uploads(form, "content", request.user)
     previewing = False
     if request.method == "POST":
         if "preview" in request.POST:

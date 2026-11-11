@@ -10,6 +10,10 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 PROFILE_MAX_PX = 512
 EVENT_MAX_PX = 1600
+# A ceiling on width x height, and the only formats accepted. Both are read
+# when shrink_image runs.
+MAX_PIXELS = 50_000_000
+ALLOWED_FORMATS = {"JPEG", "MPO", "PNG", "WEBP", "GIF"}
 
 
 def shrink_image(upload, max_px):
@@ -21,8 +25,14 @@ def shrink_image(upload, max_px):
     """
     try:
         image = Image.open(upload)
+        # Checked before load(): Pillow will decode formats such as EPS by
+        # running other programs, and a huge picture can exhaust the memory.
+        if image.format not in ALLOWED_FORMATS:
+            raise forms.ValidationError("Please use a JPEG, PNG, WebP or GIF picture.")
+        if image.width * image.height > MAX_PIXELS:
+            raise forms.ValidationError("That picture is too large. Please use one under 50 megapixels.")
         image.load()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
         raise forms.ValidationError("That file doesn't look like an image.") from exc
     image = ImageOps.exif_transpose(image)
     image.thumbnail((max_px, max_px))

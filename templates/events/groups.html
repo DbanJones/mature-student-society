@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load md %}
-{% load static %}
+{% load static event_links %}
 
 {% block title %}Groups{% endblock %}
 
@@ -9,8 +9,8 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Groups</h1>
-    <p class="lede">{% text "groups.lede" %}</p>
+    <h1>{% text "groups.title" %}</h1>
+    {% text "groups.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   <div class="actions">
     {% include "core/_edit_text.html" with page_key="groups" %}
@@ -28,7 +28,7 @@
       {% if group.description %}<p class="group-card-blurb">{{ group.description }}</p>{% endif %}
       <p class="group-card-next small">
         {% if group.next_event %}
-          Next: <a href="{{ group.next_event.get_absolute_url }}">{{ group.next_event.title }}</a>, {{ group.next_event.start|date:"D j M" }}
+          Next: <a href="{% event_url group.next_event %}">{{ group.next_event.title }}</a>, {{ group.next_event.start|date:"D j M" }}
           {% if group.upcoming_count > 1 %}<span class="muted">· {{ group.upcoming_count }} coming up</span>{% endif %}
         {% else %}
           <span class="muted">Nothing scheduled just yet</span>

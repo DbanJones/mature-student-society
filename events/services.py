@@ -1,12 +1,12 @@
 """Serialise event places and waitlist promotion on the event's database row."""
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
 from .models import Event, RSVP
+from . import lunch
 
 
 class EventBookingError(ValidationError):
@@ -56,14 +56,17 @@ def tell_promoted(event, promoted):
     from notifications.services import notify
 
     when = timezone.localtime(event.start).strftime("%A %d %B at %H:%M")
-    url = getattr(settings, "SITE_URL", "").rstrip("/") + event.get_absolute_url()
+    # notify() adds the event's address on a line of its own, which the HTML
+    # part shows as a button; an address at the end of the sentence read
+    # "...can join: the event page".
     notify(
         [rsvp.user for rsvp in promoted], Notification.Kind.WAITLIST,
         f"A place opened up: you're now going to {event.title}.", event.get_absolute_url(),
         email_subject=f"A place has opened up: {event.title}",
         email_body=(f'A place has come free at "{event.title}" on {when}, and you have moved off the waitlist. '
-                    f"You are now going. If you cannot make it, cancel from the event page so the next member can join: {url}"),
+                    "You are now going. If you cannot make it, cancel from the event page so the next member can join."),
     )
+    lunch.tell_host(event, joined=[rsvp.user for rsvp in promoted])
 
 
 @transaction.atomic
@@ -95,10 +98,14 @@ def set_rsvp(user, event_id, action="toggle"):
         return _result(event, existing, False, previous)
     if action == "cancel" and previous == RSVP.Status.CANCELLED:
         return _result(event, existing, False, previous)
+    if action == "join" and event.is_lunch_swap and user.pk == event.effective_host.pk:
+        raise EventBookingError("You're hosting this lunch, so you don't need a place.")
 
     if action == "cancel":
         existing.status = RSVP.Status.CANCELLED
         existing.save(update_fields=["status", "updated_at"])
+        if previous == RSVP.Status.GOING:
+            lunch.tell_host(event, left=[user])
         tell_promoted(event, _promote_locked(event))
         return _result(event, existing, True, previous)
 
@@ -110,6 +117,8 @@ def set_rsvp(user, event_id, action="toggle"):
     else:
         existing.status = status
         existing.save(update_fields=["status", "updated_at"])
+    if status == RSVP.Status.GOING:
+        lunch.tell_host(event, joined=[user])
     return _result(event, existing, True, previous)
 
 

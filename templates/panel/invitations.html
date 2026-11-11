@@ -1,0 +1,47 @@
+{% extends "panel/base_panel.html" %}
+
+{% block title %}Invitations{% endblock %}
+
+{% block panel_content %}
+<div class="page-head">
+  <div>
+    <h1>Invitations</h1>
+    <p class="muted">Members invite people from their dashboard. <strong>{{ total_sent }}</strong> invitation{{ total_sent|pluralize }} sent, <strong>{{ total_joined }}</strong> new member{{ total_joined|pluralize }} so far.</p>
+  </div>
+</div>
+
+{% if rows %}
+  <div class="table-scroll">
+    <table class="data">
+      <thead>
+        <tr><th>#</th><th>Member</th><th>New members</th><th>Invitations sent</th></tr>
+      </thead>
+      <tbody>
+        {% for member in rows %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td><a href="{% url 'members:profile' member.username %}">{{ member.get_full_name|default:member.username }}</a>{% if member.college %} <span class="small muted">{{ member.get_college_display }}</span>{% endif %}</td>
+            <td><strong>{{ member.invites_joined }}</strong></td>
+            <td>{{ member.invites_sent }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty">Nobody has sent an invitation yet.</div>
+{% endif %}
+
+{% if recent %}
+  <h2>Latest to join</h2>
+  <div class="card">
+    <ul>
+      {% for invitation in recent %}
+        <li>{{ invitation.joined_at|date:"j M Y" }}:
+          <a href="{% url 'members:profile' invitation.joined_user.username %}">{{ invitation.joined_user.get_full_name|default:invitation.joined_user.username }}</a>
+          <span class="muted small">invited by {{ invitation.inviter.get_full_name|default:invitation.inviter.username }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% endblock %}

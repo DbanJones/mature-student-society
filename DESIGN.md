@@ -85,6 +85,9 @@ security invariants in DEPLOYMENT_SRCF.md §7–8):
 | Approve, feature, unpublish testimonials | — | — | — | ✔ |
 | Edit the words of a managed page | — | named editors | | ✔ |
 | Create/delete pages, set audience, nav and editors | — | — | — | ✔ |
+| Edit the wording of a fixed page (Admin → Content → Pages → Edit this page) | — | — | — | ✔ |
+| Add a picture from an editor (`/pictures/upload/`) | — | named page editors, group owners | | ✔ |
+| Delete a picture (only when no page shows it) | — | — | — | ✔ |
 | Direct-message the committee | — | ✔ | ✔ | ✔ |
 | Direct-message any member | — | only if an admin enabled them | | ✔ |
 | Direct-message the host of an event you're going to (and reply) | — | ✔ | ✔ | ✔ |
@@ -170,10 +173,13 @@ the What's On mailer.
 
 `notifications.services.notify()` is the only writer. Hooks: a poll opens
 or decides on an event you're going to, an event you're going to is
-cancelled or moved, you come off a waitlist, your testimonial is reviewed,
+cancelled or moved, you come off a waitlist, a guest takes or gives back a
+place at a lunch you host, your testimonial is reviewed,
 a page you edit is changed by someone else. Cancellations and waitlist
 promotions are emailed as well. The bell in the header and the mobile tab
-bar show the unread count.
+bar show the unread count. An email's link is the notice's path after
+`settings.SITE_URL`; when that is not set the email goes without a link
+rather than with a bare path.
 
 `notify()` writes its email jobs in the same transaction. The
 `process_notifications` worker claims each job with a ten-minute lease and sends
@@ -194,7 +200,34 @@ Every event has an `.ics` download; every member has a token-protected
 feed at `/me/calendar.ics` (reset from the dashboard). A full event puts
 new RSVPs on a waitlist and promotes the first in line when someone drops
 out. Events can be duplicated a week on, or repeated weekly for up to 12
-weeks.
+weeks; the copies keep the time on the clock (12:30 stays 12:30 across a
+clock change), worked out in Python rather than by adding days in UTC.
+
+## Lunch swaps
+
+A lunch swap is an ordinary event carrying the `lunch-swap` tag; there is no
+separate model and no ledger. `Event.save()` keeps anything with that tag
+members only. `events/lunch.py` holds what is special: the short form's
+builder, the notices to the host when a guest takes or gives back a place
+(bell and email, bell only after six in an hour), and the "host one back"
+nudge on a finished lunch's own page. The host cannot take one of their own
+guest places. The What's On draft lists lunches in one short section
+instead of a full entry each. A lunch's place is stored as "meeting point,
+college", but its map is asked for the college alone (`Event.map_query`),
+because a meeting point such as "Porters' Lodge" matches every college.
+
+## Invitations
+
+`accounts.Invitation` is one member inviting one email address; the emailed
+link (`/accounts/join/<token>/`) keeps the token in the visitor's session.
+`accounts.invites.credit` fills in `joined_user` when the person joins:
+from `CrsidBackend.configure_user` on a first Raven login, or from the
+panel when a waitlist request (which remembers its invitation) is approved.
+With no token it falls back to matching the new member's email address. A
+new member is credited to one invitation only, and nobody is credited for
+themselves. Limits (ten a day per member, three members per address, never
+an existing member) live in `accounts/invites.py`. Admin -> People ->
+Invitations ranks members by people who joined.
 
 ## Event posters
 
@@ -233,15 +266,61 @@ files.
 Admin → Content → Pages is a tree: each menu section, the fixed pages in
 it, and the custom `SitePage`s with their controls (edit text, rename and
 settings, move up or down, move to another menu, publish, history,
-delete). A fixed page keeps its layout in its template, but every piece
-of prose on it is a text block registered in `core/blocks.py` (key, page,
-label, format, default wording) and read with `{% text "key" %}`; an
-admin's edit is a `core.TextBlock` row with that key, and deleting the row
-brings the default back. Formats are markdown, plain, and lines (one
-entry per line split on " | ", for the home page numbers, the Winter Ball
-timeline, cards and FAQ). Admins see an "Edit text" link on each fixed
-page that opens the tree at that page. Custom pages carry a `section`
-(About, Guide or Members portal) that decides which menu lists them.
+delete). Custom pages carry a `section` (About, Guide or Members portal)
+that decides which menu lists them.
+
+A fixed page keeps its layout in its template, but every heading, line
+and passage a committee might reword is a text block registered in
+`core/blocks.py` (key, page, label, format, default wording, and whether
+it may be left empty) and read with `{% text "key" %}`. An admin's edit is
+a `core.TextBlock` row with that key; no row means the default. There are
+four formats: `plain` (one run of text, at most 400 characters, escaped),
+`inline` (one line of Markdown without the wrapping paragraph, at most
+600, for a sentence that needs a link or bold), `markdown` (full rich
+text, the only format that takes pictures) and `lines` (one entry per
+line split on " | ", for the home page numbers and the Winter Ball
+timeline, cards and FAQ; a line with no "|" is refused, though the second
+part may be left empty). A default must equal what the template showed
+before the block existed, so a fresh site reads the same. An optional
+block that is emptied hides its element, wrapper included: templates use
+`{% text "key" as name %}{% if name %}<h2>{{ name }}</h2>{% endif %}`,
+and a test empties every optional block in turn and fails if a page is
+left with an empty box. Page titles and the home page's headline are
+`required` and cannot be saved empty. "Edited" means the stored wording
+differs from the default, on the Pages tab and the editing screen alike.
+
+`blocks.LAYOUT` lists everything on each fixed page in the order it
+appears: text blocks, `link` rows for parts edited on another screen (the
+committee, the contact map, the Winter Ball event), `auto` rows for lists
+that fill themselves, and one `body` row for the Wellbeing page's main
+text, which is a `SitePage` with history. `panel:page_text`
+(`/admin/content/pages/text/<page>/`) renders that layout as one form
+with one Save, and is where the "Edit this page" button on each fixed
+page leads (`templates/core/_edit_text.html`). The rules it keeps, also
+written on the view: a save is all or nothing; a box the admin did not
+touch is never written (each carries a hidden fingerprint of the wording
+it was shown), so two admins editing different sections both keep their
+work; if both changed the same section the second is refused once and
+shown the other's wording; saving the default wording deletes the row;
+"Back to the default wording" and Preview save nothing. Every change is
+in the audit log (`edit_text`, `reset_text`). `core/tests_page_editor.py`
+checks that every `{% text %}` in the templates names a block, and that
+every block sits in its own page's layout exactly once: add a block to
+`BLOCKS`, to `LAYOUT` and to the template together. If the Wellbeing
+`SitePage` is missing, the page shows `core.views.WELLBEING_FALLBACK`
+(the support numbers), and `panel:page_body_create` makes the page from
+that text rather than from a blank form.
+
+The Winter Ball page takes its date, venue and booking button from one
+calendar event, decided in `core/ball.py` (an admin's choice, or the next
+super event with "Winter Ball" in its title). When that event is hidden
+from the public calendar, a visitor who is not logged in sees the
+`ball.when_locked` and `ball.where_fallback` lines instead of its date and
+venue. Lists of events link with
+`{% load event_links %}` and `{% event_url event %}` rather than
+`event.get_absolute_url`, so the ball's title opens the Winter Ball page.
+Use the tag in any new list of events. Links for managing an event or a
+booking keep using `get_absolute_url`.
 
 ## Pictures and the editor
 
@@ -249,10 +328,63 @@ Admin → Content → Pictures holds pictures for the pages: uploads are
 checked and shrunk like event photos, stored under `media/public/` and
 served to everyone by `config.media.protected_media` (every other upload
 stays members-only). Each picture shows the Markdown line to paste into
-a page. Every Markdown editor (pages, text blocks, guide articles, group
-pages) gets a toolbar and a live preview from `static/js/editor.js`,
-which renders through `core:preview` with the same sanitiser as the
-pages, so what the preview shows is what the page will show.
+a page. Every Markdown editor (pages, the page editor's formatted-text
+sections, guide articles, group pages) gets a toolbar and a live preview
+from `static/js/editor.js`, which renders through `core:preview` with the
+same sanitiser as the pages, so what the preview shows is what the page
+will show.
+
+Pictures go inside formatted text; there are no separate picture slots.
+When a box carries `data-upload` the toolbar's "Add a picture" button
+opens a small panel (file, description, "Add it") that posts to
+`core:picture_upload` (`/pictures/upload/`, JSON, 20 an hour each) and
+puts the returned Markdown line into the text. `core.pictures
+.enable_uploads(form, field, user)` sets that attribute, and only for
+people who may upload (`can_upload_pictures`): portal admins, anyone
+named as an editor of a custom page, and group owners. Ordinary members
+may not, because the files are readable by the whole internet and nobody
+reviews them; without the attribute the button only inserts the shape of
+the line. The mailer's toolbar has no picture button at all, since
+emails carry no pictures. Without JavaScript a note points to the
+Pictures tab. `core/images.shrink_image` (also used for profile and event
+photos) accepts JPEG, PNG, WebP and GIF only, refuses anything over 50
+megapixels before decoding it, and re-encodes every file. The sanitiser
+gives every `<img>` `class="rich-img" loading="lazy" decoding="async"` and
+drops any class the writer typed; `.prose img, img.rich-img` keeps
+pictures inside the column. `core.pictures.picture_uses` finds where each
+picture is shown (text blocks, custom pages, guide articles, group pages,
+the terms, the banner and events that are not over yet, one under way
+included); the Pictures tab lists that, and a picture still in use cannot
+be deleted. A file name is matched as typed and as a web address writes it
+(a space as `%20`). Past events and old page
+revisions are not counted, so a finished event never blocks a deletion.
+
+## Emails
+
+Every email is built by `core/emailbody.py` inside
+`templates/email/shell.html`: the green header, a white card, a quiet
+footer. Email cannot use the site's stylesheet, so the colours there are
+the light and dark design tokens written out by hand; change them in both
+places. Rules: no pictures, no web address as visible text (Outlook
+rewrites them), a link on a line of its own is a button, and nothing but
+inline styles outside the one small `<style>` block for dark mode and
+phones. Each email goes out with a plain-text part and an HTML part; the
+site's other emails (notifications, invitations, formal alerts,
+unsubscribe confirmations) keep their text and get the HTML part from
+`emailbody.plain_html`.
+
+The What's On mailer is written in Markdown.
+`panel.services.build_whats_on_email` drafts it in a fixed order: super
+events, official events, "Also on", one short "Lunch swaps" section (a
+line a lunch, never a full entry each), then "Have your say" for open
+polls and surveys. Words a member wrote go through `md_escape`. Every
+event's address comes from `panel.services.event_link`, which sends the
+Winter Ball to its own page. `panel.services.render_mailer` is the only
+place the Markdown becomes an email: the preview in the Mailer tab, the
+test send and every real send call it, so what the preview shows is what
+is sent. "Draft with AI" may reword the draft but an answer whose links
+differ from the draft's, or that carries an email address the draft did
+not have, is refused.
 
 ## Surveys
 
@@ -330,12 +462,21 @@ Both run before sessions and logins, so neither can log anyone in.
 
 Stats charts are inline SVG from `panel/charts.py` (no JavaScript, no
 CDN). The calendar labels Cambridge term weeks from term dates on
-SiteConfig and has an agenda view that is the default on phones. Revision
+SiteConfig and has an agenda view that is the default on phones. Its tag
+filter is a closed `<details>`: chosen tags show beside it as chips, and
+`?tags=open` (carried only by the links inside the list) keeps it open
+while several tags are picked. Revision
 diffs (`core/diff.py`) cover managed pages and the terms. On phones the
 header keeps the lion and a Menu link, and `/menu/` lists every section
 (logged-in members also get a bottom tab bar); dark mode
 re-points the CSS tokens; `data-confirm` forms confirm through a `<dialog>`
 and simply post without JavaScript.
+
+The member dashboard leads with a banner (`.dash-hero`) and picture cards
+(`.spot`, `.feature-media`) that are dark in both themes, so their colours
+are fixed in `core.css` instead of using the tokens. Event descriptions
+render with `richtext` (Markdown plus allow-listed HTML), like guide and
+group pages.
 
 ## Deliberate simplifications
 

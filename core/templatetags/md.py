@@ -49,6 +49,10 @@ ALLOWED_ATTRS = {
     "td": {"align"},
 }
 
+# Added to every picture after its own attributes have been vetted. `class`
+# stays out of ALLOWED_ATTRS, so a class typed by a writer is still dropped.
+FORCED_ATTRS = {"img": (("class", "rich-img"), ("loading", "lazy"), ("decoding", "async"))}
+
 SAFE_URL_SCHEMES = ("http:", "https:", "mailto:")
 
 
@@ -79,6 +83,7 @@ class _Sanitizer(HTMLParser):
             if name in ("href", "src") and not _href_is_safe(value):
                 continue
             kept.append((name, value))
+        kept.extend(FORCED_ATTRS.get(tag, ()))
         rendered = "".join(
             f' {n}="{escape(v)}"' if v is not None else f" {n}"
             for n, v in kept

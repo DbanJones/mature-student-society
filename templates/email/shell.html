@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{ title }}</title>
+{% if preview %}<base target="_blank">{% endif %}
+<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
+<style>
+@media (prefers-color-scheme: dark) {
+  .em-page { background: #111916 !important; }
+  .em-card { background: #182320 !important; }
+  .em-text, .em-text p, .em-text li { color: #e6ede8 !important; }
+  .em-text h2, .em-text h3 { color: #e9f1ea !important; }
+  .em-text blockquote, .em-text blockquote p, .em-muted, .em-muted p { color: #a9b7ae !important; }
+  .em-text a, .em-muted a { color: #8fcaa8 !important; }
+  .em-text .em-btn a { color: #ffffff !important; }
+  .em-rule { border-color: #2b3a33 !important; }
+}
+@media (max-width: 620px) {
+  .em-pad { padding-left: 18px !important; padding-right: 18px !important; }
+}
+</style>
+</head>
+<body class="em-page" style="margin:0;padding:0;background:#f7f8f6;">
+<table role="presentation" class="em-page" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f7f8f6" style="background:#f7f8f6;">
+<tr><td align="center" style="padding:24px 12px;">
+<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;">
+<tr><td class="em-pad" align="left" bgcolor="#14352a" style="background:#14352a;padding:22px 32px;">
+<p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:18px;letter-spacing:1px;text-transform:uppercase;color:#cfe0d4;">{{ site_name }}</p>
+{% if heading %}<h1 style="margin:6px 0 0;font-family:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;font-size:26px;line-height:32px;font-weight:bold;color:#ffffff;">{{ heading }}</h1>{% endif %}
+</td></tr>
+<tr><td class="em-card em-text em-pad" align="left" bgcolor="#ffffff" style="background:#ffffff;padding:28px 32px 18px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:16px;line-height:24px;color:#1a2420;overflow-wrap:anywhere;word-break:break-word;">
+{{ content }}
+</td></tr>
+{% if footer %}<tr><td class="em-card em-muted em-rule em-pad" align="left" bgcolor="#ffffff" style="background:#ffffff;border-top:1px solid #e2e8e2;padding:16px 32px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:19px;color:#5f6d64;overflow-wrap:anywhere;word-break:break-word;">
+{{ footer }}
+</td></tr>{% endif %}
+</table>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr></table>
+</body>
+</html>

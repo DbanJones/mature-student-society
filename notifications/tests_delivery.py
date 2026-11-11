@@ -38,6 +38,19 @@ class NotificationDeliveryTests(TestCase):
         self.assertIn("https://portal.example.test/events/dinner/", NotificationEmail.objects.get().body)
         self.assertEqual(Notification.objects.get().url, "/events/dinner/")
 
+    @override_settings(SITE_URL="")
+    def test_email_has_no_bare_path_when_the_site_address_is_not_set(self):
+        # "/events/dinner/" alone is not a link anyone can follow, so it is left out
+        notify([self.member], "event", "Moved", "/events/dinner/", email_subject="Dinner moved", email_body="The dinner is now at 7pm.")
+        self.assertEqual(NotificationEmail.objects.get().body, "The dinner is now at 7pm.")
+        self.assertEqual(Notification.objects.get().url, "/events/dinner/")  # the bell still links to the page
+        # a sentence that led up to the link ends with a full stop instead
+        notify([self.member], "event", "Lunch", "/events/lunch/", email_subject="Lunch", email_body="The page shows who is coming:")
+        self.assertEqual(NotificationEmail.objects.latest("pk").body, "The page shows who is coming.")
+        # a full address needs no site setting
+        notify([self.member], "event", "Menu", "https://menu.example/a", email_subject="Menu", email_body="The menu is out.")
+        self.assertEqual(NotificationEmail.objects.latest("pk").body, "The menu is out.\n\nhttps://menu.example/a")
+
     def test_private_delivery_and_repeat_worker_does_not_resend(self):
         other = User.objects.create_user(username="other", email="other@example.test")
         queue_email([self.member, self.member, other], "Update\nfor members", "Details")
@@ -149,3 +162,41 @@ class NotificationDeliveryTests(TestCase):
         ))
         request.user = User.objects.get(pk=viewer.pk)
         self.assertIn("retry_delivery", model_admin.get_actions(request))
+
+
+class NotificationHtmlPartTests(TestCase):
+    """A notification email carries an HTML part beside the text, with each
+    link shown as words (Outlook garbles a visible web address). The HTML
+    part is an extra: if it cannot be made, the email still goes as text."""
+
+    def setUp(self):
+        self.member = User.objects.create_user(username="recipient", email="recipient@example.test")
+        mail.outbox = []
+
+    @override_settings(SITE_URL="https://portal.example.test")
+    def test_delivered_notification_has_an_html_part_with_no_visible_address(self):
+        import re
+
+        notify([self.member], "event", "Moved", "/events/dinner/", email_subject="Dinner moved",
+               email_body="The dinner is now at 7pm.")
+        self.assertEqual(deliver_emails(), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.body, "The dinner is now at 7pm.\n\nhttps://portal.example.test/events/dinner/")
+        (html, mimetype), = message.alternatives
+        self.assertEqual(mimetype, "text/html")
+        self.assertIn("The dinner is now at 7pm.", html)
+        self.assertIn("<title>Dinner moved</title>", html)
+        self.assertIn('href="https://portal.example.test/events/dinner/"', html)
+        self.assertIn(">Open the event page</a>", html)
+        self.assertEqual(re.findall(r">[^<]*(?:https?://|www\.)[^<]*<", html), [])
+
+    def test_notification_still_goes_as_text_when_the_html_part_cannot_be_made(self):
+        job = queue_email([self.member], "A place is ready", "Your place is confirmed.")[0]
+        with patch("core.emailbody.document", side_effect=RuntimeError("no template")), \
+                self.assertLogs("core.emailbody", "WARNING"):
+            self.assertEqual(deliver_emails(), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.body, "Your place is confirmed.")
+        self.assertEqual(getattr(message, "alternatives", []), [])
+        job.refresh_from_db()
+        self.assertEqual(job.status, "sent")

@@ -20,6 +20,7 @@ from django.utils.safestring import mark_safe
 from django.utils.text import slugify
 from django.views.decorators.http import require_POST
 
+from core.pictures import enable_uploads
 from core.richtext import richtext_problem
 
 from .forms import GuidePageForm
@@ -183,6 +184,7 @@ def _preview_text(request):
 def new(request):
     """Members only. Write a new page; slug auto-generated from the title."""
     form = GuidePageForm(request.POST or None)
+    enable_uploads(form, "content", request.user)
     previewing = False
     if request.method == "POST":
         if "preview" in request.POST:
@@ -214,6 +216,7 @@ def edit(request, slug):
     """Members only. Edit a page; the slug never changes."""
     guide_page = get_object_or_404(GuidePage, slug=slug)
     form = GuidePageForm(request.POST or None, instance=guide_page)
+    enable_uploads(form, "content", request.user)
     previewing = False
     if request.method == "POST":
         if "preview" in request.POST:

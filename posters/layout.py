@@ -81,7 +81,8 @@ def accent_for(event, choice):
 
 def plain_text(markdown, max_words=60):
     """The first words of a Markdown description as plain text."""
-    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", markdown or "")
+    text = re.sub(r"</?[a-zA-Z][^<>]*>", " ", markdown or "")  # typed HTML tags
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"[#>*_`~]+", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     words = text.split()

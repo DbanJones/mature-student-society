@@ -11,8 +11,8 @@
 
 <div class="page-head">
   <div>
-    <h1>Department-specific information</h1>
-    <p class="lede">{% text "departments.lede" %}</p>
+    <h1>{% text "departments.title" %}</h1>
+    {% text "departments.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   <div class="actions">{% include "core/_edit_text.html" with page_key="departments" %}</div>
 </div>
@@ -27,13 +27,12 @@
   {% endfor %}
 </div>
 
+{% text "departments.tips_heading" as tips_heading %}
+{% text "departments.tips" as tips %}
+{% if tips_heading or tips %}
 <div class="card" style="margin-top:1.5rem">
-  <h2>Whatever your subject</h2>
-  <ul class="small" style="margin:0; padding-left:1.1rem">
-    <li>The <strong>Faculty administrator</strong> is the operational expert: timetables, forms, submission rules, the current written rule.</li>
-    <li>The <strong>course organiser</strong> is for anything affecting a whole paper, lab or placement group.</li>
-    <li>The <strong>subject librarian</strong> will save you hours — ask for a five-minute route through the catalogue.</li>
-    <li>Ask early: “Is this a University rule, a Faculty rule, or my college's practice?” The answer decides who can fix it.</li>
-  </ul>
+  {% if tips_heading %}<h2>{{ tips_heading }}</h2>{% endif %}
+  {% if tips %}<div class="prose small">{{ tips }}</div>{% endif %}
 </div>
+{% endif %}
 {% endblock %}

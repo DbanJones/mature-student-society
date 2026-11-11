@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}You're invited{% endblock %}
+
+{% block extra_css %}
+  <link rel="stylesheet" href="{% static 'css/accounts.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="login-head">
+  <img src="{% static 'img/lion-mark.png' %}" alt="">
+  <h1>{% if inviter %}{{ inviter.get_full_name|default:"A member" }} has invited you{% else %}Come and join us{% endif %}</h1>
+  <p class="lede" style="margin: 0 auto;">{{ site_config.society_name }}: events, college lunches and formal dinners, and a friendly crowd of mature students at Cambridge.</p>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <h2>At the University?</h2>
+    <p>Students and staff log in with their University (Raven) account. Your account is made the first time you log in.</p>
+    <p><a class="btn btn-accent" href="{% url 'accounts:raven' %}">Join with Raven</a></p>
+  </div>
+  <div class="card">
+    <h2>Partner, family or friend?</h2>
+    <p>Without a University login, ask for an associate account. A committee member looks at each request.</p>
+    <p><a class="btn" href="{% url 'accounts:waitlist' %}">Ask to join</a></p>
+  </div>
+</div>
+<p class="small muted" style="text-align:center; margin-top:1.2rem">Want a look round first? <a href="{% url 'core:home' %}">See the homepage</a>.</p>
+{% endblock %}

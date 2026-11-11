@@ -6,52 +6,28 @@
 <div class="page-head">
   <div>
     <h1>What's On mailer</h1>
-    <p class="muted">A plain-text digest of the next two weeks, drafted from the calendar. Edit anything before sending.</p>
   </div>
   <div class="actions">
     <a class="btn btn-ghost" href="{% url 'panel:mailer' %}">Refresh draft</a>
   </div>
 </div>
-{% if email_live %}
-  <p class="small muted" style="margin:-.8rem 0 1rem">
-    Mail leaves this server by SMTP, from <strong>{{ email_from }}</strong>.
-    {% if not email_from_ok %}<strong>That is not an srcf.net address</strong>, so Gmail and Outlook may junk it and the list may not accept it; set <code>DEFAULT_FROM_EMAIL</code> in <code>.env</code> (UPGRADING.md).{% endif %}
-    Send yourself a test before sending to everyone.
-  </p>
-{% else %}
+{% if not email_live %}
   <div class="flash flash-warning" style="margin:0 0 1rem">
     Mail is <strong>not being delivered</strong> from this server: <code>REAL_EMAIL</code>
     is off in its <code>.env</code>, so “Send” only writes the message to the server log.
     UPGRADING.md explains the fix.
   </div>
+{% elif not email_from_ok %}
+  <div class="flash flash-warning" style="margin:0 0 1rem">
+    Mail is sent from <strong>{{ email_from }}</strong>, which is not an srcf.net address, so Gmail and Outlook may junk it and the list may not accept it; set <code>DEFAULT_FROM_EMAIL</code> in <code>.env</code> (UPGRADING.md).
+  </div>
 {% endif %}
-<p class="small muted" style="margin:0 0 1rem">
-  <strong>Website members</strong> are the accounts with an email address that haven't opted out (Profile →
-  “Email me the What's On mailer”). <strong>The old mailing list</strong> is the spreadsheet imported under
-  People → <a href="{% url 'panel:old_list' %}">Old mailing list</a>: “everyone still on it” includes people
-  who have since joined the website, “only those not yet on the website” is for nudging them over, and
-  <strong>Both</strong> reaches each person once. Members who are banned or opted out are never mailed, whichever
-  list they are on. Every copy goes bcc'd in batches of {{ batch_size }}, addressed to the society
-  ({{ email_from }}), so nobody sees anyone else's address; it carries an unsubscribe line, and you are sent
-  a copy of each version (members' and old list's, when sending to both). “Sent” means the SRCF mail server took it.
-  <strong>One address</strong> is for the society's mailing list{% if site_config.mailing_list_address %}
-  ({{ site_config.mailing_list_address }}), which sends it on to its own subscribers{% if list_pages.held %}
-  once a list admin approves it on the list's <a href="{{ list_pages.held }}" rel="noopener">waiting posts</a>
-  page{% endif %}{% endif %}, or for a check. The same mailer can't go to overlapping audiences twice within ten
-  minutes, and the society's list counts as overlapping every website audience. A post to the list waits for
-  approval, though, so after that anyone on both would get it twice: send each mailer to the list or to the
-  website's audiences, not both.
-</p>
 
 {% if site_config.email_tone %}
-  <div class="card" style="margin-bottom:1rem">
-    <h2>Tone of voice</h2>
-    <p class="small muted" style="margin-bottom:.5rem">
-      Set by the super admin — keep every send sounding like the society.
-      AI drafting engine: <strong>{{ site_config.get_email_ai_engine_display }}</strong>{% if not site_config.email_api_key %} (no API key saved yet){% endif %}.
-    </p>
-    <p class="small" style="white-space:pre-line; margin:0">{{ site_config.email_tone }}</p>
-  </div>
+  <details class="card" style="margin-bottom:1rem">
+    <summary>Tone of voice for “Draft with AI” ({{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %}, no API key saved yet{% endif %})</summary>
+    <p class="small" style="white-space:pre-line; margin:.6rem 0 0">{{ site_config.email_tone }}</p>
+  </details>
 {% endif %}
 
 <div class="card">
@@ -67,14 +43,19 @@
               {% if not site_config.email_api_key %}disabled title="Set an AI API key on the Super admin tab first"{% endif %}>
         ✨ Draft with AI
       </button>
+      <button type="submit" class="btn btn-ghost" formaction="{% url 'panel:mailer_preview' %}" formtarget="_blank" formnovalidate>Open preview in a new tab</button>
       <button type="submit" name="action" value="test" class="btn btn-ghost"{% if not user.email %} disabled title="Your account has no email address"{% endif %}>Send a test to me</button>
       <button type="submit" name="action" value="send" class="btn btn-accent" data-confirm="Send the mailer now?">Send mailer</button>
     </div>
     <p class="small muted" style="margin:.5rem 0 0">
       “Draft with AI” rewrites the body above in the society’s tone using
-      {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %} —
-      events, dates and links are kept exactly; you review before sending.
+      {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %}.
+      Events, dates and links are kept: a rewrite that adds or drops a link, or brings in a new email address, is thrown away.
+      Check each button still goes to the right event before sending.
     </p>
+    {% if list_pages.held %}
+      <p class="small muted" style="margin:.5rem 0 0">A post to the society's mailing list waits for approval on its <a href="{{ list_pages.held }}" rel="noopener">waiting posts</a> page.</p>
+    {% endif %}
   </form>
 </div>
 

@@ -83,6 +83,29 @@ def dt_local(value):
     return timezone.localtime(value).strftime("%Y-%m-%dT%H:%M")
 
 
+def page_tags(response, name):
+    """Every <name> start tag on a page, as a list of attribute dicts."""
+    from html.parser import HTMLParser
+
+    class Tags(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.found = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == name:
+                self.found.append(dict(attrs))
+
+    parser = Tags()
+    parser.feed(response.content.decode())
+    return parser.found
+
+
+def query_of(link):
+    from urllib.parse import parse_qs, urlsplit
+    return parse_qs(urlsplit(link).query)
+
+
 @override_settings(ROOT_URLCONF="events.tests")
 class EventTestCase(TestCase):
     @classmethod
@@ -477,6 +500,93 @@ class AdditiveFilterTests(EventTestCase):
         self.assertContains(response, "Public pub night")  # no filter applied
 
 
+class TagFilterTests(EventTestCase):
+    """The calendar's tag filter folds away; chosen tags stay in view as chips."""
+
+    def tag_list(self, response):
+        """The attributes of the fold-away tag list."""
+        return next(d for d in page_tags(response, "details") if d.get("class") == "tag-filter")
+
+    def test_the_tag_list_starts_closed_and_quiet(self):
+        response = self.client.get(reverse("events:calendar"))
+        self.assertNotIn("open", self.tag_list(response))
+        self.assertContains(response, "Filter by tag")
+        self.assertNotContains(response, "tag-filter-count")
+        self.assertNotContains(response, "tag-active")
+        self.assertNotContains(response, "Clear tags")
+        self.assertFalse(response.context["tags_open"])
+        self.assertEqual(response.context["chips"], [])
+
+    def test_chosen_tags_show_as_chips_with_a_count_while_the_list_is_closed(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": ["pub-nights", "supper-club"]})
+        self.assertNotIn("open", self.tag_list(response))
+        self.assertContains(
+            response,
+            '<span class="tag-filter-count">2<span class="visually-hidden"> chosen</span></span>',
+            html=True,
+        )
+        self.assertContains(response, "Showing only")
+        self.assertContains(response, "Clear tags")
+        self.assertContains(response, '<span class="visually-hidden">Remove </span>', count=2)
+        chips = response.context["chips"]
+        self.assertEqual([chip["cat"].slug for chip in chips], ["pub-nights", "supper-club"])
+        first = query_of(chips[0]["query"])
+        self.assertEqual(first["cat"], ["supper-club"])  # removes itself, keeps the other
+        self.assertNotIn("tags", first)                  # and leaves the list closed
+        self.assertNotIn("cat", query_of(response.context["all_query"]))
+        self.assertNotIn("tags", query_of(response.context["all_query"]))
+
+    def test_picking_a_tag_keeps_the_list_open(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "pub-nights"})
+        pills = {pill["cat"].slug: pill for pill in response.context["pills"]}
+        add = query_of(pills["supper-club"]["query"])
+        self.assertEqual(sorted(add["cat"]), ["pub-nights", "supper-club"])
+        self.assertEqual(add["tags"], ["open"])
+        remove = query_of(pills["pub-nights"]["query"])
+        self.assertNotIn("cat", remove)
+        self.assertEqual(remove["tags"], ["open"])
+        everything = query_of(response.context["all_open_query"])
+        self.assertNotIn("cat", everything)
+        self.assertEqual(everything["tags"], ["open"])
+        opened = self.client.get(reverse("events:calendar") + pills["supper-club"]["query"])
+        self.assertIn("open", self.tag_list(opened))
+        self.assertTrue(opened.context["tags_open"])
+        self.assertEqual(opened.context["active_slugs"], ["pub-nights", "supper-club"])
+        self.assertContains(opened, "Public pub night")
+
+    def test_nothing_outside_the_list_keeps_it_open(self):
+        response = self.client.get(
+            reverse("events:calendar"),
+            {"cat": "pub-nights", "q": "pub", "view": "grid", "tags": "open"},
+        )
+        self.assertIn("open", self.tag_list(response))
+        for key in ("prev_query", "next_query", "today_query", "grid_query", "list_query",
+                    "clear_search_query", "all_query"):
+            self.assertNotIn("tags", query_of(response.context[key]), key)
+        for chip in response.context["chips"]:
+            self.assertNotIn("tags", query_of(chip["query"]))
+        for week in response.context["grid"]:
+            for day in week["days"]:
+                self.assertNotIn("tags", query_of(day["more_query"]))
+        self.assertNotContains(response, 'name="tags"')  # searching closes the list
+        other = self.client.get(reverse("events:calendar"), {"tags": "1"})
+        self.assertNotIn("open", self.tag_list(other))  # only tags=open opens it
+
+    def test_filter_links_come_back_to_the_filter_and_say_which_are_chosen(self):
+        response = self.client.get(reverse("events:calendar"), {"cat": "pub-nights"})
+        links = [a for a in page_tags(response, "a")
+                 if "tag-pill" in a.get("class", "") or a.get("class") == "tag-clear"]
+        # "All", one pill per tag, one chip for the chosen tag, and "Clear tags".
+        self.assertEqual(len(links), len(response.context["pills"]) + 3)
+        for link in links:
+            self.assertTrue(link["href"].endswith("#tag-filter"), link["href"])
+            self.assertEqual(link.get("rel"), "nofollow")
+        # Chosen is said in words: once in the list (Pub Nights), not on "All".
+        self.assertContains(response, '<span class="visually-hidden">, chosen</span>', count=1)
+        unfiltered = self.client.get(reverse("events:calendar"))
+        self.assertContains(unfiltered, 'All<span class="visually-hidden">, chosen</span>', count=1)
+
+
 class WaitlistTests(EventTestCase):
     def test_full_event_offers_the_waitlist_and_promotes_on_cancellation(self):
         from django.core import mail
@@ -505,6 +615,32 @@ class WaitlistTests(EventTestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("place has opened up", mail.outbox[0].subject)
         self.assertEqual(mail.outbox[0].to, [self.other.email])
+
+    @override_settings(SITE_URL="https://portal.example.test")
+    def test_the_promotion_email_gives_the_event_page_once_as_a_button(self):
+        from django.core import mail
+
+        from notifications.services import process_notification_emails
+
+        from . import services
+
+        self.other.email = "other@cam.ac.uk"
+        self.other.save(update_fields=["email"])
+        waiting = RSVP.objects.create(event=self.full_event, user=self.other, status=RSVP.Status.WAITING)
+        mail.outbox = []
+        services.tell_promoted(self.full_event, [waiting])
+        process_notification_emails()
+        message, = mail.outbox
+        address = "https://portal.example.test" + self.full_event.get_absolute_url()
+        # the address has a line to itself at the end of the text part ...
+        self.assertTrue(message.body.endswith(f"so the next member can join.\n\n{address}"), message.body)
+        self.assertEqual(message.body.count(address), 1)
+        # ... so the HTML part shows it as one button, not as "join: the event page"
+        (html, _mimetype), = message.alternatives
+        self.assertEqual(html.count(f'href="{address}"'), 1)
+        self.assertIn(">Open the event page</a>", html)
+        self.assertNotIn("join: ", html)
+        self.assertNotIn(">the event page</a>", html)
 
     def test_leaving_the_waitlist(self):
         RSVP.objects.create(event=self.full_event, user=self.other, status=RSVP.Status.WAITING)
@@ -546,7 +682,8 @@ class DuplicateAndRepeatTests(EventTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="Public pub night"')
         self.assertContains(response, "copy of")
-        later = timezone.localtime(self.public_event.start + datetime.timedelta(days=7))
+        # the same time on the clock a week on, whatever the clocks do in between
+        later = timezone.localtime(self.public_event.start).replace(tzinfo=None) + datetime.timedelta(days=7)
         self.assertContains(response, later.strftime("%Y-%m-%dT%H:%M"))
 
     def test_repeat_creates_weekly_copies_for_the_creator_only(self):
@@ -558,10 +695,47 @@ class DuplicateAndRepeatTests(EventTestCase):
         copies = Event.objects.filter(title="Public pub night").exclude(pk=self.public_event.pk)
         self.assertEqual(copies.count(), 3)
         self.assertEqual(
-            copies.order_by("start").last().start,
-            self.public_event.start + datetime.timedelta(days=21),
+            timezone.localtime(copies.order_by("start").last().start).replace(tzinfo=None),
+            timezone.localtime(self.public_event.start).replace(tzinfo=None) + datetime.timedelta(days=21),
         )
         self.assertTrue(all(c.location == "The Free Press" for c in copies))
+
+    def clock_change_lunch(self, month, days_before):
+        """A 12:30 to 13:30 event so many days before next year's clock change
+        (the last Sunday of March or October)."""
+        year = timezone.localdate().year + 1
+        last = datetime.date(year, month, 31)
+        sunday = last - datetime.timedelta(days=(last.weekday() + 1) % 7)
+        day = sunday - datetime.timedelta(days=days_before)
+        start = timezone.make_aware(datetime.datetime.combine(day, datetime.time(12, 30)))
+        return Event.objects.create(
+            title=f"Clock change lunch {month}", category=self.category, created_by=self.creator,
+            start=start, end=start + datetime.timedelta(hours=1),
+        )
+
+    def test_repeat_keeps_the_time_on_the_clock_when_the_clocks_change(self):
+        self.client.force_login(self.creator)
+        for month in (3, 10):
+            with self.subTest(month=month):
+                source = self.clock_change_lunch(month, days_before=9)
+                self.client.post(reverse("events:repeat", args=[source.slug]), {"weeks": 3})
+                copies = Event.objects.filter(title=source.title).exclude(pk=source.pk)
+                self.assertEqual(copies.count(), 3)
+                for copy in copies:
+                    start, end = timezone.localtime(copy.start), timezone.localtime(copy.end)
+                    self.assertEqual((start.hour, start.minute), (12, 30), copy.start)
+                    self.assertEqual((end.hour, end.minute), (13, 30), copy.end)
+                    self.assertEqual((start.date() - timezone.localtime(source.start).date()).days % 7, 0)
+
+    def test_duplicate_keeps_the_time_on_the_clock_when_the_clocks_change(self):
+        self.client.force_login(self.creator)
+        for month in (3, 10):
+            with self.subTest(month=month):
+                source = self.clock_change_lunch(month, days_before=2)
+                response = self.client.get(reverse("events:duplicate", args=[source.slug]))
+                later = timezone.localtime(source.start).date() + datetime.timedelta(days=7)
+                self.assertContains(response, f"{later.isoformat()}T12:30")
+                self.assertContains(response, f"{later.isoformat()}T13:30")
 
     def test_repeat_rejects_silly_numbers(self):
         self.client.force_login(self.creator)
@@ -696,3 +870,37 @@ class AttendeeListTests(EventTestCase):
         self.assertFalse(any(copy.show_attendees for copy in copies))
         self.client.force_login(self.member)
         self.assertContains(self.client.get(reverse("events:create")), "Show who")
+
+
+class DescriptionHtmlTests(TestCase):
+    """An event's description takes Markdown and basic typed HTML; anything
+    unsafe is stripped by the site's sanitiser."""
+
+    def test_typed_html_shows_and_scripts_do_not(self):
+        from django.contrib.auth import get_user_model
+
+        member = get_user_model().objects.create_user(
+            username="hd101", email="hd101@cam.ac.uk", first_name="Hal", last_name="Dee",
+            college="hughes-hall", mobile="+44 7700 900002", crsid="hd101",
+        )
+        category = Category.objects.create(name="Coffee Club", slug="coffee-club")
+        event = Event.objects.create(
+            title="HTML coffee", category=category, created_by=member,
+            start=timezone.now() + datetime.timedelta(days=3),
+            description='<u>Bring a mug</u> and <a href="https://example.org/menu">see the menu</a>.'
+                        '<script>alert(1)</script><b onclick="x()">Bold</b> **also bold**',
+        )
+        self.client.force_login(member)
+        page = self.client.get(event.get_absolute_url()).content.decode()
+        self.assertIn("<u>Bring a mug</u>", page)
+        self.assertIn('<a href="https://example.org/menu">see the menu</a>', page)
+        self.assertIn("<b>Bold</b>", page)
+        self.assertIn("<strong>also bold</strong>", page)
+        self.assertNotIn("<script>alert(1)", page)
+        self.assertNotIn("onclick", page.split('class="prose"')[1].split("</div>")[0])
+
+    def test_the_poster_text_drops_the_tags(self):
+        from posters.layout import plain_text
+
+        self.assertEqual(plain_text('<u>Bring a mug</u> and <a href="https://example.org">the menu</a>'),
+                         "Bring a mug and the menu")

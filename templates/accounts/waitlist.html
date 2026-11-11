@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static md %}
 
 {% block title %}Join without a CRSid{% endblock %}
 
@@ -9,13 +9,9 @@
 
 {% block content %}
 <div class="card" style="max-width: 40rem; margin: 0 auto;">
-  <h1>Partners &amp; family — join the waitlist</h1>
-  <p class="lede">MSS is for whole households, not just the person with the
-     University card. If you're the partner or family member of a Cambridge
-     mature student (or staff member) and don't have a CRSid of your own,
-     ask for an associate account here.</p>
-  <p class="muted small">An admin reviews each request — usually within a few
-     days. If approved, you'll get an email with a link to set your password.</p>
+  <h1>{% text "waitlist.title" %}</h1>
+  {% text "waitlist.lede" as waitlist_lede %}{% if waitlist_lede %}<p class="lede">{{ waitlist_lede }}</p>{% endif %}
+  {% text "waitlist.note" as waitlist_note %}{% if waitlist_note %}<p class="muted small">{{ waitlist_note }}</p>{% endif %}
 
   <form method="post" novalidate>
     {% csrf_token %}

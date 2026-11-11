@@ -409,27 +409,38 @@ class TextBlockAndPagesTreeTests(TestCase):
 
         about = reverse("core:about")
         self.assertContains(self.client.get(about), "Founded in September 2024")
-        edit = reverse("panel:text_edit", args=["about.body"])
+        from core import blocks
+        from core.models import TextBlock
+
+        edit = reverse("panel:page_text", args=["about"])
         self.client.force_login(self.member)
         self.assertEqual(self.client.get(edit).status_code, 403)
+        self.assertEqual(self.client.post(edit, {"block-about.body": "Not theirs to change"}).status_code, 403)
         self.client.force_login(self.admin)
-        self.assertContains(self.client.post(edit, {"text": "We are **new** words", "preview": "1"}), "<strong>new</strong>")
+        self.assertContains(
+            self.client.post(edit, {"block-about.body": "We are **new** words", "preview": "1"}),
+            "<strong>new</strong>",
+        )
         self.assertContains(self.client.get(about), "Founded in September 2024")  # a preview saves nothing
-        self.client.post(edit, {"text": "We are **new** words"})
+        self.assertFalse(TextBlock.objects.exists())
+        self.client.post(edit, {"block-about.body": "We are **new** words"})
         page = self.client.get(about)
         self.assertContains(page, "<strong>new</strong>")
         self.assertNotContains(page, "Founded in September 2024")
         self.assertTrue(AuditLog.objects.filter(action="edit_text", detail="about.body").exists())
-        self.assertContains(self.client.get(reverse("panel:pages")), "edited")
-        self.client.post(edit, {"text": "", "reset": "1"})
+        self.assertContains(self.client.get(reverse("panel:pages")), "1 edited")
+        # Saving the default wording again takes the stored row away.
+        self.client.post(edit, {"block-about.body": blocks.BLOCKS["about.body"]["default"]})
+        self.assertFalse(TextBlock.objects.filter(key="about.body").exists())
+        self.assertTrue(AuditLog.objects.filter(action="reset_text", detail="about.body").exists())
         self.assertContains(self.client.get(about), "Founded in September 2024")
         # A "lines" block feeds a loop in the template.
-        self.client.post(reverse("panel:text_edit", args=["home.stats"]), {"text": "7 | dragons\n9 | lives"})
+        self.client.post(reverse("panel:page_text", args=["home"]), {"block-home.stats": "7 | dragons\n9 | lives"})
         home = self.client.get(reverse("core:home"))
         self.assertContains(home, "dragons")
         self.assertNotContains(home, "youngest member")
-        self.assertEqual(self.client.get(reverse("panel:text_edit", args=["no.such"])).status_code, 404)
-        self.client.post(reverse("panel:text_edit", args=["ball.timeline"]), {"text": "21:00|Carriages"})
+        self.assertEqual(self.client.get(reverse("panel:page_text", args=["nosuch"])).status_code, 404)
+        self.client.post(reverse("panel:page_text", args=["ball"]), {"block-ball.timeline": "21:00|Carriages"})
         self.assertContains(self.client.get(reverse("core:winter_ball")), '<span class="ball-time">21:00</span><span class="ball-what">Carriages</span>')
 
     def test_the_pages_panel_is_a_tree_with_controls(self):
@@ -460,11 +471,18 @@ class TextBlockAndPagesTreeTests(TestCase):
         self.assertNotIn("Study tips", about_menu)
 
     def test_edit_text_links_show_for_admins_only(self):
-        for name in ("core:policies", "core:about", "core:winter_ball", "guide:index", "events:groups"):
+        pages = (
+            ("core:policies", "policies"), ("core:about", "about"), ("core:winter_ball", "ball"),
+            ("guide:index", "guide"), ("events:groups", "groups"),
+        )
+        for name, key in pages:
+            link = reverse("panel:page_text", args=[key])
             self.client.force_login(self.member)
-            self.assertNotContains(self.client.get(reverse(name)), "Edit text")
+            self.assertNotContains(self.client.get(reverse(name)), link, msg_prefix=name)
             self.client.force_login(self.admin)
-            self.assertContains(self.client.get(reverse(name)), "Edit text", msg_prefix=name)
+            page = self.client.get(reverse(name))
+            self.assertContains(page, link, msg_prefix=name)
+            self.assertContains(page, "Edit this page", msg_prefix=name)
 
 
 class MenuPageTests(TestCase):
@@ -753,6 +771,59 @@ class UnsubscribeTests(TestCase):
         member = User.objects.create_user(username="un003", password="pw", email="mid@cam.ac.uk")  # no profile yet
         self.client.force_login(member)
         self.assertEqual(self.client.get(reverse("core:unsubscribe")).status_code, 200)
+
+
+class UnsubscribeEmailHtmlTests(TestCase):
+    """The unsubscribe emails carry an HTML part beside the text, with each
+    link shown as words (Outlook garbles a visible web address)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()  # the rate limits live in the cache
+
+    def html_and_links(self, message):
+        import re
+
+        (html, mimetype), = message.alternatives
+        self.assertEqual(mimetype, "text/html")
+        found = [(href, re.sub(r"<[^>]+>", "", words))
+                 for href, words in re.findall(r'<a href="([^"]*)"[^>]*>(.*?)</a>', html, re.S)]
+        self.assertEqual(re.findall(r">[^<]*(?:https?://|www\.)[^<]*<", html), [])  # no address is visible
+        return html, found
+
+    def test_the_unsubscribe_confirmation_has_an_html_part_with_the_undo_link_behind_words(self):
+        from django.core import mail
+
+        User.objects.create_user(
+            username="un101", password="pw", first_name="Mia", last_name="Member",
+            college="wolfson", mobile="+44 7700 900001", email="mia@cam.ac.uk",
+        )
+        self.client.post(reverse("core:unsubscribe"), {"email": "mia@cam.ac.uk"})
+        message = mail.outbox[-1]
+        undo = next(word for word in message.body.split() if "/resubscribe/" in word)  # the text is as it was
+        html, found = self.html_and_links(message)
+        self.assertIn((undo, "Open the page that puts it back"), found)
+        self.assertIn("<title>You&#x27;ve been unsubscribed from the What&#x27;s On mailer</title>", html)
+        self.assertIn("This address (", html)
+        self.assertIn(("mailto:mia@cam.ac.uk", "mia@cam.ac.uk"), found)
+        # the link in the HTML part works as the one in the text does
+        self.assertContains(self.client.get(undo.split("testserver", 1)[1]), "back on")
+
+    def test_the_leaving_the_list_notice_has_an_html_part(self):
+        from django.core import mail
+
+        from panel import listsync
+        from panel.models import ListMember
+
+        ListMember.objects.create(email="friend@gmail.com", key=listsync.mailbox_key("friend@gmail.com"))
+        self.client.post(reverse("core:unsubscribe"), {"email": "friend@gmail.com"})
+        message = mail.outbox[-1]
+        self.assertEqual(message.subject, "You asked to leave the society's mailing list")
+        self.assertIn("If that wasn't you", message.body)
+        html, found = self.html_and_links(message)
+        self.assertIn("The committee will take it off when it next tidies the list.", html)
+        self.assertEqual(found, [("mailto:friend@gmail.com", "friend@gmail.com")])
 
 
 class StaticDeployTests(TestCase):

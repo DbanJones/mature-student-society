@@ -11,8 +11,8 @@
 
 <div class="page-head">
   <div>
-    <h1>Who do I contact?</h1>
-    <p class="lede">{% text "contacts.lede" %}</p>
+    <h1>{% text "contacts.title" %}</h1>
+    {% text "contacts.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   {% if can_edit %}
     <div class="actions">
@@ -45,11 +45,8 @@
 
     {# --- the full hierarchy diagram --- #}
     <div class="card">
-      <h2 style="margin-bottom:.3rem">The whole map</h2>
-      <p class="small muted" style="margin-bottom:.4rem">
-        Scroll sideways for the full hierarchy — or use the flow above for
-        the details behind each box.
-      </p>
+      {% text "contacts.map_heading" as map_heading %}{% if map_heading %}<h2 style="margin-bottom:.3rem">{{ map_heading }}</h2>{% endif %}
+      {% text "contacts.map_text" as map_text %}{% if map_text %}<p class="small muted" style="margin-bottom:.4rem">{{ map_text }}</p>{% endif %}
       <div class="org-scroll">
         <div class="org-tree">
           <ul>
@@ -73,15 +70,14 @@
         {% endfor %}
       </ul>
     </div>
+    {% text "contacts.confidentiality_heading" as confidentiality_heading %}
+    {% text "contacts.confidentiality" as confidentiality %}
+    {% if confidentiality_heading or confidentiality %}
     <div class="card">
-      <h2>Confidentiality: ask, don't guess</h2>
-      <p class="small" style="margin:0">
-        Tutors, nurses, counsellors, porters and reps have different duties.
-        Before disclosing something sensitive, ask: <em>“What will you record?
-        Who can see it? What would require you to share it?”</em> In
-        immediate-risk situations, safety overrides normal confidentiality.
-      </p>
+      {% if confidentiality_heading %}<h2>{{ confidentiality_heading }}</h2>{% endif %}
+      {% if confidentiality %}<p class="small" style="margin:0">{{ confidentiality }}</p>{% endif %}
     </div>
+    {% endif %}
   </div>
 </div>
 </div>

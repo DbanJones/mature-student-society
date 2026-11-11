@@ -330,6 +330,11 @@ class WaitlistRequest(models.Model):
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="waitlist_request",
     )
+    # Set when the applicant arrived through a member's invitation link.
+    invitation = models.ForeignKey(
+        "accounts.Invitation", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="waitlist_requests",
+    )
 
     class Meta:
         ordering = ["created_at"]
@@ -365,3 +370,34 @@ class WhatsAppAccessRequest(models.Model):
 
     def __str__(self):
         return f"WhatsApp access: {self.user} [{self.status}]"
+
+
+class Invitation(models.Model):
+    """One member inviting one person, by email, to join the society.
+
+    The emailed link carries ``token``. When the person joins (through
+    Raven or an approved waitlist request) ``joined_user`` is filled in,
+    which is what the admin panel counts to see who brings in the most
+    new members. A new member is credited to one invitation only.
+    """
+
+    inviter = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="invitations",
+    )
+    email = models.EmailField()
+    token = models.CharField(max_length=48, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    joined_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="invitation_used",
+    )
+    joined_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["inviter", "email"], name="one_invitation_per_inviter_and_address"),
+        ]
+
+    def __str__(self):
+        return f"{self.inviter} invited {self.email}"

@@ -8,8 +8,8 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Surveys</h1>
-    <p class="lede">{% text "surveys.lede" %}</p>
+    <h1>{% text "surveys.title" %}</h1>
+    {% text "surveys.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   <div class="actions">
     {% include "core/_edit_text.html" with page_key="surveys" %}

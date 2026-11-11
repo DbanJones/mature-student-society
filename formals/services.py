@@ -16,6 +16,7 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from accounts.models import User
+from core import emailbody
 from events.models import Category, Event
 from inbox.models import MessageBlock
 from notifications.models import Notification
@@ -93,8 +94,9 @@ def _tell(people, text, obj):
     people = list({u.pk: u for u in people if u and u.is_active and not u.is_banned}.values())
     notify(people, Notification.Kind.EVENT, text, url=url)
     base = getattr(settings, "SITE_URL", "").rstrip("/")
+    link = f"\n\n{base}{url}" if base else ""  # a path alone is no use in an inbox
     FormalEmail.objects.bulk_create([
-        FormalEmail(recipient=u, subject="Formal Exchange update", body=f"{text}\n\n{base}{url}\n\nSign in to your member account to view details.")
+        FormalEmail(recipient=u, subject="Formal Exchange update", body=f"{text}{link}\n\nSign in to your member account to view details.")
         for u in people if u.email
     ])
 
@@ -711,7 +713,8 @@ def deliver_emails(limit=50):
             job.save(update_fields=["attempts", "available_at"])
         try:
             if job.recipient.is_active and not job.recipient.is_banned and job.recipient.email:
-                delivered = send_mail(job.subject, job.body, settings.DEFAULT_FROM_EMAIL, [job.recipient.email], fail_silently=False)
+                delivered = send_mail(job.subject, job.body, settings.DEFAULT_FROM_EMAIL, [job.recipient.email], fail_silently=False,
+                                      html_message=emailbody.plain_html(job.body, title=job.subject))
                 if not delivered:
                     raise RuntimeError("Mail backend did not accept the message.")
             FormalEmail.objects.filter(pk=job.pk).update(sent_at=timezone.now(), last_error="")

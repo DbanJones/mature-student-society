@@ -11,21 +11,15 @@
 
 <div class="page-head">
   <div>
-    <h1>College-specific information</h1>
-    <div class="lede">{% text "colleges.lede" %}</div>
+    <h1>{% text "colleges.title" %}</h1>
+    {% text "colleges.lede" as page_lede %}{% if page_lede %}<div class="lede">{{ page_lede }}</div>{% endif %}
   </div>
   <div class="actions">{% include "core/_edit_text.html" with page_key="colleges" %}</div>
 </div>
 
 <div class="card" style="margin-bottom:1.25rem">
-  <h2>The three mature colleges</h2>
-  <p class="small muted">
-    Undergraduate intake restricted to mature students (21+). An open mature
-    application is allocated to one of these — but mature applicants may
-    apply to <em>any</em> undergraduate college, and a mature college is not
-    automatically quieter, cheaper or better for families. Compare the actual
-    room licence, charges and family rules.
-  </p>
+  {% text "colleges.mature_heading" as mature_heading %}{% if mature_heading %}<h2>{{ mature_heading }}</h2>{% endif %}
+  {% text "colleges.mature_text" as mature_text %}{% if mature_text %}<p class="small muted">{{ mature_text }}</p>{% endif %}
   <div class="faq-portals" style="margin:0">
     {% for entry in mature %}
       <a class="faq-portal" href="{% url 'faq:college' entry.slug %}">

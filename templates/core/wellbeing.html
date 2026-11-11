@@ -8,21 +8,18 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Wellbeing</h1>
-    <p class="lede">{% text "wellbeing.lede" %}</p>
+    <h1>{% text "wellbeing.title" %}</h1>
+    {% text "wellbeing.lede" as wellbeing_lede %}{% if wellbeing_lede %}<p class="lede">{{ wellbeing_lede }}</p>{% endif %}
   </div>
-  {% if page and can_edit %}
+  {% if user.is_authenticated and user.is_portal_admin or page and can_edit %}
     <div class="actions">
       {% include "core/_edit_text.html" with page_key="wellbeing" %}
-      <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_edit' page.slug %}">✏️ Edit this page</a>
-      {% if user.is_portal_admin %}
-        <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Settings</a>
+      {% if page and can_edit %}
+        <a class="btn btn-ghost btn-small" href="{% url 'core:site_page_edit' page.slug %}">✏️ Edit the main text</a>
+        {% if user.is_portal_admin %}
+          <a class="btn btn-ghost btn-small" href="{% url 'panel:page_edit' page.pk %}">Settings</a>
+        {% endif %}
       {% endif %}
-    </div>
-  {% elif not page and user.is_authenticated and user.is_portal_admin %}
-    <div class="actions">
-      {% include "core/_edit_text.html" with page_key="wellbeing" %}
-      <a class="btn btn-ghost btn-small" href="{% url 'panel:page_create' %}">✏️ Create this page</a>
     </div>
   {% endif %}
 </div>
@@ -35,37 +32,15 @@
   {% endif %}
   <div class="prose">{{ page.content|richtext }}</div>
 {% else %}
-  {# Fallback if an admin has deleted the editable page: the support routes
-     below are the part of this page that must never simply vanish. #}
-  <div class="prose">
-    <p>
-      At MSS we know that mature students at Cambridge face particular pressures &mdash; often
-      juggling study with careers, family responsibilities or major life changes. It is easy to
-      feel isolated or overwhelmed, and asking early always beats asking late.
-    </p>
-    <h2>Where to get support</h2>
-    <p>
-      <strong>MSS is a peer community, not a counselling service.</strong> We have no trained
-      mental health practitioners on the committee. If you are struggling, please go to the
-      University&rsquo;s official support services below &mdash; they are free, confidential and
-      staffed by qualified professionals.
-    </p>
-    <ul>
-      <li><strong>In an emergency, or if someone is in immediate danger &mdash; call 999.</strong></li>
-      <li><strong>University Student Wellbeing Service (including the University Counselling
-        Service)</strong> &mdash; the University&rsquo;s official service for students:
-        <a href="https://www.studentwellbeing.admin.cam.ac.uk/">studentwellbeing.admin.cam.ac.uk</a></li>
-      <li><strong>NHS 111</strong> &mdash; free, 24/7; select the mental health option for urgent help.</li>
-      <li><strong>Samaritans &mdash; 116 123</strong> &mdash; free, 24/7, any time, any reason.</li>
-      <li><strong>Your College Tutor or College Nurse</strong> &mdash; your first port of call inside
-        your college for anything affecting your work or your welfare.</li>
-    </ul>
-  </div>
+  {# No editable page yet (or an admin deleted it): the built-in support
+     text (core.views.WELLBEING_FALLBACK) shows, so the support routes
+     never simply vanish. #}
+  <div class="prose">{{ fallback|richtext }}</div>
 {% endif %}
 
 <div class="card" style="margin-top: 2rem;">
-  <h3>Reach the MSS wellbeing team</h3>
-  <div class="prose">{% text "wellbeing.team" %}</div>
+  {% text "wellbeing.team_heading" as team_heading %}{% if team_heading %}<h3>{{ team_heading }}</h3>{% endif %}
+  {% text "wellbeing.team" as team_text %}{% if team_text %}<div class="prose">{{ team_text }}</div>{% endif %}
   <p style="margin-bottom: 0;">Write to <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.</p>
 </div>
 {% endblock %}

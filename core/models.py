@@ -33,6 +33,15 @@ def visible_to(visibility, user):
     return False
 
 
+def tab_visible_to(config, key, user):
+    """Whether this viewer sees a built-in tab. Admins see everything that
+    isn't hidden, so they can check the site without logging out."""
+    visibility = config.tab_visibility_for(key)
+    if visible_to(visibility, user):
+        return True
+    return visibility != "hidden" and user.is_authenticated and user.is_portal_admin
+
+
 class SiteConfig(models.Model):
     """Singleton for society-wide settings, editable in the admin panel."""
 
@@ -141,6 +150,13 @@ class SiteConfig(models.Model):
     # Which built-in nav tabs are visible to whom, keyed by tab key
     # (see BUILTIN_TABS). Managed by admins on the panel's Content tab.
     tab_visibility = models.JSONField(default=dict, blank=True)
+
+    # The calendar event the Winter Ball page shows (see core/ball.py).
+    # Empty means "find it for me". Chosen on Admin > Pages > Winter Ball.
+    ball_event = models.ForeignKey(
+        "events.Event", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
 
     def tab_visibility_for(self, key):
         default = next((d for k, _, d in BUILTIN_TABS if k == key), "public")

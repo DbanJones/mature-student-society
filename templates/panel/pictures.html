@@ -7,10 +7,12 @@
   <div>
     <h1>Pictures</h1>
     <p class="muted">
-      Pictures for the pages. Upload one here, then paste its line into any
-      page, text block, guide article or group page; the editor's Picture
-      button inserts the shape of the line for you. Pictures here are visible
-      to everyone, since the pages are.
+      Pictures for the pages. The quickest way to use one is the “Add a
+      picture” button above the text you are editing. You can also upload one
+      here and paste its line into any page, guide article or group page.
+      Pictures here are visible to everyone, since the pages are. A picture
+      that a page still shows can't be deleted until it is taken off that
+      page.
     </p>
   </div>
 </div>
@@ -36,9 +38,10 @@
           <strong>{{ picture.alt }}</strong>{% if picture.caption %}<br><span class="small muted">{{ picture.caption }}</span>{% endif %}
           <br><span class="small muted">{{ picture.uploaded_at|date:"j M Y" }}{% if picture.uploaded_by %} · {{ picture.uploaded_by.get_full_name|default:picture.uploaded_by.username }}{% endif %}</span>
           <input type="text" readonly value="{{ picture.markdown }}" id="pic-{{ picture.pk }}" aria-label="Line to paste into a page" onclick="this.select()">
+          {% if picture.used_on %}<p class="small muted" style="margin:.4rem 0 0">Used on: {{ picture.used_on|join:", " }}</p>{% else %}<p class="small muted" style="margin:.4rem 0 0">Not used on any page.</p>{% endif %}
           <div class="row-actions" style="margin:.4rem 0 0">
             <button type="button" class="btn btn-small btn-ghost copy-btn" data-copy="pic-{{ picture.pk }}">Copy line</button>
-            <form method="post" action="{% url 'panel:picture_delete' picture.pk %}" data-confirm="Delete “{{ picture.alt }}”? Pages that use it will show a broken picture until the line is removed.">{% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button></form>
+            {% if not picture.used_on %}<form method="post" action="{% url 'panel:picture_delete' picture.pk %}" data-confirm="Delete “{{ picture.alt }}”?">{% csrf_token %}<button type="submit" class="btn btn-small btn-danger">Delete</button></form>{% endif %}
           </div>
         </figcaption>
       </figure>

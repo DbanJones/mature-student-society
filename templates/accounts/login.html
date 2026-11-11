@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static md %}
 
 {% block title %}Log in{% endblock %}
 
@@ -10,25 +10,21 @@
 {% block content %}
 <div class="login-head">
   <img src="{% static 'img/lion-mark.png' %}" alt="">
-  <h1>Welcome to the members' portal</h1>
-  <p class="lede" style="margin: 0 auto;">The kettle's on. Pick your door below.</p>
+  <h1>{% text "login.title" %}</h1>
+  {% text "login.lede" as login_lede %}{% if login_lede %}<p class="lede" style="margin: 0 auto;">{{ login_lede }}</p>{% endif %}
 </div>
 
 <div class="grid grid-2">
   <div class="card">
     <h2>Cambridge members</h2>
-    <p>Any current University of Cambridge student or staff member with a
-       CRSid can sign in with their University account — no separate
-       registration needed.</p>
+    {% text "login.members_text" as members_text %}{% if members_text %}<p>{{ members_text }}</p>{% endif %}
     <p><a class="btn btn-accent" href="{% url 'accounts:raven' %}">Log in with Raven</a></p>
-    <p class="small muted">First time here? Signing in creates your portal
-       account automatically.</p>
+    {% text "login.members_note" as members_note %}{% if members_note %}<p class="small muted">{{ members_note }}</p>{% endif %}
   </div>
 
   <div class="card">
     <h2>Associates</h2>
-    <p>Partners and family members with an approved associate account log in
-       with their email address and password.</p>
+    {% text "login.associates_text" as associates_text %}{% if associates_text %}<p>{{ associates_text }}</p>{% endif %}
     <form method="post" action="{% url 'accounts:login' %}">
       {% csrf_token %}
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}

@@ -7,6 +7,7 @@ app_name = "events"
 urlpatterns = [
     path("", views.calendar_view, name="calendar"),
     path("new/", views.create, name="create"),
+    path("lunch/", views.lunch_new, name="lunch_new"),
     # Groups: one page per tag (Supper Club, History Club, …).
     path("groups/", views.groups, name="groups"),
     path("groups/<slug:slug>/", views.tag_page, name="tag_page"),

@@ -12,11 +12,44 @@
 .cal-formals-filter { display:flex; gap:.5rem; align-items:center; flex-basis:100%; min-height:40px; font-size:.875rem; font-weight:400; margin:0; }
 .cal-formals-filter input { width:1rem; height:1rem; accent-color:var(--pine-700); }
 
+/* The tag filter folds away: one button, with the chosen tags as chips beside it. */
+.tag-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; scroll-margin-top: 5rem; }
+/* Picking a tag reloads the page at #tag-filter: land there at once, no glide from the top. */
+html:has(.tag-bar:target) { scroll-behavior: auto; }
+.tag-filter { min-width: 0; }
+.tag-filter[open] { flex-basis: 100%; }
+.tag-filter > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: inline-flex; align-items: center; gap: .4rem;
+  min-height: 40px; padding: .3rem .95rem; border-radius: 99px;
+  background: var(--card); border: 1px solid var(--line); color: var(--heading);
+  font-size: .9rem; font-weight: 600;
+  transition: background .12s ease, border-color .12s ease;
+}
+.tag-filter > summary::-webkit-details-marker { display: none; }
+.tag-filter > summary::after { content: "▾"; font-size: .8em; opacity: .65; transition: transform .15s ease; }
+.tag-filter[open] > summary::after { transform: rotate(180deg); }
+.tag-filter > summary:hover,
+.tag-filter[open] > summary { background: var(--sage-100); border-color: var(--sage); }
+.tag-filter-count {
+  display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; padding: 0 .35rem;
+  border-radius: 99px; background: var(--pine-700); color: #fff; font-size: .72rem; font-weight: 700;
+}
+.tag-hint { margin: .6rem 0 .45rem; }
+.tag-active {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  flex: 1 1 12rem; min-width: 0; margin: 0; font-size: .875rem; color: var(--ink-soft);
+}
+/* The open list already shows what is chosen. */
+.tag-filter[open] + .tag-active { display: none; }
+.tag-clear { margin-left: .3rem; white-space: nowrap; }
+
 .cat-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
 
 .tag-pill {
   --tag-color: var(--pine-700);
   display: inline-flex; align-items: center; gap: .35rem;
+  max-width: 100%;
   padding: .22rem .7rem; border-radius: 99px;
   font-size: .8rem; font-weight: 600;
   color: var(--ink); background: var(--card);
@@ -33,6 +66,19 @@
   background: var(--tag-color); flex: none;
 }
 .tag-pill.active .tag-dot { background: #fff; }
+
+/* Phones: pills big enough for a thumb, and a very long tag name wraps instead of pushing the page wide. */
+@media (max-width: 720px) {
+  .cat-filter { gap: .45rem; }
+  .tag-pill { padding: .42rem .8rem; font-size: .85rem; white-space: normal; }
+  .tag-clear { padding: .42rem 0; }
+}
+/* Dark page: a dark tag colour all but vanishes, so chosen tags get a lighter edge. */
+@media (prefers-color-scheme: dark) {
+  .tag-pill.active { border-color: color-mix(in srgb, var(--tag-color) 55%, #fff); }
+  /* The same goes for the colour dot on a tag that is not chosen: a thin light ring keeps it in sight. */
+  .tag-pill .tag-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, .45); }
+}
 
 /* --- "coming up" list ------------------------------------------- */
 
@@ -203,3 +249,9 @@
 .group-card-emoji { font-size: 1.4rem; line-height: 1; }
 .group-card-blurb { margin: 0; color: var(--ink-soft); }
 .group-card-next { margin: auto 0 0; }
+
+/* --- lunch swaps ---------------------------------------------------- */
+.lunch-choices label { display: flex; align-items: flex-start; gap: .55rem; min-height: 40px; margin: 0; padding: .35rem 0; font-weight: 400; color: var(--ink); cursor: pointer; }
+.lunch-choices input[type="radio"] { width: 1rem; height: 1rem; margin: .25rem 0 0; flex: none; accent-color: var(--pine-700); }
+.lunch-card { border-left: 4px solid var(--gold); }
+.lunch-card p:last-child { margin-bottom: 0; }
