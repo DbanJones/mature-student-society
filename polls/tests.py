@@ -4,7 +4,7 @@ import datetime
 
 from django.core import mail
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -116,6 +116,30 @@ class VenuePollTests(PollTestCase):
         self.assertEqual(len(mail.outbox), 2)
         self.assertSetEqual({message.to[0] for message in mail.outbox}, {"ali1@cam.ac.uk", "host1@cam.ac.uk"})
         self.assertTrue(AuditLog.objects.filter(action="apply_poll").exists())
+
+    @override_settings(SITE_URL="https://portal.example.test")
+    def test_the_closed_poll_email_gives_the_event_page_once_as_a_button(self):
+        from notifications.services import process_notification_emails
+
+        poll, (a, _b) = self.make_poll("venue", ["The Granta", "The Free Press"])
+        self.vote(self.alice, poll, a)
+        mail.outbox = []
+        self.client.force_login(self.host)
+        self.client.post(reverse("polls:close", args=[poll.pk]))
+        process_notification_emails()
+        self.assertEqual(len(mail.outbox), 2)
+        self.event.refresh_from_db()
+        address = "https://portal.example.test" + self.event.get_absolute_url()
+        for message in mail.outbox:
+            # the address has a line to itself at the end of the text part ...
+            self.assertTrue(message.body.endswith(f"The event page has the details.\n\n{address}"), message.body)
+            self.assertEqual(message.body.count(address), 1)
+            # ... so the HTML part shows it as one button, not as "details: the event page"
+            (html, _mimetype), = message.alternatives
+            self.assertEqual(html.count(f'href="{address}"'), 1)
+            self.assertIn(">Open the event page</a>", html)
+            self.assertNotIn("details: ", html)
+            self.assertNotIn(">the event page</a>", html)
 
     def test_tie_waits_for_the_host_to_decide(self):
         poll, (a, b) = self.make_poll("venue", ["A", "B"])

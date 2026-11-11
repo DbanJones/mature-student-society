@@ -76,6 +76,8 @@ html:has(.tag-bar:target) { scroll-behavior: auto; }
 /* Dark page: a dark tag colour all but vanishes, so chosen tags get a lighter edge. */
 @media (prefers-color-scheme: dark) {
   .tag-pill.active { border-color: color-mix(in srgb, var(--tag-color) 55%, #fff); }
+  /* The same goes for the colour dot on a tag that is not chosen: a thin light ring keeps it in sight. */
+  .tag-pill .tag-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, .45); }
 }
 
 /* --- "coming up" list ------------------------------------------- */

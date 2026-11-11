@@ -504,21 +504,33 @@ backup of `media/` covers them.
   buttons, so Outlook can no longer turn them into long "safelinks"
   addresses. The Mailer tab's writing box has a toolbar and shows the
   email as it will arrive; "Open preview in a new tab" shows it full size.
-  "Draft with AI" refuses a rewrite that changes any link.
+  "Draft with AI" refuses a rewrite that changes any link, or that puts in
+  an email address the draft did not have.
 - **Other emails** (notifications, welcome and reminder emails, formal
   alerts, unsubscribe confirmations) get the same look and the same
   readable links. Their words are unchanged, and if the designed part
-  can't be built the email still goes as plain text.
+  can't be built the email still goes as plain text. A notification's
+  button needs the site's address, `DJANGO_SITE_URL` in `.env` (set in the
+  October release, see "One-time setup" above): without it the email goes
+  out with no link at all rather than a half address nobody can press.
 - **The Winter Ball event links through to the Winter Ball page.**
   Wherever the event is listed (home page, calendar, dashboard, search,
   group pages, the What's On mailer, the poster's QR code), the link
   opens the Winter Ball page, where a member books in one press. The
-  event's own page stays for managing it and for the map.
+  event's own page stays for managing it and for the map. The page shows
+  the event's end time when it has one, and "till late" when it has none.
+  For an event hidden from the public calendar, the two lines a visitor
+  sees in place of the date and venue can be reworded in the page editor.
 - **Lunch swaps.** A member can invite a few others to lunch at their
   college from Add an event, the Lunch Swap group page or the Menu page.
   Lunches are ordinary events with the new "Lunch Swap" tag, always
   members only; the host is told each time a guest takes or gives back a
-  place, and the What's On draft lists them in one short section.
+  place, and the What's On draft lists them in one short section. A lunch
+  can be posted up to a year ahead. Its map looks for the college; the
+  meeting point is shown in words.
+- **Repeating an event keeps its time on the clock.** "Duplicate" and
+  "Repeat weekly" used to move an event by an hour when the copies crossed
+  the March or October clock change. A 12:30 event now stays at 12:30.
 - **The page editor: every section of every fixed page, on one screen.**
   Admin → Content → Pages now has one "Edit this page" button for each
   fixed page, and the same button shows to admins on the page itself. It
@@ -527,8 +539,10 @@ backup of `media/` covers them.
   themselves (events, the committee, testimonials) are shown too, with a
   note on where they come from or a button to the screen that edits them.
   "Back to the default wording" puts the original text back in the box;
-  nothing changes on the site until Save. Emptying an optional heading or
-  line hides it; a page's title can't be left empty. If two admins change
+  nothing changes on the site until Save. Emptying an optional section
+  hides it, box and all; a page's title and the home page's headline can't
+  be left empty. In a "one per line" list, each line needs a | between its
+  two parts, or the Save is refused with the line's number. If two admins change
   the same section at once, the second is shown the other's wording
   instead of overwriting it. Supper Club, Formal Exchange, Log in and the
   waitlist page have joined the list.

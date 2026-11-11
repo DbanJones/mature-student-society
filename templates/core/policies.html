@@ -9,7 +9,7 @@
 <div class="page-head">
   <div>
     <h1>{% text "policies.title" %}</h1>
-    <div class="lede">{% text "policies.lede" %}</div>
+    {% text "policies.lede" as page_lede %}{% if page_lede %}<div class="lede">{{ page_lede }}</div>{% endif %}
   </div>
   <div class="actions">{% include "core/_edit_text.html" with page_key="policies" %}</div>
 </div>

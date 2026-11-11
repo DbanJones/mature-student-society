@@ -6,6 +6,7 @@ title, and that the event's own address is gone from the page.
 """
 
 import datetime
+from unittest import mock
 
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
@@ -13,7 +14,7 @@ from django.utils import timezone
 from django.utils.formats import date_format
 
 from core import ball
-from core.models import SiteConfig
+from core.models import SiteConfig, TextBlock
 from core.tests import make_member
 from events.models import RSVP, Category, Event
 from panel import services as panel_services
@@ -183,10 +184,33 @@ class BallLinkTests(BallTestCase):
         self.assertIn(self.ball.slug, response.context["share_url"])
         self.assertNotIn("/winter-ball/", response.context["share_url"])
 
+    def test_a_busy_month_looks_the_ball_up_once(self):
+        # Every event on the page asks "are you the ball?"; the answer is
+        # worked out once for the page, not once for each event.
+        start = timezone.localtime(self.ball.start)
+        for n in range(12):
+            Event.objects.create(
+                title=f"Coffee morning {n}", category=self.category, created_by=self.admin,
+                start=self.ball.start + datetime.timedelta(hours=n + 1),
+            )
+        with mock.patch.object(ball, "find_event", wraps=ball.find_event) as find:
+            response = self.client.get(
+                reverse("events:calendar"), {"y": start.year, "m": start.month},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Coffee morning 11")
+        self.assertEqual(find.call_count, 1)
+
     def test_poster_scan_goes_to_the_ball_page(self):
         response = self.client.get(reverse("poster_scan", args=[self.ball.slug]))
         self.assertRedirects(response, self.ball_page, fetch_redirect_response=False)
         self.assertEqual(PosterScan.objects.filter(event=self.ball).count(), 1)
+        # A members-only ball still sends a logged-out scan to the ball page,
+        # which keeps the details back and offers the login.
+        self.ball.members_only = True
+        self.ball.save()
+        response = self.client.get(reverse("poster_scan", args=[self.ball.slug]))
+        self.assertRedirects(response, self.ball_page, fetch_redirect_response=False)
         response = self.client.get(reverse("poster_scan", args=[self.other.slug]))
         self.assertRedirects(
             response, self.other.get_absolute_url(), fetch_redirect_response=False,
@@ -278,8 +302,36 @@ class BallPageTests(BallTestCase):
         self.ball.delete()
         self.assertContains(self.page(), "date to be announced")
 
+    def test_the_lines_shown_to_a_logged_out_visitor_can_be_edited(self):
+        self.ball.members_only = True
+        self.ball.save()
+        response = self.page()
+        self.assertContains(response, '<p class="ball-when">This December</p>')
+        self.assertContains(response, '<p class="ball-where">Cambridge</p>')
+
+        TextBlock.objects.create(key="ball.when_locked", text="Saturday 16 January")
+        TextBlock.objects.create(key="ball.where_fallback", text="A Cambridge college")
+        response = self.page()
+        self.assertContains(response, '<p class="ball-when">Saturday 16 January</p>')
+        self.assertContains(response, '<p class="ball-where">A Cambridge college</p>')
+        self.assertNotContains(response, "This December")
+        self.assertNotContains(response, "Churchill College")
+        self.assertNotContains(response, date_format(timezone.localtime(self.ball.start), "l j F Y"))
+
+    def test_the_end_time_is_shown_when_the_event_has_one(self):
+        self.assertContains(self.page(), "till late")
+        self.ball.end = self.ball.start + datetime.timedelta(hours=4)
+        self.ball.save()
+        response = self.page()
+        self.assertNotContains(response, "till late")
+        self.assertContains(response, " – " + date_format(timezone.localtime(self.ball.end), "H:i"))
+
     def test_bookings_close_once_it_has_started(self):
         self.move(self.ball, hours=-1)
+        # A visitor is not asked to log in to book a ball that is under way.
+        response = self.page()
+        self.assertContains(response, "Bookings have closed.")
+        self.assertNotContains(response, "Log in to reserve your place")
         self.client.force_login(self.member)
         response = self.page()
         self.assertContains(response, "Bookings have closed.")

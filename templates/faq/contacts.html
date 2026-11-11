@@ -12,7 +12,7 @@
 <div class="page-head">
   <div>
     <h1>{% text "contacts.title" %}</h1>
-    <p class="lede">{% text "contacts.lede" %}</p>
+    {% text "contacts.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   {% if can_edit %}
     <div class="actions">

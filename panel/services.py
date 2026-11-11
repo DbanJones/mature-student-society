@@ -275,10 +275,12 @@ def whats_on_events():
 
     Ordinary members-only events are included. Formal Exchange invitations
     stay in the authenticated portal and their participant notifications.
+    Events posted by a shadow-banned member are left out, as they are on the
+    site (``EventQuerySet.visible_to``): members could not open the link.
     """
     return (
         Event.objects.in_next_days(MAILER_WINDOW_DAYS)
-        .filter(is_cancelled=False, formal_listing__isnull=True)
+        .filter(is_cancelled=False, formal_listing__isnull=True, created_by__is_shadow_banned=False)
         .select_related("category", "formal_listing")
     )
 
@@ -406,7 +408,13 @@ def ai_draft_mailer(config, subject, body, instructions=""):
     new_body = _without_fence(ai.draft_email(config.email_ai_engine, config.email_api_key, system_prompt, user_prompt))
     base = settings.SITE_URL or "http://localhost"  # any base will do: both sides are read the same way
     try:
-        same = emailbody.link_targets(new_body, base=base) == emailbody.link_targets(body, base=base)
+        # The same web links, in any order (moving an event with its link is
+        # allowed), and no email address the draft did not have: a rewrite may
+        # reword or drop the contact address, never swap it for another.
+        same = (
+            emailbody.link_targets(new_body, base=base) == emailbody.link_targets(body, base=base)
+            and emailbody.mail_targets(new_body, base=base) <= emailbody.mail_targets(body, base=base)
+        )
     except Exception:
         same = False
     if not same:

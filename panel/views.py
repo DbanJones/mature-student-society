@@ -1004,11 +1004,18 @@ def pages(request):
     """Every page on the site as a tree: each menu section, the fixed pages
     in it (each with one "Edit this page" screen, see page_text), and the
     custom pages with their controls (edit, rename, move, publish, delete)."""
-    from core.blocks import PAGES, SECTIONS, layout_for
-    from core.models import SECTION_CHOICES, TextBlock
+    from core.blocks import BLOCKS, PAGES, SECTIONS, layout_for, normalise, stored_texts
+    from core.models import SECTION_CHOICES
     from core.views import CANONICAL_PAGE_SLUGS
 
-    edited = set(TextBlock.objects.values_list("key", flat=True))
+    # "Edited" means the wording now differs from the built-in wording. A
+    # stored row that says the same (left by a migration or the Django admin,
+    # or holding a default that has since caught up) is not an edit.
+    edited = {
+        key for key, text in stored_texts().items()
+        if key in BLOCKS and normalise(BLOCKS[key]["format"], text)
+        != normalise(BLOCKS[key]["format"], BLOCKS[key]["default"])
+    }
     custom = list(SitePage.objects.prefetch_related("editors").select_related("updated_by"))
     tree = []
     for section_key, section_title in SECTIONS:
@@ -1204,16 +1211,21 @@ def page_text(request, page_key):
                     changes.append((key, text_block, typed, default))
         problems += bool(error)
         short = fmt == "plain" and len(text_block["default"]) <= 90
+        # A one-line box shows about 40 characters on a phone and hides the
+        # rest, so longer wording gets a box that wraps. Line breaks typed
+        # into it are still taken out when it is saved.
+        one_line = short and max(len(default), len(value)) <= 40
         row.update({
             "label": text_block["label"], "format": fmt, "required": text_block["required"],
             "anchor": "s-" + key.replace(".", "-").replace("_", "-"),
             "value": value, "was": was, "error": error, "theirs": theirs,
             "edited": current != default, "can_reset": value != default,
             "unsaved": value != current,
-            "one_line": short,
-            "rows": {"markdown": 10, "lines": 8}.get(fmt, 3),
+            "was_reset": key == reset_key,
+            "one_line": one_line,
+            "rows": 2 if short else {"markdown": 10, "lines": 8}.get(fmt, 3),
             "maxlength": {"plain": blocks.PLAIN_MAX, "inline": blocks.INLINE_MAX}.get(fmt),
-            "hint": PAGE_TEXT_HINTS["line" if short else fmt],
+            "hint": PAGE_TEXT_HINTS["line" if one_line else fmt],
             "preview": blocks.render_value(text_block, value) if previewing else None,
         })
     if posted and not reset_key and not previewing:

@@ -1,6 +1,7 @@
 """core/emailbody.py: one piece of writing in, a text part and an HTML part
 out, and never a web address as the visible words of the HTML part."""
 
+import html as html_lib
 import re
 from html.parser import HTMLParser
 from unittest import mock
@@ -182,6 +183,89 @@ class RenderPartsTests(SimpleTestCase):
             emailbody.link_targets("[One](https://x.example/a)"),
             emailbody.link_targets("Now [another name](https://x.example/a) in a sentence."),
         )
+
+    def test_mail_targets(self):
+        found = emailbody.mail_targets(
+            "Write to Me@Example.org or [the committee](mailto:committee@example.org?subject=Hi) "
+            "or see https://x.example/b",
+        )
+        self.assertIsInstance(found, frozenset)
+        self.assertEqual(found, {"me@example.org", "committee@example.org"})
+        self.assertEqual(emailbody.mail_targets("No address here, only https://x.example/b"), frozenset())
+
+    def test_emphasis_characters_inside_a_typed_address(self):
+        # "_layouts ... Minutes_" and "*wine*" must not be read as italics: the
+        # address is one link, whole, in both parts
+        addresses = (
+            "https://universityofcambridgecloud.sharepoint.com/:w:/r/sites/MSS/_layouts/15/Doc.aspx"
+            "?sourcedoc=%7BABC%7D&file=Minutes_.docx&action=default",
+            "https://example.org/path/_private_/doc",
+            "https://github.com/x/y/blob/main/__init__.py",
+            "https://example.org/search?q=*wine*&page=2",
+        )
+        for address in addresses:
+            for shape in ("Sign up at {} today", "Here:\n\n{}\n\nThanks", "**{}**", "Use `{}` now",
+                          "- one {}\n- two", "> {}", "[Sign up]({})"):
+                with self.subTest(address=address, shape=shape):
+                    text, html = parts(shape.format(address), base=BASE)
+                    self.assertEqual([html_lib.unescape(href) for href, _words in links(html)], [address])
+                    self.assertIn(address, text)
+                    self.assertNotIn("\\", html)
+                    self.assertNotIn("&#", html)
+                    self.assertNotIn("<em>", html)
+
+    def test_an_address_already_escaped_in_the_draft_still_works(self):
+        text, html = parts("Zoom https://zoom.us/j/1\\_2\\_3?pwd=a\\*b here", base=BASE)
+        self.assertEqual([href for href, _words in links(html)], ["https://zoom.us/j/1_2_3?pwd=a*b"])
+        self.assertIn("https://zoom.us/j/1_2_3?pwd=a*b", text)
+        self.assertNotIn("\\", html)
+
+    def test_link_targets_sees_the_whole_address(self):
+        self.assertEqual(
+            emailbody.link_targets("See https://example.org/path/_private_/doc", base=BASE),
+            frozenset({"https://example.org/path/_private_/doc"}),
+        )
+
+    def test_bold_and_italics_round_an_address_still_work(self):
+        _text, html = parts("Read **https://x.example/a_b** and _https://x.example/c_ today.")
+        self.assertEqual([href for href, _words in links(html)], ["https://x.example/a_b", "https://x.example/c"])
+        self.assertIn("<strong><a", html)
+        self.assertIn("<em><a", html)
+
+    def test_an_address_in_angle_brackets_loses_the_brackets(self):
+        text, html = parts("See <https://example.org/plain> and <www.example.net/x>, or <b>this</b>.")
+        self.assertEqual(links(html), [
+            ("https://example.org/plain", "example.org"), ("https://www.example.net/x", "example.net"),
+        ])
+        shown = html_lib.unescape(re.sub(r"<[^>]+>", "", html))
+        self.assertIn("See example.org and example.net, or <b>this</b>.", shown)  # other typed HTML is still text
+        self.assertIn("See https://example.org/plain and https://www.example.net/x, or", text)
+
+    def test_an_address_among_a_links_words_is_shown_as_words(self):
+        page = f"{BASE}/events/lunch-12-nov-2026/"
+        for words, shown in (
+            ("Lunch see https://evil.test/x for menu", "Lunch see evil.test for menu"),
+            ("https://menu.example lunch at Wolfson", "menu.example lunch at Wolfson"),
+            ("Book at www.example.org/ball.", "Book at example.org."),
+        ):
+            with self.subTest(words=words):
+                text, html = parts(f"- Thu 12 Nov: [{words}]({page}) (2 places left)", base=BASE)
+                self.assertEqual(links(html), [(page, shown)])
+                self.assertEqual(re.findall(VISIBLE_ADDRESS, html), [])
+                self.assertIn(f"{shown} ({page})", text)
+
+    def test_words_that_are_only_an_address_take_the_words_of_where_the_link_goes(self):
+        _text, html = parts("See [www.other.example](https://www.cam.ac.uk/x) now", base=BASE)
+        self.assertEqual(links(html), [("https://www.cam.ac.uk/x", "cam.ac.uk")])
+
+    def test_a_long_unbroken_word_can_wrap(self):
+        _text, html = parts("Reference " + "A" * 200 + "\n\n- " + "B" * 200)
+        self.assertRegex(html, r'<p style="[^"]*overflow-wrap:anywhere;')
+        self.assertRegex(html, r'<li style="[^"]*overflow-wrap:anywhere;')
+        page = emailbody.document(title="t", site_name="MSS", content=html, footer="<p>Bye</p>")
+        for cell in re.findall(r'<td class="em-card[^>]*>', page):
+            self.assertIn("overflow-wrap:anywhere;", cell)
+        self.assertEqual(len(re.findall(r'<td class="em-card[^>]*>', page)), 2)
 
     def test_nothing_in_nothing_out(self):
         self.assertEqual(parts(""), ("", ""))

@@ -662,7 +662,10 @@ class MailerEmailTests(PanelTestCase):
         self.assertEqual(one.to, ["list@lists.example.org"])
         self.assertEqual(one.body, "Hello all")
         html = html_part(one)
-        self.assertIn("<p style=\"margin:0 0 14px;\">Hello all</p>", html)
+        # The paragraph style now also breaks a long unbroken word, so one
+        # cannot make the email wider than a phone.
+        self.assertIn(
+            "<p style=\"margin:0 0 14px;overflow-wrap:anywhere;word-break:break-word;\">Hello all</p>", html)
         self.assertNotIn("em-muted em-rule", html)  # the list adds its own footer: none of ours
         self.assertNotIn("unsubscribe here", html)
 
@@ -926,6 +929,48 @@ class MailerAIDraftTests(PanelTestCase):
             self.assertEqual(response.context["form"]["body"].value(), rewrite)
         self.assertEqual(AuditLog.objects.filter(action="ai_draft_mailer").count(), 2)
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_ai_rewrite_may_not_bring_in_a_new_email_address(self):
+        draft = (
+            "Hello all,\n\n### Quiz\n[RSVP and details](http://testserver/events/quiz/)\n\n"
+            "### Talk\n[RSVP and details](http://testserver/events/talk/)\n\n"
+            "Questions? Write to maturesoc@cambridgesu.co.uk.\n\nThe MSS committee"
+        )
+        spoiled = {
+            "the contact address changed": draft.replace("maturesoc@cambridgesu.co.uk", "someone@elsewhere.example"),
+            "an email link added": draft + "\n\n[Email us](mailto:someone@elsewhere.example?subject=Hello)",
+            "a second address added": draft.replace("co.uk.", "co.uk or someone@elsewhere.example."),
+        }
+        for why, answer in spoiled.items():
+            with mock.patch("panel.ai.draft_email", return_value=answer):
+                response = self._draft(body=draft)
+            self.assertContains(
+                response, "AI drafting failed: The rewrite came back with different links", msg_prefix=why
+            )
+            self.assertEqual(response.context["form"]["body"].value(), draft, why)  # the admin's draft is kept
+        self.assertFalse(AuditLog.objects.filter(action="ai_draft_mailer").exists())
+        kept = {
+            "the address reworded as a link": draft.replace(
+                "Write to maturesoc@cambridgesu.co.uk.", "[Write to us](mailto:MatureSoc@cambridgesu.co.uk)."
+            ),
+            "the contact line dropped": draft.replace("Questions? Write to maturesoc@cambridgesu.co.uk.\n\n", ""),
+            "an event moved, title and link together": (
+                "Hello all,\n\n### Talk\n[RSVP and details](http://testserver/events/talk/)\n\n"
+                "### Quiz\n[RSVP and details](http://testserver/events/quiz/)\n\n"
+                "Questions? Write to maturesoc@cambridgesu.co.uk.\n\nThe MSS committee"
+            ),
+        }
+        for why, answer in kept.items():
+            with mock.patch("panel.ai.draft_email", return_value=answer):
+                response = self._draft(body=draft)
+            self.assertNotContains(response, "AI drafting failed", msg_prefix=why)
+            self.assertEqual(response.context["form"]["body"].value(), answer, why)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_the_mailer_page_says_what_the_link_check_covers(self):
+        response = self.client.get(reverse("panel:mailer"))
+        self.assertContains(response, "a rewrite that adds or drops a link, or brings in a new email address")
+        self.assertContains(response, "Check each button still goes to the right event before sending.")
 
 
 class AIDispatchTests(TestCase):

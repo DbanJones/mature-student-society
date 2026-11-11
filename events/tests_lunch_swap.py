@@ -3,7 +3,7 @@ import datetime
 import importlib
 
 from django.apps import apps as django_apps
-from django.test import TestCase
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -213,6 +213,44 @@ class LunchFormTests(LunchSwapTestCase):
         event = self.lunches().get()
         self.assertEqual(first["Location"], event.get_absolute_url())
         self.assertEqual(second["Location"], event.get_absolute_url())
+        # The same answers twice is a double press: still a plain "it worked".
+        page = self.client.get(event.get_absolute_url())
+        self.assertContains(page, "Your lunch is on the calendar")
+        self.assertNotContains(page, "nothing was changed")
+
+    def test_sending_the_form_again_with_changes_says_nothing_was_saved(self):
+        # Back, change the details, press the button again: the lunch at that
+        # college and time is kept as it was, so the page must not say "saved".
+        self.client.force_login(self.host)
+        self.post_form()
+        event = self.lunches().get()
+        self.client.get(event.get_absolute_url())  # the first press's message is read
+        before = (event.location, event.capacity, event.description)
+
+        response = self.post_form(
+            meet="Dining hall door", places="5", paying="treat", note="Card only.",
+        )
+        self.assertRedirects(response, event.get_absolute_url(), fetch_redirect_response=False)
+        event = self.lunches().get()
+        self.assertEqual((event.location, event.capacity, event.description), before)
+        page = self.client.get(event.get_absolute_url())
+        self.assertContains(page, "nothing was changed")
+        self.assertContains(page, "Use Edit on this page")
+        self.assertNotContains(page, "Your lunch is on the calendar")
+
+    def test_a_date_more_than_a_year_away_is_refused(self):
+        self.client.force_login(self.host)
+        form = self.client.get(reverse("events:lunch_new"))
+        furthest = timezone.localdate() + datetime.timedelta(days=366)
+        self.assertContains(form, f'max="{furthest.isoformat()}"')
+
+        response = self.post_form(date=self.form_day(730).isoformat())
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "That is more than a year away. Check the year.")
+        self.assertFalse(self.lunches().exists())
+
+        self.assertEqual(self.post_form(date=self.form_day(21).isoformat()).status_code, 302)
+        self.assertEqual(self.lunches().count(), 1)
 
     def test_ways_in(self):
         new_url = reverse("events:lunch_new")
@@ -339,6 +377,7 @@ class LunchPrivacyTests(LunchSwapTestCase):
 
 
 class LunchNoticeTests(LunchSwapTestCase):
+    @override_settings(SITE_URL="https://portal.example.test")
     def test_taking_a_place_tells_the_host(self):
         event = self.make_lunch()
         services.set_rsvp(self.guest, event.pk, "join")
@@ -351,7 +390,8 @@ class LunchNoticeTests(LunchSwapTestCase):
         email = NotificationEmail.objects.get(recipient=self.host)
         self.assertTrue(email.subject.startswith("Gus Member"))
         self.assertIn(event.title, email.body)
-        self.assertIn(event.get_absolute_url(), email.body)
+        # the whole address: a path alone is no use in an inbox
+        self.assertIn("https://portal.example.test" + event.get_absolute_url(), email.body)
         self.assertEqual(self.notices(self.guest), [])
 
     def test_dropping_out_tells_the_host_and_the_next_in_line(self):
@@ -407,6 +447,30 @@ class LunchNoticeTests(LunchSwapTestCase):
 
 
 class LunchPageTests(LunchSwapTestCase):
+    def test_the_map_looks_for_the_college_not_the_meeting_point(self):
+        # "Porters' Lodge, Wolfson College" brought up porters' lodges all
+        # over Cambridge. The meeting point stays on the page as words.
+        event = self.make_lunch()
+        self.assertEqual(event.location, "Porters' Lodge, Wolfson College")
+        self.assertEqual(event.map_query, "Wolfson College")
+        page = self.page(event, self.guest)
+        self.assertContains(page, "q=Wolfson+College%2C+Cambridge%2C+UK")
+        self.assertContains(page, "query=Wolfson%20College,+Cambridge,+UK")
+        self.assertNotContains(page, "q=Porters")
+        self.assertNotContains(page, "query=Porters")
+        self.assertContains(page, "Porters&#x27; Lodge, Wolfson College")
+
+        # A host who rewrites the place by hand still gets the college...
+        event.location = "By the bikes, main gate, clare hall"
+        self.assertEqual(event.map_query, "Clare Hall")
+        # ...and with no college in it the whole line is used, as before.
+        event.location = "The cafe on Mill Road"
+        self.assertEqual(event.map_query, "The cafe on Mill Road")
+        # Any other event is searched by its whole place line.
+        event.category = self.pub
+        event.location = "Porters' Lodge, Wolfson College"
+        self.assertEqual(event.map_query, "Porters' Lodge, Wolfson College")
+
     def test_the_host_cannot_take_a_guest_place(self):
         event = self.make_lunch()
         self.client.force_login(self.host)
@@ -486,3 +550,71 @@ class LunchPageTests(LunchSwapTestCase):
         self.assertTrue(self.lunches().filter(created_by=self.other).exists())
         invited = [n for n in self.notices(self.host) if "has invited you back" in n.text]
         self.assertEqual(len(invited), 1)
+
+    def invited_back(self, user):
+        return [n for n in self.notices(user) if "has invited you back" in n.text]
+
+    def test_a_guest_of_two_hosts_can_invite_both_back(self):
+        first = self.make_lunch()
+        second = self.make_lunch(host=self.other, days=4)
+        for event in (first, second):
+            services.set_rsvp(self.guest, event.pk, "join")
+            self.move_into_the_past(event)
+        Notification.objects.all().delete()
+
+        self.client.force_login(self.guest)
+        self.post_form(college="darwin", back=first.slug)
+        self.post_form(college="darwin", back=second.slug, date=self.form_day(6).isoformat())
+        self.assertEqual(self.lunches().filter(created_by=self.guest).count(), 2)
+        self.assertEqual(len(self.invited_back(self.host)), 1)
+        self.assertEqual(len(self.invited_back(self.other)), 1)
+
+    def test_a_lunch_back_that_was_cancelled_does_not_use_up_the_notice(self):
+        first = self.make_lunch()
+        services.set_rsvp(self.guest, first.pk, "join")
+        self.move_into_the_past(first)
+        Notification.objects.all().delete()
+
+        self.client.force_login(self.guest)
+        self.post_form(college="darwin", back=first.slug)
+        cancelled = self.lunches().get(created_by=self.guest)
+        Event.objects.filter(pk=cancelled.pk).update(is_cancelled=True)
+
+        self.post_form(college="darwin", back=first.slug, date=self.form_day(6).isoformat())
+        standing = self.lunches().get(created_by=self.guest, is_cancelled=False)
+        invited = self.invited_back(self.host)
+        self.assertEqual(len(invited), 2)
+        self.assertEqual(invited[-1].url, standing.get_absolute_url())
+
+    def test_a_lunch_of_my_own_does_not_use_up_the_notice(self):
+        first = self.make_lunch()
+        services.set_rsvp(self.guest, first.pk, "join")
+        self.make_lunch(host=self.guest, days=5)  # posted the ordinary way: nobody is told
+        self.move_into_the_past(first)
+        Notification.objects.all().delete()
+
+        self.client.force_login(self.guest)
+        self.post_form(college="darwin", back=first.slug, date=self.form_day(8).isoformat())
+        self.assertEqual(len(self.invited_back(self.host)), 1)
+
+
+class LunchNewsletterTests(LunchSwapTestCase):
+    def test_a_hidden_members_events_stay_out_of_the_whats_on_email(self):
+        from panel.services import build_whats_on_email
+
+        hidden = member("lunch-hidden-host", "Hidden", n=7, is_shadow_banned=True)
+        shown = self.make_lunch()
+        hidden_lunch = self.make_lunch(host=hidden, days=4)
+        hidden_pub = Event.objects.create(
+            title="Hidden pub night", category=self.pub, created_by=hidden,
+            start=timezone.now() + datetime.timedelta(days=3),
+        )
+        listed = list(whats_on_events())
+        self.assertIn(shown, listed)
+        self.assertNotIn(hidden_lunch, listed)
+        self.assertNotIn(hidden_pub, listed)
+
+        _subject, text = build_whats_on_email(RequestFactory().get("/"))
+        self.assertIn(shown.title, text)
+        self.assertNotIn(hidden_lunch.title, text)
+        self.assertNotIn("Hidden pub night", text)

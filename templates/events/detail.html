@@ -137,7 +137,8 @@
       {% include "polls/_poll_card.html" with poll=card.poll options=card.options choices=card.choices can_manage=card.can_manage show_results=card.show_results has_voted=card.has_voted %}
     {% endfor %}
     {% if can_edit and not event.is_cancelled and not event.is_past %}
-      <p class="small" style="margin:0">
+      {# Only the bottom margin is taken off: "margin:0" also removed the gap the column gives every part, so the button touched the card above. #}
+      <p class="small" style="margin-bottom:0">
         <a class="btn btn-small btn-ghost" href="{% url 'polls:choose' event.slug %}">📊 Ask members: where, when, or who can help</a>
       </p>
     {% endif %}
@@ -148,10 +149,10 @@
         <div class="map-frame">
           <iframe src="{{ event.map_embed_url }}" loading="lazy" allowfullscreen
                   referrerpolicy="no-referrer-when-downgrade"
-                  title="Map of {{ event.location }}"></iframe>
+                  title="Map of {{ event.map_query }}"></iframe>
         </div>
         <p class="small" style="margin:.6rem 0 0">
-          <a href="https://www.google.com/maps/search/?api=1&amp;query={{ event.location|urlencode }},+Cambridge,+UK"
+          <a href="https://www.google.com/maps/search/?api=1&amp;query={{ event.map_query|urlencode }},+Cambridge,+UK"
              target="_blank" rel="noopener">Open in Google Maps ↗</a>
         </p>
       </div>

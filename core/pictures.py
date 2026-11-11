@@ -1,9 +1,14 @@
 """Pictures for pages: who may add them, and where each one is used."""
 
+import datetime
+from urllib.parse import unquote
+
 from django.apps import apps
 from django.conf import settings
+from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from django.utils.encoding import filepath_to_uri
 
 
 def can_upload_pictures(user):
@@ -61,21 +66,29 @@ def _texts():
     for text in apps.get_model("core", "SiteConfig").objects.filter(
             banner_text__contains=mark).values_list("banner_text", flat=True):
         yield "Site banner", text
-    upcoming = apps.get_model("events", "Event").objects.filter(start__gte=timezone.now())
-    for title, description, info in upcoming.values_list("title", "description", "attendee_info"):
+    # Not over yet: an event that has started still shows its page to guests.
+    # One with no end time counts for a day after it starts.
+    now = timezone.now()
+    current = apps.get_model("events", "Event").objects.filter(
+        Q(end__gte=now) | Q(end__isnull=True, start__gte=now - datetime.timedelta(days=1)))
+    for title, description, info in current.values_list("title", "description", "attendee_info"):
         if mark in (description or "") or mark in (info or ""):
             yield f"Event: {title}", f"{description}\n{info}"
 
 
 def picture_uses(pictures):
     """{picture.pk: [where it is used, ...]} for the pictures given."""
-    texts = list(_texts())
+    # A page holds the picture's web address, where a space or an accent in
+    # the file's name is written as %20 or %C3%A9; someone may equally have
+    # typed the name as it reads. Both spellings of both sides are compared.
+    texts = [(label, text, unquote(text)) for label, text in _texts()]
     uses = {}
     for picture in pictures:
         name = picture.image.name
+        spellings = {name, filepath_to_uri(name)} if name else set()
         found = []
-        for label, text in texts:
-            if name and name in text and label not in found:
+        for label, text, decoded in texts:
+            if label not in found and any(s in text or s in decoded for s in spellings):
                 found.append(label)
         uses[picture.pk] = found
     return uses

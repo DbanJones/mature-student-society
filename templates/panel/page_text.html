@@ -42,6 +42,7 @@
           {% if row.format == "lines" %}<dl>{% for first, second in row.preview %}<dt>{{ first }}</dt><dd>{{ second }}</dd>{% endfor %}</dl>{% else %}{{ row.preview }}{% endif %}
         </div>
       {% endif %}
+      {% if row.was_reset %}<p class="editor-note" role="status">The default wording is back in this box. Press Save to keep it.</p>{% endif %}
       {% if row.can_reset %}<button class="btn btn-ghost btn-small editor-reset" type="submit" name="reset" value="{{ row.key }}" formnovalidate formaction="#{{ row.anchor }}">Back to the default wording</button>{% endif %}
     </li>
     {% elif row.kind == "link" %}

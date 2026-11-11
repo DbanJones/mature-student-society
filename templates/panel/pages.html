@@ -34,8 +34,7 @@
               <strong>{{ row.title }}</strong> <span class="badge">fixed page</span>
               <a class="small" href="{{ row.url }}">view</a>
               {% if row.note %}<p class="small muted">{{ row.note }}</p>{% endif %}
-              {% if row.count %}<span class="small muted">{{ row.count }} section{{ row.count|pluralize }} you can edit</span>{% endif %}
-              {% if row.edited_count %}<span class="badge badge-ok">{{ row.edited_count }} edited</span>{% endif %}
+              {% if row.count %}<p class="small muted">{{ row.count }} section{{ row.count|pluralize }} you can edit{% if row.edited_count %} <span class="badge badge-ok">{{ row.edited_count }} edited</span>{% endif %}</p>{% endif %}
             </div>
             <div class="tree-controls">
               {% if row.editable %}<a class="btn btn-small" href="{% url 'panel:page_text' row.key %}">Edit this page</a>{% endif %}

@@ -38,6 +38,19 @@ class NotificationDeliveryTests(TestCase):
         self.assertIn("https://portal.example.test/events/dinner/", NotificationEmail.objects.get().body)
         self.assertEqual(Notification.objects.get().url, "/events/dinner/")
 
+    @override_settings(SITE_URL="")
+    def test_email_has_no_bare_path_when_the_site_address_is_not_set(self):
+        # "/events/dinner/" alone is not a link anyone can follow, so it is left out
+        notify([self.member], "event", "Moved", "/events/dinner/", email_subject="Dinner moved", email_body="The dinner is now at 7pm.")
+        self.assertEqual(NotificationEmail.objects.get().body, "The dinner is now at 7pm.")
+        self.assertEqual(Notification.objects.get().url, "/events/dinner/")  # the bell still links to the page
+        # a sentence that led up to the link ends with a full stop instead
+        notify([self.member], "event", "Lunch", "/events/lunch/", email_subject="Lunch", email_body="The page shows who is coming:")
+        self.assertEqual(NotificationEmail.objects.latest("pk").body, "The page shows who is coming.")
+        # a full address needs no site setting
+        notify([self.member], "event", "Menu", "https://menu.example/a", email_subject="Menu", email_body="The menu is out.")
+        self.assertEqual(NotificationEmail.objects.latest("pk").body, "The menu is out.\n\nhttps://menu.example/a")
+
     def test_private_delivery_and_repeat_worker_does_not_resend(self):
         other = User.objects.create_user(username="other", email="other@example.test")
         queue_email([self.member, self.member, other], "Update\nfor members", "Details")

@@ -566,6 +566,17 @@ class FormalServiceTests(TestCase):
         send.assert_not_called()
         self.assertTrue(FormalEmail.objects.filter(sent_at__isnull=True).exists())
 
+    @override_settings(SITE_URL="")
+    def test_formal_email_has_no_bare_path_when_the_site_address_is_not_set(self):
+        listing = self.listing()
+        self.apply(listing)
+        bodies = list(FormalEmail.objects.values_list("body", flat=True))
+        self.assertTrue(bodies)
+        for body in bodies:
+            self.assertNotIn("/formals/", body)  # a path alone is not a link anyone can follow
+            self.assertTrue(body.endswith("\n\nSign in to your member account to view details."), body)
+            self.assertNotIn("\n\n\n", body)
+
     @override_settings(SITE_URL="https://portal.example.test")
     def test_delivered_formal_email_has_an_html_part_with_the_link_behind_words(self):
         import re

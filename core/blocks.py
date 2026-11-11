@@ -97,7 +97,8 @@ BLOCKS = {
                               "Winner: Outstanding Contribution to University Life 2025"),
     "home.award_second": _block("home", "Award badge (second)", "plain",
                                 "Nominated: University Society of the Year 2025"),
-    "home.heading": _block("home", "Headline", "plain", "Welcoming Cambridge's mature students"),
+    "home.heading": _block("home", "Headline", "plain", "Welcoming Cambridge's mature students",
+                           required=True),
     "home.hero": _block("home", "Welcome paragraph", "markdown",
         "As the University's community of mature students continues to grow, we're proud to be "
         "Cambridge's friendliest and most sociable society. The Mature Student Society (MSS) hosted "
@@ -199,7 +200,9 @@ BLOCKS = {
     "ball.title": _block("ball", "Page title", "plain", "The Winter Ball", required=True),
     "ball.when_fallback": _block("ball", "Date line before the event is on the calendar", "plain",
         "This December, date to be announced"),
-    "ball.where_fallback": _block("ball", "Place line before the event is on the calendar", "plain", "Cambridge"),
+    "ball.where_fallback": _block("ball", "Place line when the event's venue is not shown", "plain", "Cambridge"),
+    "ball.when_locked": _block("ball", "Date line for visitors who are not logged in (members-only event)",
+                               "plain", "This December"),
     "ball.tickets_note": _block("ball", "Line shown before tickets open", "plain",
         "Tickets open when the date is announced. Watch the calendar and the What's On mailer."),
     "ball.timeline_heading": _block("ball", "“The evening” heading", "plain", "The evening"),
@@ -444,7 +447,7 @@ LAYOUT = {
     "ball": [
         _t("ball.kicker"), _t("ball.title"),
         _link("Date and venue", "panel:ball_event", "Choose the event", _BALL),
-        _t("ball.when_fallback"), _t("ball.where_fallback"),
+        _t("ball.when_fallback"), _t("ball.where_fallback"), _t("ball.when_locked"),
         _auto("Ticket buttons and places left", _BALL),
         _t("ball.tickets_note"), _t("ball.intro"),
         _t("ball.timeline_heading"), _t("ball.timeline"),
@@ -554,6 +557,12 @@ def problem_with(text_block, text):
         return f"keep it to {PLAIN_MAX} characters or fewer" if len(text) > PLAIN_MAX else None
     if fmt == "inline" and len(text) > INLINE_MAX:
         return f"keep it to {INLINE_MAX} characters or fewer"
+    if fmt == "lines":
+        # Without the bar the whole line becomes the first part: on the home
+        # page that is a sentence in the huge type meant for a number.
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.strip() and "|" not in line:
+                return f"line {number} needs a | between its two parts"
     return richtext_problem(text)
 
 

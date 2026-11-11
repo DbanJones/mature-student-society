@@ -199,6 +199,8 @@ class LunchSwapForm(forms.Form):
     """The short "Host a lunch swap" form. It is turned into an ordinary
     event by events.lunch.create_lunch; after that the full form edits it."""
 
+    FURTHEST = datetime.timedelta(days=366)  # no lunch is planned more than a year ahead
+
     college = forms.ChoiceField(
         choices=[("", "Choose a college")] + lunch.HOST_COLLEGES, label="College",
         help_text="Where you can bring guests in to eat.",
@@ -234,7 +236,9 @@ class LunchSwapForm(forms.Form):
     def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)
         # Set per request: a class-level value would freeze on the day the server started.
-        self.fields["date"].widget.attrs["min"] = timezone.localdate().isoformat()
+        today = timezone.localdate()
+        self.fields["date"].widget.attrs["min"] = today.isoformat()
+        self.fields["date"].widget.attrs["max"] = (today + self.FURTHEST).isoformat()
         if user.college in dict(lunch.HOST_COLLEGES):
             self.fields["college"].initial = user.college
 
@@ -247,6 +251,9 @@ class LunchSwapForm(forms.Form):
             )
             if start <= timezone.now():
                 self.add_error("date", "That time has already passed. Pick a later date or time.")
+            elif day > timezone.localdate() + self.FURTHEST:
+                # A slip of the year (2072 for 2027) would post a lunch nobody finds.
+                self.add_error("date", "That is more than a year away. Check the year.")
             else:
                 cleaned["start"] = start
         return cleaned

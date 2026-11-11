@@ -93,7 +93,10 @@ table.data input[type="checkbox"] { width: auto; }
    Only the shared colour tokens are used, so dark mode needs no rules of its own. */
 .editor-sections { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .9rem; }
 .editor-section, .editor-elsewhere, .editor-auto { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; min-width: 0; }
+/* "Back to the default wording" comes back to its own section: keep the section's heading clear of the sticky site header. */
+.editor-section { scroll-margin-top: 5rem; }
 .editor-section.has-error { border-color: var(--danger); }
+.editor-note { margin: .5rem 0 0; padding: .45rem .7rem; border-left: 3px solid var(--accent, var(--line)); background: var(--paper); border-radius: var(--radius-small); font-size: .9rem; color: var(--ink); }
 .editor-section-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; margin-bottom: .35rem; }
 .editor-section-head label { font-weight: 600; color: var(--heading); margin: 0; }
 .editor-section input[type="text"], .editor-section textarea { width: 100%; box-sizing: border-box; }

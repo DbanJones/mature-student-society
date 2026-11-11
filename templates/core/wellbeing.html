@@ -40,7 +40,7 @@
 
 <div class="card" style="margin-top: 2rem;">
   {% text "wellbeing.team_heading" as team_heading %}{% if team_heading %}<h3>{{ team_heading }}</h3>{% endif %}
-  <div class="prose">{% text "wellbeing.team" %}</div>
+  {% text "wellbeing.team" as team_text %}{% if team_text %}<div class="prose">{{ team_text }}</div>{% endif %}
   <p style="margin-bottom: 0;">Write to <a href="mailto:{{ site_config.contact_email }}">{{ site_config.contact_email }}</a>.</p>
 </div>
 {% endblock %}

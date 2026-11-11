@@ -30,8 +30,10 @@ logger = logging.getLogger(__name__)
 # cannot use CSS variables. Dark mode is in templates/email/shell.html.
 FONT_SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 FONT_SERIF = "'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif"
+# One long unbroken word (a reference, a pasted code) wraps, so the email is never wider than a phone.
+WRAP = "overflow-wrap:anywhere;word-break:break-word;"
 STYLES = {
-    "p": "margin:0 0 14px;",
+    "p": f"margin:0 0 14px;{WRAP}",
     "h2": f"margin:26px 0 10px;padding-top:16px;border-top:1px solid #e2e8e2;font-family:{FONT_SERIF};"
           "font-size:21px;line-height:27px;font-weight:bold;color:#14352a;",
     "h3": f"margin:20px 0 4px;font-family:{FONT_SERIF};font-size:18px;line-height:24px;"
@@ -39,11 +41,11 @@ STYLES = {
     "a": "color:#2e6b52;text-decoration:underline;",
     "ul": "margin:0 0 14px;padding:0 0 0 22px;",
     "ol": "margin:0 0 14px;padding:0 0 0 22px;",
-    "li": "margin:0 0 6px;",
+    "li": f"margin:0 0 6px;{WRAP}",
     "blockquote": "margin:0 0 14px;padding:2px 0 2px 14px;border-left:3px solid #cfe0d4;color:#5f6d64;",
     "hr": "border:0;border-top:1px solid #e2e8e2;height:0;margin:22px 0;",
 }
-SMALL_STYLES = {**STYLES, "p": "margin:0 0 6px;", "a": "color:#5f6d64;text-decoration:underline;"}
+SMALL_STYLES = {**STYLES, "p": f"margin:0 0 6px;{WRAP}","a": "color:#5f6d64;text-decoration:underline;"}
 BUTTON = (
     '<table role="presentation" class="em-btn" cellpadding="0" cellspacing="0" border="0" '
     'style="margin:4px 0 18px;"><tr>\n'
@@ -61,6 +63,7 @@ BARE_RE = re.compile(
     re.I,
 )
 ADDRESS_RE = re.compile(r"(?:https?://|www\.)", re.I)
+ANGLED_RE = re.compile(r"""<((?:https?://|www\.)[^\s<>"']+)>""", re.I)  # <https://...>, Markdown's own bare link
 # The words for a bare address of one of the site's own pages; first match wins.
 SITE_WORDS = (
     (r"/$", "the {site} website"),
@@ -88,11 +91,33 @@ def md_escape(text):
     return re.sub(r"([\\`*_\[\]#>])", r"\\\1", " ".join(str(text).split()))
 
 
+def _shield(found):
+    """One typed web address with its ``_`` and ``*`` written as character
+    references, so Markdown cannot read them as italics or bold. A backslash
+    already put before one (``md_escape``) goes, or it would show. Stars and
+    underscores at the very end are left: they close bold or italics put
+    round the address."""
+    url = found.group("url")
+    if not url:
+        return found.group(0)
+    core = url.rstrip("*_")
+    return re.sub(r"\\?_", "&#95;", re.sub(r"\\?\*", "&#42;", core)) + url[len(core):]
+
+
 def render_markdown(text):
     """Markdown to a sanitised HTML fragment, not yet styled. Typed HTML is
     shown as text: ``&`` and ``<`` are made inert first (``>`` is kept, so
-    quotes work), and the site's allow-list sanitiser runs afterwards."""
-    source = str(text).replace("&", "&amp;").replace("<", "&lt;")
+    quotes work), and the site's allow-list sanitiser runs afterwards.
+
+    Two things are done for typed web addresses first. ``<https://...>``
+    loses its angle brackets, which would otherwise be left as text either
+    side of the link. And the ``_`` and ``*`` inside an address are hidden
+    from Markdown as character references (decoded again when the result is
+    read), so an address such as ``.../_layouts/15/Minutes_.docx`` is not
+    cut in two by being read as italics."""
+    source = ANGLED_RE.sub(lambda found: found.group(1), str(text))
+    source = source.replace("&", "&amp;").replace("<", "&lt;")
+    source = BARE_RE.sub(_shield, source)
     return sanitize_html(md_lib.markdown(source, extensions=["sane_lists", "nl2br"], output_format="html"))
 
 
@@ -129,6 +154,17 @@ def link_targets(markdown_text, *, base=""):
             href = token[1] if token[0] == "button" else token[2]
             if not href.lower().startswith("mailto:"):
                 found.add(href)
+    return frozenset(found)
+
+
+def mail_targets(markdown_text, *, base=""):
+    """Every email address the rendered email would link to, in lower case
+    (the other half of the check on an AI rewrite: it may reword or drop an
+    address, never bring in one the draft did not have)."""
+    found = set()
+    for token in _prepare(render_markdown(markdown_text), base, ""):
+        if token[:2] == ("open", "a") and token[2].lower().startswith("mailto:"):
+            found.add(token[2][7:].split("?")[0].strip().lower())
     return frozenset(found)
 
 
@@ -279,16 +315,29 @@ def _links(tokens, base, site_name):
             out += inner
             continue
         words = "".join(t[1] for t in inner if t[0] == "text").strip()
-        auto = not words or bool(ADDRESS_RE.match(words)) or words == href
+        auto = not words or _only_address(words) or words == href
         if auto and not href.lower().startswith("mailto:"):
             inner = [("text", link_words(href, base=base, site_name=site_name))]
         elif not words:
             inner = [("text", link_words(href))]
             auto = False
-        else:
+        else:  # the link's own words stay, but an address among them is shown as words too
             auto = False
+            inner = [("text", _worded(t[1], base, site_name)) if t[0] == "text" else t for t in inner]
         out += [("open", "a", href, auto), *inner, ("close", "a")]
     return out
+
+
+def _worded(text, base, site_name):
+    """A link's words with every web address among them shown as words
+    ("Lunch, see https://x.example/menu" reads "Lunch, see x.example")."""
+    def swap(found):
+        typed = _trim(found.group("url") or "")
+        href = _absolute(typed, base) if typed else None
+        if href is None:
+            return found.group(0)
+        return link_words(href, base=base, site_name=site_name) + found.group("url")[len(typed):]
+    return BARE_RE.sub(swap, text)
 
 
 def _trim(address):

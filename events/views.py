@@ -451,6 +451,16 @@ def lunch_new(request):
     )
     form = LunchSwapForm(request.POST or None, user=request.user)
     if request.method == "POST" and form.is_valid():
+        twin, same = lunch.existing_lunch(request.user, form.cleaned_data)
+        if twin is not None and not same:
+            # The form was sent again with something changed (Back, then the
+            # button). Nothing is saved, so it must not say that it was.
+            messages.warning(
+                request,
+                "You already have a lunch at that college and time, so nothing was changed. "
+                "Use Edit on this page to change the details.",
+            )
+            return redirect(twin)
         event = lunch.create_lunch(request.user, form.cleaned_data, back=back)
         messages.success(
             request,
@@ -728,6 +738,14 @@ COPIED_FIELDS = [
 ]
 
 
+def _same_time_later(when, days):
+    """The same time on the clock so many days on. Adding days to the stored
+    (UTC) time would put a 12:30 lunch at 13:30 once the clocks go forward,
+    and at 11:30 once they go back."""
+    local = timezone.localtime(when).replace(tzinfo=None)
+    return timezone.make_aware(local + datetime.timedelta(days=days))
+
+
 @login_required
 def duplicate(request, slug):
     """A create form pre-filled from an existing event, a week later."""
@@ -736,10 +754,9 @@ def duplicate(request, slug):
         raise PermissionDenied("Only the event's creator or an admin can duplicate it.")
     if source.is_formal:
         return redirect(source)
-    shift = datetime.timedelta(days=7)
     initial = {field: getattr(source, field) for field in COPIED_FIELDS}
-    initial["start"] = timezone.localtime(source.start + shift)
-    initial["end"] = timezone.localtime(source.end + shift) if source.end else None
+    initial["start"] = timezone.localtime(_same_time_later(source.start, 7))
+    initial["end"] = timezone.localtime(_same_time_later(source.end, 7)) if source.end else None
     initial["is_official"] = source.is_official
     form = EventForm(initial=initial, user=request.user, is_create=True)
     messages.info(request, f"Starting from a copy of “{source.title}”. Nothing is saved until you press Create.")
@@ -768,10 +785,9 @@ def repeat(request, slug):
         messages.error(request, f"Pick between 1 and {REPEAT_MAX_WEEKS} weeks.")
         return redirect(source)
     for n in range(1, weeks + 1):
-        shift = datetime.timedelta(days=7 * n)
         copy = Event(created_by=request.user, is_official=source.is_official,
-                     start=source.start + shift,
-                     end=source.end + shift if source.end else None,
+                     start=_same_time_later(source.start, 7 * n),
+                     end=_same_time_later(source.end, 7 * n) if source.end else None,
                      image=source.image)
         for field in COPIED_FIELDS:
             setattr(copy, field, getattr(source, field))

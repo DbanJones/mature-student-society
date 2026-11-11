@@ -12,7 +12,7 @@
 <div class="page-head">
   <div>
     <h1>{% text "guide.title" %}</h1>
-    <p class="lede">{% text "guide.lede" %}</p>
+    {% text "guide.lede" as page_lede %}{% if page_lede %}<p class="lede">{{ page_lede }}</p>{% endif %}
   </div>
   <div class="actions">
     {% include "core/_edit_text.html" with page_key="guide" %}
@@ -33,17 +33,17 @@
     <a class="faq-portal" href="{% url 'faq:contacts' %}">
       <span class="faq-portal-emoji">🧭</span>
       <strong>Who to contact</strong>
-      <span class="muted small">{% text "guide.portal_contacts" %}</span>
+      {% text "guide.portal_contacts" as portal_contacts %}{% if portal_contacts %}<span class="muted small">{{ portal_contacts }}</span>{% endif %}
     </a>
     <a class="faq-portal" href="{% url 'faq:colleges' %}">
       <span class="faq-portal-emoji">🏰</span>
       <strong>College-specific info</strong>
-      <span class="muted small">{% text "guide.portal_colleges" %}</span>
+      {% text "guide.portal_colleges" as portal_colleges %}{% if portal_colleges %}<span class="muted small">{{ portal_colleges }}</span>{% endif %}
     </a>
     <a class="faq-portal" href="{% url 'faq:departments' %}">
       <span class="faq-portal-emoji">🔬</span>
       <strong>Department-specific info</strong>
-      <span class="muted small">{% text "guide.portal_departments" %}</span>
+      {% text "guide.portal_departments" as portal_departments %}{% if portal_departments %}<span class="muted small">{{ portal_departments }}</span>{% endif %}
     </a>
   </div>
 {% endif %}

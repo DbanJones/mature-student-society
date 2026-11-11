@@ -8,7 +8,6 @@ ledger: nobody is counted or chased.
 import datetime
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from django.utils.formats import date_format
 
@@ -54,6 +53,7 @@ PAYING_TEXT = {      # what guests read on the lunch's page
     "pay_back": "I'll pay on my college card and you pay me back on the day.",
     "treat": "Lunch is on me.",
 }
+INVITED_BACK = "has invited you back"  # in the notice to the first host; tell_returned looks for it
 
 
 def lunch_swap_tag():
@@ -80,38 +80,60 @@ def college_place(key):
     return name if name.endswith(" Hall") or name == "Peterhouse" else f"{name} College"
 
 
-def hosted_since(user, when, skip=None):
-    """Has this member posted a lunch of their own since then?"""
-    lunches = Event.objects.filter(
-        category__slug=LUNCH_SWAP_SLUG, created_at__gt=when,
-    ).filter(Q(created_by=user) | Q(host=user))
-    if skip is not None:
-        lunches = lunches.exclude(pk=skip.pk)
-    return lunches.exists()
+def college_in(place):
+    """The college named in a lunch's place line ("Porters' Lodge, Wolfson
+    College" -> "Wolfson College"), or "" when none is. The map is asked for
+    the college alone: a meeting point such as "Porters' Lodge" can bring up
+    every porters' lodge in Cambridge."""
+    place = (place or "").lower()
+    found = [name for name in (college_place(key) for key, _name in HOST_COLLEGES)
+             if name.lower() in place]
+    return max(found, key=len) if found else ""
+
+
+def _details(user, data):
+    """What the short form's answers become on the event."""
+    who = (user.first_name or user.username).strip()[:60]
+    description = f"**Paying:** {PAYING_TEXT[data['paying']]}"
+    note = (data.get("note") or "").strip()
+    if note:
+        description += "\n\n" + note
+    return {
+        "title": f"Lunch at {college_name(data['college'])} with {who}"[:140],
+        "start": data["start"],
+        "location": f"{data['meet'].strip()}, {college_place(data['college'])}",
+        "capacity": data["places"],
+        "description": description,
+    }
+
+
+def existing_lunch(user, data):
+    """``(lunch, same)``: the lunch this member already has at that college
+    and time, if any, and whether it says what the form now says. The same
+    college, day and time is a second press of the button, not a second
+    lunch; a press with different details changes nothing, so the member
+    must be told (and sent to Edit) rather than thanked."""
+    details = _details(user, data)
+    twin = Event.objects.filter(
+        created_by=user, category__slug=LUNCH_SWAP_SLUG, start=details["start"],
+        title=details["title"], is_cancelled=False,
+    ).first()
+    if twin is None:
+        return None, False
+    return twin, all(getattr(twin, name) == value for name, value in details.items())
 
 
 @transaction.atomic
 def create_lunch(user, data, back=None):
     """Turn the short form's cleaned data into an ordinary members-only event."""
-    start = data["start"]
-    who = (user.first_name or user.username).strip()[:60]
-    title = f"Lunch at {college_name(data['college'])} with {who}"[:140]
-    tag = lunch_swap_tag()
     # A second press of the button should not make a second lunch.
-    twin = Event.objects.filter(
-        created_by=user, category=tag, start=start, title=title, is_cancelled=False,
-    ).first()
+    twin, _same = existing_lunch(user, data)
     if twin is not None:
         return twin
-    description = f"**Paying:** {PAYING_TEXT[data['paying']]}"
-    note = (data.get("note") or "").strip()
-    if note:
-        description += "\n\n" + note
+    details = _details(user, data)
     event = Event.objects.create(
-        title=title, category=tag, description=description,
-        location=f"{data['meet'].strip()}, {college_place(data['college'])}",
-        start=start, end=start + LUNCH_LENGTH, capacity=data["places"],
-        created_by=user, host=user, members_only=True, show_attendees=True,
+        category=lunch_swap_tag(), end=details["start"] + LUNCH_LENGTH,
+        created_by=user, host=user, members_only=True, show_attendees=True, **details,
     )
     if back is not None:
         tell_returned(back, event, user)
@@ -164,21 +186,32 @@ def tell_host(event, joined=(), left=()):
 
 def tell_returned(original, new_event, guest):
     """A guest has posted a lunch of their own from "Host one back": tell the
-    member who had them to lunch. Once only, however many lunches follow."""
+    member who had them to lunch. Once for each host, however many lunches
+    follow: a host who already has an invitation back from this guest to a
+    lunch that still stands is not told again. One whose only invitation was
+    to a lunch since cancelled is told about the new one."""
     host = original.effective_host
     if host.pk == guest.pk or guest.is_shadow_banned:
         return
-    if hosted_since(guest, original.start, skip=new_event):
-        return
     from notifications.models import Notification
     from notifications.services import notify
+
+    standing = [
+        lunch.get_absolute_url() for lunch in Event.objects.filter(
+            category__slug=LUNCH_SWAP_SLUG, created_by=guest, is_cancelled=False,
+        ).exclude(pk=new_event.pk)
+    ]
+    if standing and Notification.objects.filter(
+        recipient=host, kind=Notification.Kind.EVENT, url__in=standing, text__contains=INVITED_BACK,
+    ).exists():
+        return
 
     first = guest.first_name or guest.username
     old_day, _ = _when(original)
     day, long_day = _when(new_event)
     notify(
         [host], Notification.Kind.EVENT,
-        f"{first} has invited you back: {new_event.title} on {day}.",
+        f"{first} {INVITED_BACK}: {new_event.title} on {day}.",
         new_event.get_absolute_url(),
         email_subject=f"{first} is hosting a lunch back",
         email_body=(f'You had {first} to lunch on {old_day}. {first} is now hosting one: '

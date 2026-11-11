@@ -26,6 +26,7 @@ User = get_user_model()
 
 TEXT_TAG = re.compile(r"""\{%\s*text\s+["']([\w.]+)["']""")
 EMPTY_HEADING = re.compile(r"<h[1-6][^>]*>\s*</h[1-6]>")
+EMPTY_BOX = re.compile(r"<(p|div|h[1-6]|span|ol|ul|dl|section)\b[^>]*>\s*</\1>")
 
 
 def make_user(username, **extra):
@@ -170,6 +171,67 @@ class PageEditorTests(TestCase):
         self.assertContains(response, 'value="Typed but not saved"')
         self.assertEqual(dict(TextBlock.objects.values_list("key", "text")), {"about.lede": "Custom line"})
         self.assertContains(self.client.get(reverse("core:about")), "Custom line")
+        # The reminder is also beside the box itself, once: the screen comes
+        # back at that section, with the message at the top out of sight.
+        body = response.content.decode()
+        note = "The default wording is back in this box. Press Save to keep it."
+        self.assertEqual(body.count(note), 1)
+        section = body[body.index('id="s-about-lede"'):]
+        self.assertIn(note, section[:section.index("</li>")])
+        self.assertNotContains(self.client.get(self.url), note)
+
+    def test_a_default_stored_as_a_row_is_not_counted_as_edited(self):
+        # The Pages tab used to count stored rows, while the editing screen
+        # compares wording: the two disagreed about what "edited" means.
+        TextBlock.objects.create(key="about.lede", text=blocks.BLOCKS["about.lede"]["default"])
+        TextBlock.objects.create(
+            key="about.body",
+            text=blocks.BLOCKS["about.body"]["default"].replace("\n", "\r\n") + "\r\n",
+        )
+        blocks.forget_texts()
+        self.assertNotContains(self.client.get(self.url), 'badge-ok">edited')
+        self.assertNotContains(self.client.get(reverse("panel:pages")), "edited</span>")
+        TextBlock.objects.create(key="about.contact_heading", text="Say hello")
+        blocks.forget_texts()
+        pages = self.client.get(reverse("panel:pages"))
+        self.assertContains(pages, "1 edited")
+        self.assertNotContains(pages, "3 edited")
+
+    def test_the_count_of_sections_has_a_line_of_its_own(self):
+        # As a <span> it ran on after "view" for a page that has no note.
+        pages = self.client.get(reverse("panel:pages")).content.decode()
+        self.assertRegex(pages, r'<p class="small muted">\d+ sections? you can edit')
+        self.assertNotRegex(pages, r"<span[^>]*>\d+ sections? you can edit")
+
+    def test_a_list_line_with_no_bar_is_refused(self):
+        home = reverse("panel:page_text", args=["home"])
+        response = self.client.post(home, self.form("home", stats="no bar on this line\n1,000 | members"))
+        self.assertContains(response, "Nothing was saved")
+        self.assertContains(response, "Not saved: line 1 needs a | between its two parts.")
+        self.assertContains(response, "no bar on this line")  # still in the box
+        response = self.client.post(home, self.form("home", stats="1,000 | members\n\nLate bar"))
+        self.assertContains(response, "Not saved: line 3 needs a | between its two parts.")
+        self.assertFalse(TextBlock.objects.exists())
+        # A first part on its own is still allowed: end the line with the bar.
+        ball = reverse("panel:page_text", args=["ball"])
+        response = self.client.post(ball, self.form("ball", timeline="19:00 | Doors open\n01:00 |"))
+        self.assertRedirects(response, ball)
+        self.assertEqual(TextBlock.objects.get(key="ball.timeline").text, "19:00 | Doors open\n01:00 |")
+
+    def test_a_sentence_too_long_for_a_phone_gets_a_box_that_wraps(self):
+        # A one-line box shows about 35 characters at 375px and hides the rest.
+        self.assertGreater(len(blocks.BLOCKS["about.contact_text"]["default"]), 40)
+        editor = self.client.get(self.url)
+        self.assertContains(editor, '<textarea id="f-s-about-contact-text" name="block-about.contact_text" rows="2" maxlength="400"')
+        self.assertContains(editor, '<input type="text" id="f-s-about-contact-heading"')
+        self.assertContains(editor, '<input type="text" id="f-s-about-lede"')
+        # A line break typed into it is still taken out, as the hint says.
+        self.client.post(self.url, self.form(
+            contact_text="Two\r\nlines", lede="A much longer line than a phone can show in one go."))
+        self.assertEqual(TextBlock.objects.get(key="about.contact_text").text, "Two lines")
+        # A short section that now holds a long sentence wraps as well.
+        editor = self.client.get(self.url)
+        self.assertContains(editor, '<textarea id="f-s-about-lede" name="block-about.lede" rows="2"')
 
     def test_preview_shows_the_wording_and_saves_nothing(self):
         data = self.form(body="A **bold** claim")
@@ -269,6 +331,48 @@ class BlockRegistryTests(TestCase):
             if text_block["required"]:
                 self.assertTrue(default, key)
             self.assertIsNone(blocks.problem_with(text_block, default), key)
+
+    def test_emptying_any_optional_section_leaves_no_empty_box_behind(self):
+        # The editor says "Leave it empty to hide it" under every section that
+        # is not required. Hidden means gone: no empty paragraph, badge, card
+        # or list left on the page with its spacing and border.
+        member = make_user("br002")
+
+        def empties(url, viewer):
+            cache.clear()
+            self.client.logout()
+            if viewer is not None:
+                self.client.force_login(viewer)
+            response = self.client.get(url)
+            if response.status_code != 200:
+                return None
+            return sorted(found.group(0) for found in EMPTY_BOX.finditer(response.content.decode()))
+
+        before = {}
+        for key, text_block in blocks.BLOCKS.items():
+            if text_block["required"]:
+                continue
+            url = reverse(blocks.PAGES_BY_KEY[text_block["page"]]["url"])
+            seen = False
+            for viewer in (None, member):
+                who = (url, viewer is not None)
+                if who not in before:
+                    before[who] = empties(url, viewer)
+                if before[who] is None:
+                    continue
+                seen = True
+                row = TextBlock.objects.create(key=key, text="")
+                after = empties(url, viewer)
+                row.delete()
+                extra = list(after)
+                for item in before[who]:
+                    if item in extra:
+                        extra.remove(item)
+                self.assertEqual(extra, [], f"{key} emptied, on {url}")
+            self.assertTrue(seen, f"nobody could open {url}")
+
+    def test_the_headline_cannot_be_emptied(self):
+        self.assertTrue(blocks.BLOCKS["home.heading"]["required"])
 
     def test_with_the_defaults_the_pages_read_as_before(self):
         cache.clear()
@@ -477,12 +581,44 @@ class PicturesInUseTests(TempMediaMixin, TestCase):
                              start=now + datetime.timedelta(days=3), description=self.line)
         Event.objects.create(title="Last year's picnic", category=tag, created_by=self.admin,
                              start=now - datetime.timedelta(days=30), description=self.line)
+        # Under way: guests are still looking at its page.
+        Event.objects.create(title="Garden party now", category=tag, created_by=self.admin,
+                             start=now - datetime.timedelta(minutes=30),
+                             end=now + datetime.timedelta(hours=3), description=self.line)
+        Event.objects.create(title="Walk with no end time", category=tag, created_by=self.admin,
+                             start=now - datetime.timedelta(hours=2), attendee_info=self.line)
+        Event.objects.create(title="Finished this morning", category=tag, created_by=self.admin,
+                             start=now - datetime.timedelta(hours=5),
+                             end=now - datetime.timedelta(hours=3), description=self.line)
         uses = picture_uses([self.picture, self.other])
         self.assertEqual(
             sorted(uses[self.picture.pk]),
-            ["About MSS", "Event: Summer picnic", "Group: Choir", "Guide: Gardens", "Sponsors"],
+            ["About MSS", "Event: Garden party now", "Event: Summer picnic",
+             "Event: Walk with no end time", "Group: Choir", "Guide: Gardens", "Sponsors"],
         )
         self.assertEqual(uses[self.other.pk], [])
+
+    def test_a_picture_whose_name_has_a_space_or_an_accent_is_still_found(self):
+        from core.pictures import picture_uses
+
+        answer = self.client.post(reverse("core:picture_upload"), {
+            "image": picture_file("café garden.png"), "alt": "The café garden",
+        }).json()
+        picture = Picture.objects.get(alt="The café garden")
+        # The line the editor pastes holds the web address, with %20 and %C3%A9 in it.
+        self.assertNotIn(picture.image.name, answer["markdown"])
+        TextBlock.objects.create(key="about.body", text=f"Hello\n\n{answer['markdown']}")
+        self.assertEqual(picture_uses([picture])[picture.pk], ["About MSS"])
+        self.assertNotContains(
+            self.client.get(reverse("panel:pictures")),
+            reverse("panel:picture_delete", args=[picture.pk]),
+        )
+        response = self.client.post(reverse("panel:picture_delete", args=[picture.pk]), follow=True)
+        self.assertContains(response, "is used on About MSS")
+        self.assertTrue(Picture.objects.filter(pk=picture.pk).exists())
+        # Typed as it reads, rather than pasted, it is found as well.
+        TextBlock.objects.filter(key="about.body").update(text=f"![x](/media/{picture.image.name})")
+        self.assertEqual(picture_uses([picture])[picture.pk], ["About MSS"])
 
     def test_a_picture_in_use_cannot_be_deleted_until_it_is_taken_off(self):
         block = TextBlock.objects.create(key="about.body", text=f"Hello\n\n{self.line}")

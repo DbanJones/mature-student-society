@@ -1,6 +1,5 @@
 """Atomic voting, volunteer places and one-time poll outcomes."""
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -54,13 +53,13 @@ def _apply_outcome_locked(poll, by=None):
     from notifications.services import notify
     from events.models import RSVP
 
-    url = getattr(settings, "SITE_URL", "").rstrip("/") + event.get_absolute_url()
+    # notify() adds the event's address on a line of its own (a button in the HTML part)
     notify(
         [r.user for r in event.rsvps.filter(status=RSVP.Status.GOING).select_related("user")]
         + [event.effective_host],
         Notification.Kind.POLL, f"{event.title}: {what}", event.get_absolute_url(),
         email_subject=f"{event.title}: {what}",
-        email_body=f'The poll “{poll.question}” has closed.\n\n{what}\n\nThe event page has the details: {url}',
+        email_body=f'The poll “{poll.question}” has closed.\n\n{what}\n\nThe event page has the details.',
     )
 
 

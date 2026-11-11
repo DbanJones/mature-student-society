@@ -295,6 +295,8 @@ table.data tbody tr:hover td { background: #fbfcfa; }
   padding: .12rem .65rem; border-radius: 99px;
   font-size: .78rem; font-weight: 650; color: #fff; white-space: nowrap;
   text-decoration: none;
+  /* A very long tag name is cut short rather than pushing the page wider than a phone. */
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
 }
 a.cat-chip:hover { color: #fff; filter: brightness(1.12); }
 
@@ -576,6 +578,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .nav-menu-lin
   /* The hero is dark in both modes: keep its copy light. */
   .hero p, .hero .lede { color: #cfe0d4; }
   .hero a:not(.btn) { color: #d9e8dd; }
+  /* So is the footer: its light-mode colours are re-pointed to dark greens above, which would vanish on it. */
+  .site-footer { color: #cfe0d4; }
+  .site-footer a { color: #8fcaa8; }
+  .site-footer a:hover { color: #fff; }
   .btn-ghost, .cal-nav .btn { color: var(--sage-dark) !important; }
   .badge { color: var(--sage-dark); }
   .badge-official { color: #e9c982; }

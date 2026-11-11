@@ -177,7 +177,9 @@ cancelled or moved, you come off a waitlist, a guest takes or gives back a
 place at a lunch you host, your testimonial is reviewed,
 a page you edit is changed by someone else. Cancellations and waitlist
 promotions are emailed as well. The bell in the header and the mobile tab
-bar show the unread count.
+bar show the unread count. An email's link is the notice's path after
+`settings.SITE_URL`; when that is not set the email goes without a link
+rather than with a bare path.
 
 `notify()` writes its email jobs in the same transaction. The
 `process_notifications` worker claims each job with a ten-minute lease and sends
@@ -198,7 +200,8 @@ Every event has an `.ics` download; every member has a token-protected
 feed at `/me/calendar.ics` (reset from the dashboard). A full event puts
 new RSVPs on a waitlist and promotes the first in line when someone drops
 out. Events can be duplicated a week on, or repeated weekly for up to 12
-weeks.
+weeks; the copies keep the time on the clock (12:30 stays 12:30 across a
+clock change), worked out in Python rather than by adding days in UTC.
 
 ## Lunch swaps
 
@@ -209,7 +212,9 @@ builder, the notices to the host when a guest takes or gives back a place
 (bell and email, bell only after six in an hour), and the "host one back"
 nudge on a finished lunch's own page. The host cannot take one of their own
 guest places. The What's On draft lists lunches in one short section
-instead of a full entry each.
+instead of a full entry each. A lunch's place is stored as "meeting point,
+college", but its map is asked for the college alone (`Event.map_query`),
+because a meeting point such as "Porters' Lodge" matches every college.
 
 ## Event posters
 
@@ -261,11 +266,15 @@ four formats: `plain` (one run of text, at most 400 characters, escaped),
 600, for a sentence that needs a link or bold), `markdown` (full rich
 text, the only format that takes pictures) and `lines` (one entry per
 line split on " | ", for the home page numbers and the Winter Ball
-timeline, cards and FAQ). A default must equal what the template showed
+timeline, cards and FAQ; a line with no "|" is refused, though the second
+part may be left empty). A default must equal what the template showed
 before the block existed, so a fresh site reads the same. An optional
-block that is emptied hides its element: templates use
-`{% text "key" as name %}{% if name %}<h2>{{ name }}</h2>{% endif %}`.
-Page titles are `required` and cannot be saved empty.
+block that is emptied hides its element, wrapper included: templates use
+`{% text "key" as name %}{% if name %}<h2>{{ name }}</h2>{% endif %}`,
+and a test empties every optional block in turn and fails if a page is
+left with an empty box. Page titles and the home page's headline are
+`required` and cannot be saved empty. "Edited" means the stored wording
+differs from the default, on the Pages tab and the editing screen alike.
 
 `blocks.LAYOUT` lists everything on each fixed page in the order it
 appears: text blocks, `link` rows for parts edited on another screen (the
@@ -291,7 +300,10 @@ that text rather than from a blank form.
 
 The Winter Ball page takes its date, venue and booking button from one
 calendar event, decided in `core/ball.py` (an admin's choice, or the next
-super event with "Winter Ball" in its title). Lists of events link with
+super event with "Winter Ball" in its title). When that event is hidden
+from the public calendar, a visitor who is not logged in sees the
+`ball.when_locked` and `ball.where_fallback` lines instead of its date and
+venue. Lists of events link with
 `{% load event_links %}` and `{% event_url event %}` rather than
 `event.get_absolute_url`, so the ball's title opens the Winter Ball page.
 Use the tag in any new list of events. Links for managing an event or a
@@ -328,8 +340,10 @@ gives every `<img>` `class="rich-img" loading="lazy" decoding="async"` and
 drops any class the writer typed; `.prose img, img.rich-img` keeps
 pictures inside the column. `core.pictures.picture_uses` finds where each
 picture is shown (text blocks, custom pages, guide articles, group pages,
-the terms, the banner and upcoming events); the Pictures tab lists that,
-and a picture still in use cannot be deleted. Past events and old page
+the terms, the banner and events that are not over yet, one under way
+included); the Pictures tab lists that, and a picture still in use cannot
+be deleted. A file name is matched as typed and as a web address writes it
+(a space as `%20`). Past events and old page
 revisions are not counted, so a finished event never blocks a deletion.
 
 ## Emails
@@ -356,7 +370,8 @@ Winter Ball to its own page. `panel.services.render_mailer` is the only
 place the Markdown becomes an email: the preview in the Mailer tab, the
 test send and every real send call it, so what the preview shows is what
 is sent. "Draft with AI" may reword the draft but an answer whose links
-differ from the draft's is refused.
+differ from the draft's, or that carries an email address the draft did
+not have, is refused.
 
 ## Surveys
 

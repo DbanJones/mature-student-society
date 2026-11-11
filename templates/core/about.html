@@ -13,14 +13,17 @@
   <div class="actions">{% include "core/_edit_text.html" with page_key="about" %}</div>
 </div>
 
-<div class="prose">{% text "about.body" %}</div>
+{% text "about.body" as about_body %}{% if about_body %}<div class="prose">{{ about_body }}</div>{% endif %}
 
+{% text "about.who_for" as who_for %}{% text "about.community" as community %}
+{% if who_for or community %}
 <div class="grid grid-2" style="margin-top: 1.5rem;">
-  <div class="card prose">{% text "about.who_for" %}</div>
-  <div class="card prose">{% text "about.community" %}</div>
+  {% if who_for %}<div class="card prose">{{ who_for }}</div>{% endif %}
+  {% if community %}<div class="card prose">{{ community }}</div>{% endif %}
 </div>
+{% endif %}
 
-<h2>{% text "about.committee_heading" %}</h2>
+{% text "about.committee_heading" as committee_heading %}{% if committee_heading %}<h2>{{ committee_heading }}</h2>{% endif %}
 <div class="table-scroll">
   <table class="data">
     <thead>

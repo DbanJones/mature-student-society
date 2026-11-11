@@ -94,8 +94,9 @@ def _tell(people, text, obj):
     people = list({u.pk: u for u in people if u and u.is_active and not u.is_banned}.values())
     notify(people, Notification.Kind.EVENT, text, url=url)
     base = getattr(settings, "SITE_URL", "").rstrip("/")
+    link = f"\n\n{base}{url}" if base else ""  # a path alone is no use in an inbox
     FormalEmail.objects.bulk_create([
-        FormalEmail(recipient=u, subject="Formal Exchange update", body=f"{text}\n\n{base}{url}\n\nSign in to your member account to view details.")
+        FormalEmail(recipient=u, subject="Formal Exchange update", body=f"{text}{link}\n\nSign in to your member account to view details.")
         for u in people if u.email
     ])
 

@@ -616,6 +616,32 @@ class WaitlistTests(EventTestCase):
         self.assertIn("place has opened up", mail.outbox[0].subject)
         self.assertEqual(mail.outbox[0].to, [self.other.email])
 
+    @override_settings(SITE_URL="https://portal.example.test")
+    def test_the_promotion_email_gives_the_event_page_once_as_a_button(self):
+        from django.core import mail
+
+        from notifications.services import process_notification_emails
+
+        from . import services
+
+        self.other.email = "other@cam.ac.uk"
+        self.other.save(update_fields=["email"])
+        waiting = RSVP.objects.create(event=self.full_event, user=self.other, status=RSVP.Status.WAITING)
+        mail.outbox = []
+        services.tell_promoted(self.full_event, [waiting])
+        process_notification_emails()
+        message, = mail.outbox
+        address = "https://portal.example.test" + self.full_event.get_absolute_url()
+        # the address has a line to itself at the end of the text part ...
+        self.assertTrue(message.body.endswith(f"so the next member can join.\n\n{address}"), message.body)
+        self.assertEqual(message.body.count(address), 1)
+        # ... so the HTML part shows it as one button, not as "join: the event page"
+        (html, _mimetype), = message.alternatives
+        self.assertEqual(html.count(f'href="{address}"'), 1)
+        self.assertIn(">Open the event page</a>", html)
+        self.assertNotIn("join: ", html)
+        self.assertNotIn(">the event page</a>", html)
+
     def test_leaving_the_waitlist(self):
         RSVP.objects.create(event=self.full_event, user=self.other, status=RSVP.Status.WAITING)
         self.client.force_login(self.other)
@@ -656,7 +682,8 @@ class DuplicateAndRepeatTests(EventTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="Public pub night"')
         self.assertContains(response, "copy of")
-        later = timezone.localtime(self.public_event.start + datetime.timedelta(days=7))
+        # the same time on the clock a week on, whatever the clocks do in between
+        later = timezone.localtime(self.public_event.start).replace(tzinfo=None) + datetime.timedelta(days=7)
         self.assertContains(response, later.strftime("%Y-%m-%dT%H:%M"))
 
     def test_repeat_creates_weekly_copies_for_the_creator_only(self):
@@ -668,10 +695,47 @@ class DuplicateAndRepeatTests(EventTestCase):
         copies = Event.objects.filter(title="Public pub night").exclude(pk=self.public_event.pk)
         self.assertEqual(copies.count(), 3)
         self.assertEqual(
-            copies.order_by("start").last().start,
-            self.public_event.start + datetime.timedelta(days=21),
+            timezone.localtime(copies.order_by("start").last().start).replace(tzinfo=None),
+            timezone.localtime(self.public_event.start).replace(tzinfo=None) + datetime.timedelta(days=21),
         )
         self.assertTrue(all(c.location == "The Free Press" for c in copies))
+
+    def clock_change_lunch(self, month, days_before):
+        """A 12:30 to 13:30 event so many days before next year's clock change
+        (the last Sunday of March or October)."""
+        year = timezone.localdate().year + 1
+        last = datetime.date(year, month, 31)
+        sunday = last - datetime.timedelta(days=(last.weekday() + 1) % 7)
+        day = sunday - datetime.timedelta(days=days_before)
+        start = timezone.make_aware(datetime.datetime.combine(day, datetime.time(12, 30)))
+        return Event.objects.create(
+            title=f"Clock change lunch {month}", category=self.category, created_by=self.creator,
+            start=start, end=start + datetime.timedelta(hours=1),
+        )
+
+    def test_repeat_keeps_the_time_on_the_clock_when_the_clocks_change(self):
+        self.client.force_login(self.creator)
+        for month in (3, 10):
+            with self.subTest(month=month):
+                source = self.clock_change_lunch(month, days_before=9)
+                self.client.post(reverse("events:repeat", args=[source.slug]), {"weeks": 3})
+                copies = Event.objects.filter(title=source.title).exclude(pk=source.pk)
+                self.assertEqual(copies.count(), 3)
+                for copy in copies:
+                    start, end = timezone.localtime(copy.start), timezone.localtime(copy.end)
+                    self.assertEqual((start.hour, start.minute), (12, 30), copy.start)
+                    self.assertEqual((end.hour, end.minute), (13, 30), copy.end)
+                    self.assertEqual((start.date() - timezone.localtime(source.start).date()).days % 7, 0)
+
+    def test_duplicate_keeps_the_time_on_the_clock_when_the_clocks_change(self):
+        self.client.force_login(self.creator)
+        for month in (3, 10):
+            with self.subTest(month=month):
+                source = self.clock_change_lunch(month, days_before=2)
+                response = self.client.get(reverse("events:duplicate", args=[source.slug]))
+                later = timezone.localtime(source.start).date() + datetime.timedelta(days=7)
+                self.assertContains(response, f"{later.isoformat()}T12:30")
+                self.assertContains(response, f"{later.isoformat()}T13:30")
 
     def test_repeat_rejects_silly_numbers(self):
         self.client.force_login(self.creator)

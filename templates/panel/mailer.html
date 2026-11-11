@@ -74,7 +74,8 @@
     <p class="small muted" style="margin:.5rem 0 0">
       “Draft with AI” rewrites the body above in the society’s tone using
       {{ site_config.get_email_ai_engine_display }}{% if not site_config.email_api_key %} (needs an API key on the Super admin tab){% endif %}.
-      Events, dates and links are kept, and a rewrite that changes a link is thrown away. Check it before sending.
+      Events, dates and links are kept: a rewrite that adds or drops a link, or brings in a new email address, is thrown away.
+      Check each button still goes to the right event before sending.
     </p>
   </form>
 </div>

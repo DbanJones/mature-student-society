@@ -12,7 +12,7 @@
 <div class="page-head">
   <div>
     <h1>{% text "colleges.title" %}</h1>
-    <div class="lede">{% text "colleges.lede" %}</div>
+    {% text "colleges.lede" as page_lede %}{% if page_lede %}<div class="lede">{{ page_lede }}</div>{% endif %}
   </div>
   <div class="actions">{% include "core/_edit_text.html" with page_key="colleges" %}</div>
 </div>

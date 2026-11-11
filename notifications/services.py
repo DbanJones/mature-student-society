@@ -42,9 +42,14 @@ def notify(recipients, kind, text, url="", email_subject=None, email_body=None,
         body = email_body or text
         link = url
         if url.startswith("/") and not url.startswith("//"):
-            link = getattr(settings, "SITE_URL", "").rstrip("/") + url
+            # A path alone ("/events/quiz/") is no use in an inbox: with no
+            # site address set the email goes without the link line.
+            site = getattr(settings, "SITE_URL", "").rstrip("/")
+            link = site + url if site else ""
         if link and link not in body:
             body += f"\n\n{link}"
+        elif url and not link and body.rstrip().endswith(":"):
+            body = body.rstrip()[:-1] + "."  # the sentence led up to the link that is not there
         queue_email(people, email_subject, body)
     return rows
 

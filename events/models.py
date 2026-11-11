@@ -260,12 +260,22 @@ class Event(models.Model):
         return self.host or self.created_by
 
     @property
+    def map_query(self):
+        """What the map is asked to find. A lunch is looked up by its college
+        alone, so the pin is the right college whatever the meeting point says;
+        the meeting point is still shown as words on the page."""
+        if self.location and self.is_lunch_swap:
+            from .lunch import college_in  # lunch.py imports this module
+            return college_in(self.location) or self.location
+        return self.location
+
+    @property
     def map_embed_url(self):
         """Google Maps embed for the location — no API key required."""
         if not self.location:
             return ""
         return "https://www.google.com/maps?" + urlencode(
-            {"q": f"{self.location}, Cambridge, UK", "output": "embed"}
+            {"q": f"{self.map_query}, Cambridge, UK", "output": "embed"}
         )
 
     # --- attendance -----------------------------------------------------------
