@@ -21,6 +21,10 @@ STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state")
 # drops every header with an underscore in its name (gunicorn 22 and later;
 # older versions ignore the setting, hence gunicorn>=23 in requirements-srcf.txt).
 header_map = "drop"
+# A worker may take this long over one request. The default (30 seconds) is
+# too short for "Draft with AI" writing a whole HTML email, which waits up to
+# 100 seconds on the AI engine (panel/ai.py).
+timeout = 120
 # Escape hatch: MSS_SOCKET_OPEN=1 in .env brings back the old, open socket,
 # should Apache ever turn out not to reach it as the society.
 OPEN = os.environ.get("MSS_SOCKET_OPEN") == "1"

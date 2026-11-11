@@ -601,3 +601,155 @@ def _emit_text(tokens):
         pages[-1].put(tail)
     text = re.sub(r"[ \t]+\n", "\n", pages[0].text())
     return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+# --- the mailer's "own design" mode: a complete HTML email, sent as written ---
+
+OWN_HTML_RE = re.compile(
+    r"\s*(?:<!--.*?-->\s*)*<(?:!doctype\s+html|html|head|body|table|div|center|style)\b", re.I | re.S
+)
+MAX_OWN_HTML = 300000  # characters; a designed email is 10 to 60 thousand
+SCRIPT_RE = re.compile(r"<script\b.*?(?:</script\s*>|\Z)", re.I | re.S)
+BODY_END_RE = re.compile(r"</body\s*>", re.I)
+OWN_FOOTER = (
+    '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"><tr>'
+    '<td align="center" style="padding:16px 12px 24px;font-family:Arial,Helvetica,sans-serif;'
+    'font-size:12px;line-height:18px;color:#6b7480;">%s</td></tr></table>'
+)
+
+
+def is_own_html(body):
+    """True when the mailer's body is a complete HTML email (it starts with
+    ``<!DOCTYPE html>``, ``<html>``, ``<table>`` and the like) and not Markdown."""
+    return bool(OWN_HTML_RE.match(str(body)))
+
+
+def body_problem(body):
+    """Why the mailer's body must not be built, or None. Markdown has the
+    site's usual limits; an admin's own HTML only has a size limit, because
+    it is never run through the Markdown renderer."""
+    if is_own_html(body):
+        if len(body) > MAX_OWN_HTML:
+            return f"it is too long ({len(body):,} characters; the limit is {MAX_OWN_HTML:,})"
+        return None
+    from core.richtext import richtext_problem
+
+    return richtext_problem(body)
+
+
+class _TextOf(HTMLParser):
+    """The words of an HTML email as plain text, for the text part: each
+    block on its own line, a link as its words then its address, and
+    nothing from the head, styles or hidden (preview-line) elements."""
+
+    SKIP = {"head", "style", "script", "title"}
+    BLOCK = {"p", "div", "tr", "table", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "blockquote", "hr"}
+    VOID = {"br", "img", "hr", "meta", "link", "input", "col", "area", "base", "wbr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out, self.open, self.hidden_from, self.href = [], [], None, None
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag not in self.VOID:
+            self.open.append(tag)
+            style = (attrs.get("style") or "").replace(" ", "").lower()
+            if self.hidden_from is None and (tag in self.SKIP or "display:none" in style):
+                self.hidden_from = len(self.open)
+        if self.hidden_from is not None:
+            return
+        if tag == "br":
+            self.out.append("\n")
+        elif tag == "li":
+            self.out.append("\n- ")
+        elif tag in ("td", "th"):
+            self.out.append(" ")
+        elif tag in self.BLOCK:
+            self.out.append("\n\n")
+        elif tag == "a":
+            self.href = (attrs.get("href") or "").strip()
+            self.link_at = len(self.out)
+
+    def handle_endtag(self, tag):
+        if tag not in self.open:
+            return
+        while self.open:
+            closed = self.open.pop()
+            if self.hidden_from is not None and len(self.open) < self.hidden_from:
+                self.hidden_from = None
+            if closed == tag:
+                break
+        if self.hidden_from is not None:
+            return
+        if tag == "a" and self.href is not None:
+            words = " ".join("".join(self.out[self.link_at:]).split())
+            address = self.href[7:] if self.href.lower().startswith("mailto:") else self.href
+            if address and address not in words and self.href.lower().startswith(("http://", "https://", "mailto:")):
+                self.out.append(f" ({address})" if words else address)
+            self.href = None
+        elif tag in self.BLOCK:
+            self.out.append("\n\n")
+
+    def handle_data(self, data):
+        if self.hidden_from is None:
+            self.out.append(re.sub(r"\s+", " ", data))
+
+    def text(self):
+        lines = [" ".join(line.split()) for line in "".join(self.out).replace("͏", "").split("\n")]
+        kept = []
+        for line in lines:
+            if line or (kept and kept[-1]):
+                kept.append(line)
+        return "\n".join(kept).strip()
+
+
+def own_html_parts(body, footer_text="", footer_html=""):
+    """``(text, html)`` for an admin's own complete HTML email. The HTML
+    goes out as written (scripts removed: no mail program runs them), with
+    the audience's footer, when there is one, put just before ``</body>``.
+    The text part is the same words read out of the HTML."""
+    html = SCRIPT_RE.sub("", str(body)).strip()
+    reader = _TextOf()
+    reader.feed(html)
+    reader.close()
+    text = reader.text()
+    if footer_text:
+        text = f"{text}\n\n--\n{footer_text}"
+    if footer_html:
+        block = OWN_FOOTER % footer_html
+        ends = list(BODY_END_RE.finditer(html))
+        html = html[:ends[-1].start()] + block + html[ends[-1].start():] if ends else html + block
+    return text, html
+
+
+class _Targets(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.web, self.mail, self.images, self.other = set(), set(), set(), set()
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "a" and attrs.get("href"):
+            href = attrs["href"].strip()
+            if href.lower().startswith("mailto:"):
+                self.mail.add(href[7:].split("?")[0].strip().lower())
+            elif href.lower().startswith(("http://", "https://")):
+                self.web.add(href)
+            elif not href.startswith("#"):
+                self.other.add(href)
+        elif tag == "img" and attrs.get("src"):
+            self.images.add(attrs["src"].strip())
+
+    handle_startendtag = handle_starttag
+
+
+def html_targets(html):
+    """What an HTML email points at: ``(web addresses, email addresses,
+    pictures, anything else)``, each a frozenset. The check on an AI's
+    HTML: "anything else" is a link that is neither a full web address nor
+    an email address, which cannot work in an email."""
+    reader = _Targets()
+    reader.feed(str(html))
+    reader.close()
+    return frozenset(reader.web), frozenset(reader.mail), frozenset(reader.images), frozenset(reader.other)

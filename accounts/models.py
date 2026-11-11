@@ -142,6 +142,8 @@ class User(AbstractUser):
 
     # Personal calendar feed: the secret in /me/calendar.ics?token=…
     calendar_token = models.CharField(max_length=48, blank=True, db_index=True)
+    # The member's own invitation link and QR code (accounts/invites.py).
+    invite_code = models.CharField(max_length=24, blank=True, db_index=True)
 
     # One-time WhatsApp invite (requirement: approval grants a single view of
     # the group link; afterwards access must be re-requested from an admin).
@@ -240,6 +242,18 @@ class User(AbstractUser):
             self.terms_accepted_at = acceptance.accepted_at
             self.save(update_fields=["terms_accepted_version", "terms_accepted_at"])
         return acceptance
+
+    def get_invite_code(self):
+        """The code in this member's personal invitation link, made on first use."""
+        if not self.invite_code:
+            import secrets
+
+            code = secrets.token_urlsafe(9)
+            while type(self).objects.filter(invite_code=code).exists():
+                code = secrets.token_urlsafe(9)
+            self.invite_code = code
+            self.save(update_fields=["invite_code"])
+        return self.invite_code
 
     def get_calendar_token(self):
         if not self.calendar_token:
@@ -386,6 +400,9 @@ class Invitation(models.Model):
     )
     email = models.EmailField()
     token = models.CharField(max_length=48, unique=True)
+    # True when the person came through the member's own link or QR code,
+    # so no email was sent to them.
+    by_link = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     joined_user = models.OneToOneField(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,

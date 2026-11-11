@@ -40,7 +40,8 @@ from core.models import (
     TermsRevision,
     TermsVersion,
 )
-from core import ball, mailinglist
+from core import ball, emailbody, mailinglist
+from core.net import absolute_url
 from core.pictures import enable_uploads
 from core.richtext import richtext_problem
 from events.models import RSVP, Category, Event
@@ -2188,6 +2189,8 @@ def mailer(request):
                     new_body = services.ai_draft_mailer(
                         config, form.cleaned_data["subject"], form.cleaned_data["body"],
                         form.cleaned_data.get("instructions", ""),
+                        as_html=bool(form.cleaned_data.get("ai_html")),
+                        base=absolute_url(request, "/").rstrip("/"),
                     )
                 except ai.AIDraftError as exc:
                     messages.error(request, f"AI drafting failed: {exc}")
@@ -2206,6 +2209,7 @@ def mailer(request):
                         "subject": form.cleaned_data["subject"],
                         "body": new_body,
                         "instructions": form.cleaned_data.get("instructions", ""),
+                        "ai_html": form.cleaned_data.get("ai_html", False),
                     })
             # fall through to render with the (re-drafted or unchanged) form
         elif form.is_valid():
@@ -2215,7 +2219,7 @@ def mailer(request):
             # nothing sent for real (a test, or a refusal): keep the draft on screen
             form = _mailer_form(initial={
                 key: form.cleaned_data.get(key, "")
-                for key in ("audience", "recipient", "subject", "body", "instructions")
+                for key in ("audience", "recipient", "subject", "body", "instructions", "ai_html")
             })
     else:
         subject, body = services.build_whats_on_email(request)
@@ -2256,7 +2260,7 @@ def mailer_preview(request):
     even when opened as a page of its own."""
     plain = "text/plain; charset=utf-8"
     body = request.POST.get("body", "")
-    problem = richtext_problem(body)
+    problem = emailbody.body_problem(body)
     if problem:
         return HttpResponse(f"Can't preview: {problem}.", status=413, content_type=plain)
     config = SiteConfig.get()
@@ -2267,7 +2271,7 @@ def mailer_preview(request):
     except Exception:
         return HttpResponse("Can't preview: this can't be made into an email as it is.", status=413, content_type=plain)
     response = HttpResponse(html)
-    response["Content-Security-Policy"] = "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; style-src 'unsafe-inline'"
+    response["Content-Security-Policy"] = "sandbox allow-popups allow-popups-to-escape-sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src https: data:"
     response["Cache-Control"] = "no-store"
     return response
 

@@ -87,8 +87,7 @@ class InviteTests(TestCase):
         self.assertContains(response, "could not be sent")
         self.assertEqual(Invitation.objects.count(), 0)
 
-    def test_must_be_logged_in_and_post(self):
-        self.assertEqual(self.client.get(reverse("accounts:invite")).status_code, 405)
+    def test_must_be_logged_in(self):
         self.client.logout()
         self.assertEqual(self.invite("new@example.org").status_code, 302)
         self.assertEqual(Invitation.objects.count(), 0)
@@ -180,3 +179,70 @@ class JoinTests(TestCase):
         self.assertContains(page, "<strong>3</strong> new members")
         self.client.force_login(self.member)
         self.assertNotEqual(self.client.get(reverse("panel:invitations")).status_code, 200)
+
+
+@override_settings(SITE_URL="")
+class PersonalLinkTests(TestCase):
+    """Every member has a link and QR code of their own: nobody's address
+    is needed, and whoever joins through it is credited to them."""
+
+    def setUp(self):
+        self.member = make_member("dm999")
+        self.link = reverse("accounts:invite_accept", args=[self.member.get_invite_code()])
+
+    def test_the_dashboard_and_the_page_show_the_link_and_qr_code(self):
+        self.client.force_login(self.member)
+        full = "http://testserver" + self.link
+        for name in ("dashboard:home", "accounts:invite"):
+            page = self.client.get(reverse(name))
+            self.assertContains(page, f'value="{full}"')
+            self.assertContains(page, 'class="invite-qr"')
+            self.assertContains(page, "<svg")
+            self.assertContains(page, "https://wa.me/?text=")
+        self.assertEqual(self.member.get_invite_code(), User.objects.get(pk=self.member.pk).invite_code)
+
+    def test_the_link_names_the_member(self):
+        self.assertContains(self.client.get(self.link), "Dana Member has invited you")
+
+    @override_settings(RAVEN_MODE="dev", DEBUG=True)
+    def test_joining_by_raven_through_the_link_credits_the_member(self):
+        self.client.get(self.link)
+        self.client.post(reverse("accounts:dev_login"), {"crsid": "nw456"})
+        invitation = Invitation.objects.get()
+        self.assertEqual((invitation.inviter, invitation.joined_user.username, invitation.by_link),
+                         (self.member, "nw456", True))
+        self.assertEqual(len(mail.outbox), 0)
+        # the same link works for the next person too
+        self.client.logout()
+        self.client.get(self.link)
+        self.client.post(reverse("accounts:dev_login"), {"crsid": "ab789"})
+        self.assertEqual(invites.counts_for(self.member), {"sent": 2, "joined": 2})
+
+    def test_joining_by_the_waitlist_through_the_link_credits_the_member(self):
+        self.client.get(self.link)
+        self.client.post(reverse("accounts:waitlist"), {
+            "first_name": "Pat", "last_name": "Partner", "email": "pat@example.org",
+            "connection": "Friend of Dana", "accept_terms": "on",
+        })
+        wreq = WaitlistRequest.objects.get(email="pat@example.org")
+        self.assertEqual(wreq.invitation.inviter, self.member)
+        self.assertEqual(invites.counts_for(self.member), {"sent": 1, "joined": 0})
+        self.client.force_login(make_member("ad111", is_portal_admin=True))
+        with mock.patch("accounts.services.send_associate_invite"):
+            self.client.post(reverse("panel:waitlist_review", args=[wreq.pk]), {"decision": "approve"})
+        self.assertEqual(invites.counts_for(self.member), {"sent": 1, "joined": 1})
+
+    def test_people_who_come_by_link_do_not_use_up_the_email_limit(self):
+        Invitation.objects.create(inviter=self.member, email="a@example.org", token="a", by_link=True)
+        self.client.force_login(self.member)
+        with mock.patch.object(invites, "DAILY_LIMIT", 1):
+            self.client.post(reverse("accounts:invite"), {"email": "b@example.org", "back": "page"})
+        self.assertTrue(Invitation.objects.filter(email="b@example.org", by_link=False).exists())
+
+    def test_a_member_cannot_credit_themselves_and_a_banned_link_is_dead(self):
+        self.client.force_login(self.member)
+        self.assertRedirects(self.client.get(self.link), reverse("dashboard:home"), fetch_redirect_response=False)
+        self.client.logout()
+        self.member.is_banned = True
+        self.member.save()
+        self.assertContains(self.client.get(self.link), "Come and join us")

@@ -561,14 +561,19 @@ backup of `media/` covers them.
 
 ## Mid-November update: invitations, a more visual dashboard
 
-Pull and restart as usual. One migration runs by itself on restart:
+Pull and restart as usual. Two migrations run by themselves on restart:
 `accounts/migrations/0009_invitations.py` (a new table for invitations and
-one new column on waitlist requests). There is no new cron line, `.env`
+one new column on waitlist requests) and
+`accounts/migrations/0010_personal_invite_links.py` (one new column on
+members and one on invitations). There is no new cron line, `.env`
 setting or package.
 
-- **Invite a member.** Every member's dashboard has an "Invite a member"
-  box. They type an email address and the site sends that person one email
-  with a link of their own. When the person joins, by Raven or through an
+- **Invite a member.** Every member has an invitation link and QR code of
+  their own, on their dashboard and full size at Members portal -> Invite
+  a member. They show the QR code to someone in person, or send the link
+  by WhatsApp or any other app; nobody's address is needed and the same
+  link works for any number of people. They can also type an email
+  address and the site sends that person one email with a link. When the person joins, by Raven or through an
   approved waitlist request, the inviting member is credited. Admin ->
   People -> Invitations shows who has brought in the most new members, and
   the Waitlist tab shows "Invited by ..." on a request that came through a
@@ -588,6 +593,23 @@ setting or package.
   is addressed to "Both: website members and the old list". The two
   warnings (mail not being delivered, a From address that is not srcf.net)
   still appear when they apply.
+
+- **The mailer can send your own design.** Paste a complete HTML email
+  (starting `<!DOCTYPE html>` or `<html>`) into the mailer's body and it
+  goes out exactly as written, with the unsubscribe footer added at the
+  end and a plain-text copy made from its words. The preview shows it.
+  Anything else typed in the body is still Markdown, in the society's
+  standard layout.
+- **"Draft with AI" can write HTML.** With "Have the AI design it as an
+  HTML email" ticked it turns the draft into a complete designed email,
+  and an email that is already HTML is revised as HTML. As before, an
+  answer that changes a link is thrown away; so is one that adds a
+  picture or is cut short. Writing a whole HTML email takes the AI engine
+  up to 100 seconds, so `gunicorn.conf.py` now gives a worker 120 seconds
+  (it was gunicorn's default of 30). If the page gives up after about a
+  minute with a gateway error, Apache's own proxy time limit is shorter
+  than that: ask the AI for a shorter email, or raise `ProxyTimeout` for
+  the site if the SRCF allows it.
 
 ## If something goes wrong
 

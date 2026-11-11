@@ -81,7 +81,7 @@ def send_invitation(inviter, email, request):
     if Invitation.objects.filter(inviter=inviter, email__iexact=email).exists():
         return False, "You have already invited that address."
     since = timezone.now() - datetime.timedelta(hours=24)
-    if Invitation.objects.filter(inviter=inviter, created_at__gte=since).count() >= DAILY_LIMIT:
+    if Invitation.objects.filter(inviter=inviter, by_link=False, created_at__gte=since).count() >= DAILY_LIMIT:
         return False, f"That is {DAILY_LIMIT} invitations in a day, which is the limit. Try again tomorrow."
     if Invitation.objects.filter(email__iexact=email).count() >= PER_ADDRESS_LIMIT:
         return False, "Other members have already invited that person, so we won't email them again."
@@ -111,24 +111,78 @@ def send_invitation(inviter, email, request):
     return True, f"Invitation sent to {email}."
 
 
+def personal_link(user, request):
+    """The member's own invitation link: the same one every time, for
+    sharing in a message or showing as a QR code."""
+    return absolute_url(request, reverse("accounts:invite_accept", args=[user.get_invite_code()]))
+
+
+def qr_svg(link):
+    """The link as a QR code, as inline SVG that scales to its box."""
+    import segno
+
+    return segno.make(link, error="m").svg_inline(
+        scale=1, border=3, dark="#14352a", light="#ffffff", omitsize=True,
+    )
+
+
+def tools(user, request):
+    """Everything the "Invite a member" box needs for ``user``."""
+    from urllib.parse import quote
+
+    from core.models import SiteConfig
+
+    link = personal_link(user, request)
+    society = SiteConfig.get().society_name
+    words = f"Come and join the {society}. This link is my invitation to you:"
+    return {
+        "link": link,
+        "qr": qr_svg(link),
+        "words": words,
+        "whatsapp": "https://wa.me/?text=" + quote(f"{words} {link}", safe=""),
+        "counts": counts_for(user),
+    }
+
+
 def remember(request, token):
-    """Keep the link's token until the visitor joins. Returns the
-    invitation, or None when the link is not (or no longer) a real one."""
+    """Keep the link's code until the visitor joins. Returns the member
+    who invited them, or None when the link is not (or no longer) real.
+    The code is either one emailed invitation's or a member's own."""
     invitation = (
         Invitation.objects.filter(token=token, joined_user__isnull=True)
         .select_related("inviter").first()
     )
-    if invitation is not None:
-        request.session[SESSION_KEY] = invitation.token
-    return invitation
+    inviter = invitation.inviter if invitation else None
+    if inviter is None and token:
+        inviter = User.objects.filter(invite_code=token, is_banned=False).first()
+    if inviter is not None:
+        request.session[SESSION_KEY] = token
+    return inviter
 
 
-def from_session(request):
-    """The open invitation this visitor arrived through, if any."""
+def from_session(request, email=""):
+    """The open invitation this visitor arrived through, if any. For a
+    member's own link the invitation is made here, for ``email`` (the
+    address the visitor is joining with)."""
     token = getattr(request, "session", {}).get(SESSION_KEY) if request is not None else None
     if not token:
         return None
-    return Invitation.objects.filter(token=token, joined_user__isnull=True).first()
+    invitation = Invitation.objects.filter(token=token, joined_user__isnull=True).first()
+    if invitation is not None:
+        return invitation
+    email = (email or "").strip().lower()
+    owner = User.objects.filter(invite_code=token, is_banned=False).first()
+    if owner is None or not email:
+        return None
+    try:
+        with transaction.atomic():
+            invitation, _ = Invitation.objects.get_or_create(
+                inviter=owner, email=email,
+                defaults={"token": secrets.token_urlsafe(24), "by_link": True},
+            )
+    except IntegrityError:
+        return None
+    return invitation if invitation.joined_user_id is None else None
 
 
 def credit(user, invitation=None):

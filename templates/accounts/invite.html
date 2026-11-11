@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Invite a member{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'css/core.css' %}">{% endblock %}
+
+{% block content %}
+<div class="card invite-card invite-page">
+  <h1>Invite a member</h1>
+  <p class="lede">Show this code, or send your link. When they join, it counts for you.</p>
+  {% include "accounts/_invite_tools.html" with big=True back="page" %}
+  <p class="small" style="margin:1.2rem 0 0"><a href="{% url 'dashboard:home' %}">&larr; Back to my dashboard</a></p>
+</div>
+{% endblock %}

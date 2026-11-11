@@ -218,8 +218,13 @@ because a meeting point such as "Porters' Lodge" matches every college.
 
 ## Invitations
 
-`accounts.Invitation` is one member inviting one email address; the emailed
-link (`/accounts/join/<token>/`) keeps the token in the visitor's session.
+Each member has a personal link and QR code (`User.invite_code`, made on
+first use; the QR is inline SVG from segno) that works for any number of
+people, and can also have the site email one address an invitation.
+`accounts.Invitation` is one member inviting one email address; either
+kind of link (`/accounts/join/<code>/`) keeps its code in the visitor's
+session. For a personal link the Invitation row (`by_link`) is made when
+the visitor joins or asks to join, with the address they join with.
 `accounts.invites.credit` fills in `joined_user` when the person joins:
 from `CrsidBackend.configure_user` on a first Raven login, or from the
 panel when a waitlist request (which remembers its invitation) is approved.
@@ -385,6 +390,16 @@ test send and every real send call it, so what the preview shows is what
 is sent. "Draft with AI" may reword the draft but an answer whose links
 differ from the draft's, or that carries an email address the draft did
 not have, is refused.
+
+The mailer also has an own-design mode: a body that is a complete HTML
+document (`emailbody.is_own_html`) skips Markdown and the shell and is sent
+as written by `emailbody.own_html_parts`, which removes scripts, puts the
+audience's footer before `</body>` and reads the text part out of the HTML.
+Only society admins can reach the mailer, so the HTML is trusted.
+`services.ai_draft_mailer` returns HTML when asked to (the form's tick box)
+or when the draft is HTML; `emailbody.html_targets` is its link check:
+the same web addresses, no new email address, no new picture, no relative
+link, and a document that ends with `</html>`.
 
 ## Surveys
 

@@ -194,7 +194,7 @@ def home(request):
 
     context = {
         "nav_active": "dashboard",
-        "invite_counts": invites.counts_for(user),
+        "invite": invites.tools(user, request),
         "formal_requests": formal_requests,
         "formal_attendance": formal_attendance,
         "formal_promises": formal_promises,

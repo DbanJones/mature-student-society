@@ -200,9 +200,23 @@ details.dash-card[open] > summary { margin-bottom: .5rem; }
 .attention-list li > span:first-child { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--sage-100); font-size: .95rem; }
 
 .invite-card { background: var(--gold-soft); border-color: var(--gold); scroll-margin-top: 5rem; }
-.invite-form { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0; }
-.invite-form input { flex: 1 1 12rem; min-width: 0; }
+.invite-actions { display: flex; gap: .45rem; flex-wrap: wrap; margin: 0 0 .5rem; }
+.invite-link { width: 100%; font-size: .85rem; }
+.invite-qr-fold { margin: .7rem 0 0; }
+.invite-qr-fold > summary { cursor: pointer; font-weight: 650; color: var(--heading); }
+.invite-qr { margin: .7rem auto .4rem; max-width: 15rem; }
+.invite-qr svg { display: block; width: 100%; height: auto; border-radius: var(--radius-small); background: #fff; box-shadow: var(--shadow); }
+.invite-qr-hint { margin: 0 0 .3rem; font-size: .88rem; color: var(--ink-soft); text-align: center; }
+.invite-form { margin: .9rem 0 0; }
+.invite-form label { display: block; font-size: .9rem; font-weight: 650; margin: 0 0 .3rem; }
+.invite-form-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+.invite-form-row input { flex: 1 1 12rem; min-width: 0; }
 .invite-tally { margin: .8rem 0 0; font-size: .92rem; }
+.invite-page { max-width: 34rem; margin: 0 auto; text-align: center; }
+.invite-page .lede { margin: 0 auto 1rem; }
+.invite-big .invite-qr { max-width: 20rem; }
+.invite-big .invite-actions { justify-content: center; }
+.invite-big .invite-form { text-align: left; }
 
 @media (max-width: 520px) {
   .dash-hero { padding: 1.1rem 1rem; }

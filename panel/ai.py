@@ -23,6 +23,10 @@ TIMEOUT_SECONDS = 30
 
 # Cap the drafted body — a "What's On" digest is short; this bounds cost.
 MAX_OUTPUT_TOKENS = 4000
+# A whole designed HTML email is several times longer than its words, and
+# takes the engine correspondingly longer to write.
+HTML_OUTPUT_TOKENS = 8000
+HTML_TIMEOUT_SECONDS = 100
 
 # Per-engine wiring: (protocol, endpoint, default model). The model can be
 # overridden per engine without a code change via an environment variable,
@@ -40,7 +44,8 @@ class AIDraftError(Exception):
     """A drafting attempt failed. The message is safe to show an admin."""
 
 
-def draft_email(engine, api_key, system_prompt, user_prompt, *, timeout=TIMEOUT_SECONDS):
+def draft_email(engine, api_key, system_prompt, user_prompt, *, timeout=TIMEOUT_SECONDS,
+                max_tokens=MAX_OUTPUT_TOKENS):
     """Ask ``engine`` to produce an email body and return it as a string.
 
     ``engine`` is a ``SiteConfig.email_ai_engine`` value. Raises
@@ -56,21 +61,21 @@ def draft_email(engine, api_key, system_prompt, user_prompt, *, timeout=TIMEOUT_
     model = os.environ.get(f"MSS_AI_MODEL_{engine.upper()}", default_model)
 
     if protocol == "openai":
-        return _draft_openai(endpoint, model, api_key, system_prompt, user_prompt, timeout)
+        return _draft_openai(endpoint, model, api_key, system_prompt, user_prompt, timeout, max_tokens)
     if protocol == "anthropic":
-        return _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeout)
+        return _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeout, max_tokens)
     if protocol == "gemini":
-        return _draft_gemini(endpoint, model, api_key, system_prompt, user_prompt, timeout)
+        return _draft_gemini(endpoint, model, api_key, system_prompt, user_prompt, timeout, max_tokens)
     raise AIDraftError(f"Unsupported protocol {protocol!r}.")  # unreachable
 
 
 # --- provider calls ----------------------------------------------------------
 
-def _draft_openai(endpoint, model, api_key, system_prompt, user_prompt, timeout):
+def _draft_openai(endpoint, model, api_key, system_prompt, user_prompt, timeout, max_tokens=MAX_OUTPUT_TOKENS):
     """DeepSeek / OpenAI / Mistral — the OpenAI chat-completions shape."""
     payload = {
         "model": model,
-        "max_tokens": MAX_OUTPUT_TOKENS,
+        "max_tokens": max_tokens,
         "temperature": 0.6,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -84,7 +89,7 @@ def _draft_openai(endpoint, model, api_key, system_prompt, user_prompt, timeout)
         raise AIDraftError("The AI engine returned an unexpected response.")
 
 
-def _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeout):
+def _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeout, max_tokens=MAX_OUTPUT_TOKENS):
     """Anthropic (Claude) — the Messages API.
 
     Note: current Claude models (e.g. claude-opus-4-8) reject sampling
@@ -92,7 +97,7 @@ def _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeo
     """
     payload = {
         "model": model,
-        "max_tokens": MAX_OUTPUT_TOKENS,
+        "max_tokens": max_tokens,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_prompt}],
     }
@@ -108,13 +113,13 @@ def _draft_anthropic(endpoint, model, api_key, system_prompt, user_prompt, timeo
         raise AIDraftError("The AI engine returned an unexpected response.")
 
 
-def _draft_gemini(base, model, api_key, system_prompt, user_prompt, timeout):
+def _draft_gemini(base, model, api_key, system_prompt, user_prompt, timeout, max_tokens=MAX_OUTPUT_TOKENS):
     """Google Gemini — generateContent. The key goes in the query string."""
     endpoint = f"{base}/{model}:generateContent?key={urllib.parse.quote(api_key)}"
     payload = {
         "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-        "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS, "temperature": 0.6},
+        "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.6},
     }
     data = _post(endpoint, payload, {}, timeout)
     try:

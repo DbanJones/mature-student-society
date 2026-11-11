@@ -67,7 +67,8 @@ class MailerForm(forms.Form):
             "data-editor-tools": "Bold,Italic,Heading,List,Quote,Link",
         }),
         help_text="Links show as words, so Outlook can't garble them: use the Link button. "
-                  "A link on a line of its own becomes a button.",
+                  "A link on a line of its own becomes a button. Or paste a complete HTML email "
+                  "(starting <!DOCTYPE html> or <html>) and it is sent in your own design.",
     )
     instructions = forms.CharField(
         required=False, label="Instructions for the AI", max_length=1000,
@@ -77,11 +78,22 @@ class MailerForm(forms.Form):
                   "links stay as they are whatever you ask.",
     )
 
+    ai_html = forms.BooleanField(
+        required=False, label="Have the AI design it as an HTML email",
+        help_text="For “Draft with AI”: it writes a complete designed email (colours, panels, buttons) "
+                  "from your draft, which you can then edit or ask it to change. Without the tick it "
+                  "keeps the standard layout. An email that is already HTML stays HTML.",
+    )
+
     def clean_body(self):
         body = self.cleaned_data["body"]
-        problem = richtext_problem(body)
+        problem = emailbody.body_problem(body)
         if problem:
             raise forms.ValidationError(f"This can't be sent: {problem}.")
+        if emailbody.is_own_html(body):
+            if not emailbody.own_html_parts(body)[0].strip():
+                raise forms.ValidationError("There are no words in this HTML to send.")
+            return body
         try:
             text, _html = emailbody.render_parts(body)
         except Exception:

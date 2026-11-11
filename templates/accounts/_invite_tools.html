@@ -1,0 +1,64 @@
+{# The ways to invite someone: the member's own QR code and link, and an emailed invitation. Needs `invite` (accounts.invites.tools). `big` is the full page; `back` says where the email form returns to. #}
+<div class="invite-tools{% if big %} invite-big{% endif %}">
+  {% if big %}
+    <div class="invite-qr" role="img" aria-label="QR code for my invitation link">{{ invite.qr|safe }}</div>
+    <p class="invite-qr-hint">They point their phone's camera at this and tap the link.</p>
+  {% endif %}
+
+  <div class="invite-actions">
+    <button type="button" class="btn btn-accent btn-small invite-share" hidden data-share-url="{{ invite.link }}" data-share-text="{{ invite.words }}">Share my link</button>
+    <a class="btn btn-small" href="{{ invite.whatsapp }}" target="_blank" rel="noopener">Send by WhatsApp</a>
+    <button type="button" class="btn btn-ghost btn-small copy-btn" data-copy="invite-link">Copy my link</button>
+  </div>
+  <input type="text" readonly id="invite-link" class="invite-link" value="{{ invite.link }}" aria-label="My invitation link" onclick="this.select()">
+
+  {% if not big %}
+    <details class="invite-qr-fold">
+      <summary>Show my QR code</summary>
+      <div class="invite-qr" role="img" aria-label="QR code for my invitation link">{{ invite.qr|safe }}</div>
+      <p class="invite-qr-hint">They point their phone's camera at this and tap the link. <a href="{% url 'accounts:invite' %}">Show it full size</a></p>
+    </details>
+  {% endif %}
+
+  <form method="post" action="{% url 'accounts:invite' %}" class="invite-form">
+    {% csrf_token %}
+    {% if back %}<input type="hidden" name="back" value="{{ back }}">{% endif %}
+    <label for="invite-email">Or we email them for you</label>
+    <div class="invite-form-row">
+      <input type="email" id="invite-email" name="email" placeholder="Their email address" required maxlength="254" autocomplete="off">
+      <button type="submit" class="btn btn-small">Send invitation</button>
+    </div>
+  </form>
+
+  {% if invite.counts.sent %}
+    <p class="invite-tally"><strong>{{ invite.counts.sent }}</strong> invited &middot; <strong>{{ invite.counts.joined }}</strong> joined{% if invite.counts.joined %} 🎉{% endif %}</p>
+  {% endif %}
+</div>
+<script>
+(function () {
+  // "Copy" buttons: copy the box they name, and say so.
+  document.querySelectorAll(".copy-btn[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var box = document.getElementById(btn.dataset.copy);
+      if (!box) return;
+      var label = btn.textContent;
+      function done() { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = label; }, 1500); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(box.value).then(done, function () { box.select(); });
+      } else {
+        box.select();
+        try { document.execCommand("copy"); done(); } catch (e) { /* the box is selected: Ctrl+C works */ }
+      }
+    });
+  });
+  // Phones can hand the link to any app (Messages, WhatsApp, email...).
+  if (navigator.share) {
+    document.querySelectorAll(".invite-share").forEach(function (btn) {
+      btn.hidden = false;
+      btn.addEventListener("click", function () {
+        navigator.share({ text: btn.dataset.shareText, url: btn.dataset.shareUrl }).catch(function () {});
+      });
+    });
+  }
+})();
+</script>

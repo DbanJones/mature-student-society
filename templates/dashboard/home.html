@@ -32,7 +32,7 @@
     <div><span class="hero-stat-icon" aria-hidden="true">🎤</span><strong>{{ stats.hosted }}</strong><span>events hosted</span></div>
     <div><span class="hero-stat-icon" aria-hidden="true">📖</span><strong>{{ stats.guide_edits }}</strong><span>guide edits</span></div>
     <div><span class="hero-stat-icon" aria-hidden="true">⭐</span><strong>{{ stats.ratings }}</strong><span>ratings given</span></div>
-    <div><span class="hero-stat-icon" aria-hidden="true">🤝</span><strong>{{ invite_counts.joined }}</strong><span>invited and joined</span></div>
+    <div><span class="hero-stat-icon" aria-hidden="true">🤝</span><strong>{{ invite.counts.joined }}</strong><span>invited and joined</span></div>
   </div>
 </section>
 
@@ -216,17 +216,9 @@
     </section>
 
     <section class="card dash-card invite-card" id="invite">
-      <p class="eyebrow"><span aria-hidden="true">✉️</span> Invite a member</p>
-      <p style="margin:0 0 .7rem">Know a mature student who should be here? We'll email them a link of their own to join.</p>
-      <form method="post" action="{% url 'accounts:invite' %}" class="invite-form">
-        {% csrf_token %}
-        <label class="visually-hidden" for="invite-email">Their email address</label>
-        <input type="email" id="invite-email" name="email" placeholder="Their email address" required maxlength="254" autocomplete="off">
-        <button type="submit" class="btn btn-accent btn-small">Send invitation</button>
-      </form>
-      {% if invite_counts.sent %}
-        <p class="invite-tally"><strong>{{ invite_counts.sent }}</strong> invited &middot; <strong>{{ invite_counts.joined }}</strong> joined{% if invite_counts.joined %} 🎉{% endif %}</p>
-      {% endif %}
+      <p class="eyebrow"><span aria-hidden="true">🤝</span> Invite a member</p>
+      <p style="margin:0 0 .7rem">Know a mature student who should be here? Send your link or show your QR code. When they join, it counts for you.</p>
+      {% include "accounts/_invite_tools.html" %}
     </section>
 
     <details class="card dash-card">

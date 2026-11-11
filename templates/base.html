@@ -68,6 +68,7 @@
             {% if "members" in visible_tabs %}<a href="{% url 'members:directory' %}">👥 Members</a>{% endif %}
             {% if "messages" in visible_tabs %}<a href="{% url 'inbox:inbox' %}">💬 Messages{% if unread_messages %}<span class="nav-badge">{{ unread_messages }}</span>{% endif %}</a>{% endif %}
             <a href="{% url 'surveys:index' %}">📋 Surveys</a>
+            {% url 'accounts:invite' as invite_url %}{% if invite_url %}<a href="{{ invite_url }}">🤝 Invite a member</a>{% endif %}
             {% for page in nav_pages_members %}<a href="{{ page.get_absolute_url }}">{{ page.nav_label }}</a>{% endfor %}
             <a href="{% url 'accounts:profile' %}">✏️ My profile</a>
             <form method="post" action="{% url 'accounts:logout' %}" class="nav-logout">
